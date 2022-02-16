@@ -1,0 +1,10 @@
+name: OBSDataPipeline
+channels:
+  - conda-forge
+  - anaconda
+dependencies:
+  - numpy
+  - matplotlib
+  - scipy
+  - obspy
+  - pandas
