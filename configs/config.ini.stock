@@ -1,0 +1,9 @@
+[common]
+# General settings
+log_dir=/home/kbosman/resource/OBSDataPipeline/logs
+
+
+[sensor_tracker]
+# Sensor tracker configuration
+#  host_url: URL to connect to instance of sensor_tracker
+#  user_token: auth token associated with user in instance of sensor_tracker
