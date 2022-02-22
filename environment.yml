@@ -8,3 +8,4 @@ dependencies:
   - scipy
   - obspy
   - pandas
+  - openpyxl
