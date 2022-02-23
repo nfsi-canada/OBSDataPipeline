@@ -1,5 +1,7 @@
 import argparse
 from glob import glob
+import numpy as np
+import obspy
 import os
 import pandas as pd
 import re
@@ -14,30 +16,45 @@ if not os.path.isdir(resource_dir):
     os.makedirs(resource_dir)
 
 
-def process(data_dir, obs_log, output_dir=None):
+def process(data_dir, obs_log, network_id, output_dir=None, channel_map=None):
     g_log.info("start")
 
-    raw_files = glob(data_dir+'/*.mseed')
+    raw_files = glob(os.path.join(data_dir,'**/*.mseed'), recursive=True)
     g_log.info("Found {0} miniSEED files in data directory and sub-folders".format(len(raw_files)))
-    
-    # Metadata and pre-processing
-    # TODO: Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
-    # TODO: Add station locations to metadata
-    # TODO: Apply clock drift
-    # TODO: Sensor orientation
-    # TODO: Produce StationXML format metadata
 
-    # Basic QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
-    # TODO: Decide if the same operations are appropriate for the hydrophone data or not
-    # TODO: Calculate hourly PSDs
-    # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
-    # TODO: Linearity of PSD curves
+    for rf in raw_files:
+        g_log.info("Begin processing file {0}".format(rf))
+        data = obspy.read(rf)
+        print(data)
 
-    # Analysis of auxiliary data
-    # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
-    # TODO: Plot battery draw-down and power consumption over full deployment
-    # TODO: Plot internal state-of-health variables: pressure, temperature, humidity
-    # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
+        # Metadata and pre-processing
+        for tr in data:
+            tr.meta.network = network_id
+            # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
+            if channel_map is not None:
+                ch_info = channel_map.loc[tr.id]
+                if ch_info['Network'] != network_id:
+                    raise(IOError, 'Corrected network ID {0} in channel map does not match input --network argument {1}'.format(ch_info['Network'], network_id))
+                for code in ['Station', 'Location', 'Channel']:
+                    if ch_info[code] is not None and ~np.isnan(ch_info[code]):
+                        tr.meta[code.lower()] = ch_info[code]
+
+        # TODO: Add station locations to metadata
+        # TODO: Apply clock drift
+        # TODO: Sensor orientation
+        # TODO: Produce StationXML format metadata
+
+        # Basic QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
+        # TODO: Decide if the same operations are appropriate for the hydrophone data or not
+        # TODO: Calculate hourly PSDs
+        # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
+        # TODO: Linearity of PSD curves
+
+        # Analysis of auxiliary data
+        # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
+        # TODO: Plot battery draw-down and power consumption over full deployment
+        # TODO: Plot internal state-of-health variables: pressure, temperature, humidity
+        # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
 
     g_log.info("end")
 
@@ -54,9 +71,12 @@ if __name__ == '__main__':
                              "the column delimiter.")
     parser.add_argument('--obsid', dest="obs_id", default="AQU-0000",
                         help="OBS identifier: station name or serial number")
-    parser.add_argument('--network', "network_id", help="Network identifier assigned by FDSN for this project")
+    parser.add_argument('--network', "network_id", default='XX',
+                        help="Network identifier assigned by FDSN for this project. Default 'XX' for test data.")
     parser.add_argument('--outdir', dest="outdir", default=None,
                         help="Output directory, if different from data directory")
+    parser.add_argument('--channelmap', dest="channel_map",
+                        help="File mapping as-recorded channel codes to their correct values.")
 
     try:
         args = parser.parse_args()
@@ -82,6 +102,7 @@ if __name__ == '__main__':
         output_dir = None
         if args.outdir is not None:
             output_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.outdir)))
+
         if args.datalog:
             data_log_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.datalog)))
         else:
@@ -107,11 +128,12 @@ if __name__ == '__main__':
         if isinstance(row, pd.DataFrame):
             raise(IndexError, 'Multiple entries found for OBS {0} in provided metadata. Please use a unique identifier.'.format(obs_identifier))
 
-        # TODO: Get clock drift info
-        # TODO: Get station location info
-        # TODO: Get network/station codes (if not correct in raw data)
+        channel_map = None
+        if args.channel_map:
+            channel_map = obsutil.read_channel_map(args.channel_map)
+
         # Process data
-        process(data_dir, row, output_dir)
+        process(data_dir, row, args.network_id, output_dir, channel_map)
 
         g_log.info("Processing complete!")
         obsutil.logger.close_logs()

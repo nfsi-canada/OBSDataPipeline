@@ -56,7 +56,7 @@ def parse_obs_log(log_file, delimiter=','):
             df.set_index('Station', drop=False, inplace=True)
 
         dm_info = locations[['Station', 'OBS Name', 'OBS ID', 'Launch Date/Time (UTC)', 'Recovery Date/Time (UTC)']].copy()
-        dm_info.join(recovery['Clock Offset on Deck (ms)'].copy())
+        dm_info.join(recovery[['Surveyed Latitude', 'Surveyed Longitude', 'Water Depth (m)', 'Clock Offset on Deck (ms)']].copy())
 
         log_info['locations'] = locations
         log_info['deployment'] = deployment
@@ -68,3 +68,20 @@ def parse_obs_log(log_file, delimiter=','):
 
     log_info['basic'] = dm_info
     return log_info
+
+
+def read_channel_map(ch_map_file, delimiter=','):
+    """Read a spreadsheet or delimted text file mapping recorded channels to corrected channel codes"""
+    ch_map_path = os.path.abspath(os.path.expanduser(os.path.expandvars(ch_map_file)))
+    filetype = os.path.splitext(ch_map_path)[-1][1:]   # remove '.' from beginning of file extension string
+    ch_map = None
+    if filetype in ['xls', 'xlsx', 'xlsm', 'xlsb', 'odf', 'ods', 'odt']:
+        # If file is an Excel/ODS format (standard template used)
+        ch_map = pd.read_excel(ch_map_path)
+    elif filetype in ['csv', 'txt']:
+        # If file is a delimited text file
+        ch_map = pd.read_csv(ch_map_path, sep=delimiter)
+
+    if ch_map is not None:
+        ch_map.set_index('Recorded channel ID', drop=False, inplace=True)
+    return ch_map
