@@ -1,6 +1,7 @@
 import argparse
 from glob import glob
 import os
+import pandas as pd
 import re
 import traceback
 from datetime import datetime
@@ -45,14 +46,15 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Pre-process OBS data and perform basic QC')
     parser.add_argument('--data_dir', dest="data_dir", help="Directory where raw OBS data is stored.")
     parser.add_argument('--datalog', dest="datalog",
-                        help="Log file (XLS or CSV) from deployment/recovery. Must include station identifiers and "
-                             "clock drift measurements. If not specified, assumed to be a file called 'log.xlsx' in "
-                             "the data directory.")
+                        help="Log file from deployment/recovery. Must include station identifiers and clock drift "
+                             "measurements. If not specified, assumed to be a file called 'log.xlsx' in the data "
+                             "directory. Preferred format is XLSX (or similar spreadsheet) following NFSI template.")
     parser.add_argument('--logdelimiter', dest="log_delim", default=",",
                         help="If the OBS log file is delimited text (other than comma-delimited), use this to specify "
                              "the column delimiter.")
     parser.add_argument('--obsid', dest="obs_id", default="AQU-0000",
                         help="OBS identifier: station name or serial number")
+    parser.add_argument('--network', "network_id", help="Network identifier assigned by FDSN for this project")
     parser.add_argument('--outdir', dest="outdir", default=None,
                         help="Output directory, if different from data directory")
 
@@ -77,14 +79,16 @@ if __name__ == '__main__':
         else:
             data_dir = os.path.join(resource_dir, 'test_data')
 
-        output_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.outdir)))
+        output_dir = None
+        if args.outdir is not None:
+            output_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.outdir)))
         if args.datalog:
             data_log_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.datalog)))
         else:
             data_log_file = os.path.join(data_dir, 'log.xlsx')
 
         obs_log_info = obsutil.parse_obs_log(data_log_file, args.log_delim)
-        base_meta = obs_log_info['metadata']['basic']
+        base_meta = obs_log_info['basic']
         # Find this OBS in the basic metadata table
         row = None
         if id_type == 'serial':
@@ -100,6 +104,8 @@ if __name__ == '__main__':
 
         if row is None or row.empty:
             raise(IndexError, 'OBS {0} not found in provided metadata.'.format(obs_identifier))
+        if isinstance(row, pd.DataFrame):
+            raise(IndexError, 'Multiple entries found for OBS {0} in provided metadata. Please use a unique identifier.'.format(obs_identifier))
 
         # TODO: Get clock drift info
         # TODO: Get station location info
