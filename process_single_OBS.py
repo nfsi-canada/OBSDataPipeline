@@ -8,7 +8,8 @@ import re
 import traceback
 from datetime import datetime
 
-import utilities as obsutil
+import nfsi_obs as nf
+from utilities import config_handler, logger
 
 # Ensure resource directory exists
 resource_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'resource/OBSDataPipeline')
@@ -16,12 +17,29 @@ if not os.path.isdir(resource_dir):
     os.makedirs(resource_dir)
 
 
-def process(data_dir, obs_log, network_id, output_dir=None, channel_map=None):
+def process(data_dir, obs_log, network_id, output_dir=None, channel_map=None, dataless=None):
+    if output_dir is None:
+        output_dir = data_dir
     g_log.info("start")
 
-    raw_files = glob(os.path.join(data_dir,'**/*.mseed'), recursive=True)
+    raw_files = glob(os.path.join(data_dir, '**/*.mseed'), recursive=True)
     g_log.info("Found {0} miniSEED files in data directory and sub-folders".format(len(raw_files)))
 
+    if dataless is None:
+        dataless_files = glob(os.path.join(data_dir, '**.*.dataless'), recursive=True)
+        if len(dataless_files) < 1:
+            g_log.warn("No metadata file found.")
+        elif len(dataless_files) > 1:
+            raise(IOError, "Multiple metadata files found. Please specify a file using the --metadata argument.")
+        else:
+            dataless = dataless_files[0]
+    xml_meta = nf.metadata.convert_dataless_to_stationxml(dataless, obs_log, output_dir, channel_map)
+    g_log.info("Converted metadata to StationXML format: {0}".format(xml_meta))
+
+    g_log.info("Reading data files...")
+    ocean_data = obspy.Stream()
+    seismic_data = obspy.Stream()
+    state_of_health = obspy.Stream()
     for rf in raw_files:
         g_log.info("Begin processing file {0}".format(rf))
         data = obspy.read(rf)
@@ -38,6 +56,16 @@ def process(data_dir, obs_log, network_id, output_dir=None, channel_map=None):
                 for code in ['Station', 'Location', 'Channel']:
                     if ch_info[code] is not None and ~np.isnan(ch_info[code]):
                         tr.meta[code.lower()] = ch_info[code]
+
+            if re.match(r'CH[0-9A-F]', tr.meta.channel):
+                # seismic data
+                seismic_data.append(tr)
+            elif tr.meta.channel in ['LKO', 'MDO']:
+                # oceanographic data (external P/T)
+                ocean_data.append(tr)
+            else:
+                # all other channels
+                state_of_health.append(tr)
 
         # TODO: Add station locations to metadata
         # TODO: Apply clock drift
@@ -77,13 +105,14 @@ if __name__ == '__main__':
                         help="Output directory, if different from data directory")
     parser.add_argument('--channelmap', dest="channel_map",
                         help="File mapping as-recorded channel codes to their correct values.")
+    parser.add_argument('--metadata', dest="metadata_file", help="Path to metadata file (dataless SEED or StationXML)")
 
     try:
         args = parser.parse_args()
         start_time = datetime.now()
         obs_id = args.obs_id
 
-        g_log = obsutil.logger.get_general_logger(start_time, obs_id)
+        g_log = logger.get_general_logger(start_time, obs_id)
         g_log.info("\n\n=====================================================================")
         g_log.info("Starting job: {0}".format(str(args)))
 
@@ -108,7 +137,7 @@ if __name__ == '__main__':
         else:
             data_log_file = os.path.join(data_dir, 'log.xlsx')
 
-        obs_log_info = obsutil.parse_obs_log(data_log_file, args.log_delim)
+        obs_log_info = nf.io.parse_obs_log(data_log_file, args.log_delim)
         base_meta = obs_log_info['basic']
         # Find this OBS in the basic metadata table
         row = None
@@ -130,13 +159,17 @@ if __name__ == '__main__':
 
         channel_map = None
         if args.channel_map:
-            channel_map = obsutil.read_channel_map(args.channel_map)
+            channel_map = nf.io.read_channel_map(args.channel_map)
+
+        metadata_file = None
+        if args.metadata_file:
+            metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.metadata_file)))
 
         # Process data
-        process(data_dir, row, args.network_id, output_dir, channel_map)
+        process(data_dir, row, args.network_id, output_dir, channel_map, metadata_file)
 
         g_log.info("Processing complete!")
-        obsutil.logger.close_logs()
+        logger.close_logs()
     except Exception as e:
         print(traceback.print_exc())
         parser.print_help()
