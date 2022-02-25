@@ -3,9 +3,10 @@ channels:
   - conda-forge
   - anaconda
 dependencies:
-  - numpy
+  - numpy=1.21
   - matplotlib
   - scipy
   - obspy
   - pandas
   - openpyxl
+  - bitstring

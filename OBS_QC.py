@@ -5,6 +5,7 @@ import obspy
 import os
 import pandas as pd
 import re
+import shutil
 import traceback
 from datetime import datetime
 
@@ -17,24 +18,18 @@ if not os.path.isdir(resource_dir):
     os.makedirs(resource_dir)
 
 
-def process(data_dir, obs_log, network_id, output_dir=None, channel_map=None, dataless=None):
-    if output_dir is None:
-        output_dir = data_dir
+def process(data_dir, obs_log, network_id, output_dir=None, dataless=None):
     g_log.info("start")
 
     raw_files = glob(os.path.join(data_dir, '**/*.mseed'), recursive=True)
     g_log.info("Found {0} miniSEED files in data directory and sub-folders".format(len(raw_files)))
-
-    if dataless is None:
-        dataless_files = glob(os.path.join(data_dir, '**.*.dataless'), recursive=True)
-        if len(dataless_files) < 1:
-            g_log.warn("No metadata file found.")
-        elif len(dataless_files) > 1:
-            raise(IOError, "Multiple metadata files found. Please specify a file using the --metadata argument.")
-        else:
-            dataless = dataless_files[0]
-    xml_meta = nf.metadata.convert_dataless_to_stationxml(dataless, obs_log, output_dir, channel_map)
-    g_log.info("Converted metadata to StationXML format: {0}".format(xml_meta))
+    if output_dir is None:
+        # Make a backup copy of as-recorded raw data if no separate output directory is specified (files will be modified in-place)
+        raw_dir = os.path.join(data_dir, 'raw_recorded/')
+        os.makedirs(raw_dir)
+        for rf in raw_files:
+            shutil.copy2(rf, raw_dir)
+        output_dir = data_dir
 
     g_log.info("Reading data files...")
     ocean_data = obspy.Stream()
@@ -42,21 +37,15 @@ def process(data_dir, obs_log, network_id, output_dir=None, channel_map=None, da
     state_of_health = obspy.Stream()
     for rf in raw_files:
         g_log.info("Begin processing file {0}".format(rf))
+
         data = obspy.read(rf)
         print(data)
 
-        # Metadata and pre-processing
         for tr in data:
-            tr.meta.network = network_id
-            # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
-            if channel_map is not None:
-                ch_info = channel_map.loc[tr.id]
-                if ch_info['Network'] != network_id:
-                    raise(IOError, 'Corrected network ID {0} in channel map does not match input --network argument {1}'.format(ch_info['Network'], network_id))
-                for code in ['Station', 'Location', 'Channel']:
-                    if ch_info[code] is not None and ~np.isnan(ch_info[code]):
-                        tr.meta[code.lower()] = ch_info[code]
+            if tr.meta.network != network_id:
+                raise (IOError, 'Channel {0} is not in network {1}'.format(tr.id, network_id))
 
+            # Assign to relevant group of channels
             if re.match(r'CH[0-9A-F]', tr.meta.channel):
                 # seismic data
                 seismic_data.append(tr)
@@ -67,29 +56,33 @@ def process(data_dir, obs_log, network_id, output_dir=None, channel_map=None, da
                 # all other channels
                 state_of_health.append(tr)
 
-        # TODO: Add station locations to metadata
-        # TODO: Apply clock drift
-        # TODO: Sensor orientation
-        # TODO: Produce StationXML format metadata
+    # Combine traces with the same ID
+    for stm in [seismic_data, ocean_data, state_of_health]:
+        stm.merge()
 
-        # Basic QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
-        # TODO: Decide if the same operations are appropriate for the hydrophone data or not
-        # TODO: Calculate hourly PSDs
-        # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
-        # TODO: Linearity of PSD curves
+    # Basic QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
+    # TODO: Decide if the same operations are appropriate for the hydrophone data or not
+    # TODO: Calculate hourly PSDs
+    # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
+    # TODO: Linearity of PSD curves
 
-        # Analysis of auxiliary data
-        # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
-        # TODO: Plot battery draw-down and power consumption over full deployment
-        # TODO: Plot internal state-of-health variables: pressure, temperature, humidity
-        # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
+    # Analysis of auxiliary data
+    # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
+    for tr in state_of_health:
+        if re.match(r'[A-Z]M[1-3A-Z]', tr.meta.channel):
+            # mass position channel
+            continue
+
+    # TODO: Plot battery draw-down and power consumption over full deployment
+    # TODO: Plot internal state-of-health variables: pressure, temperature, humidity
+    # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
 
     g_log.info("end")
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Pre-process OBS data and perform basic QC')
-    parser.add_argument('--data_dir', dest="data_dir", help="Directory where raw OBS data is stored.")
+    parser = argparse.ArgumentParser(description='Perform basic QC for OBS data. Assumes metadata is accurate and clock drift correction has been applied.')
+    parser.add_argument('--data_dir', dest="data_dir", help="Directory where OBS data is stored.")
     parser.add_argument('--datalog', dest="datalog",
                         help="Log file from deployment/recovery. Must include station identifiers and clock drift "
                              "measurements. If not specified, assumed to be a file called 'log.xlsx' in the data "
@@ -103,8 +96,6 @@ if __name__ == '__main__':
                         help="Network identifier assigned by FDSN for this project. Default 'XX' for test data.")
     parser.add_argument('--outdir', dest="outdir", default=None,
                         help="Output directory, if different from data directory")
-    parser.add_argument('--channelmap', dest="channel_map",
-                        help="File mapping as-recorded channel codes to their correct values.")
     parser.add_argument('--metadata', dest="metadata_file", help="Path to metadata file (dataless SEED or StationXML)")
 
     try:
@@ -157,16 +148,12 @@ if __name__ == '__main__':
         if isinstance(row, pd.DataFrame):
             raise(IndexError, 'Multiple entries found for OBS {0} in provided metadata. Please use a unique identifier.'.format(obs_identifier))
 
-        channel_map = None
-        if args.channel_map:
-            channel_map = nf.io.read_channel_map(args.channel_map)
-
         metadata_file = None
         if args.metadata_file:
             metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.metadata_file)))
 
-        # Process data
-        process(data_dir, row, args.network_id, output_dir, channel_map, metadata_file)
+        # Process data files to apply clock drift correction and update metadata
+        process(data_dir, row, args.network_id, output_dir, metadata_file)
 
         g_log.info("Processing complete!")
         logger.close_logs()

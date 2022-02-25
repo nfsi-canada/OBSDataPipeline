@@ -18,5 +18,8 @@ def convert_dataless_to_stationxml(dataless_file, base_meta, output_dir, channel
     from obspy.io.xseed import Parser
     meta_in = Parser(dataless_file)
 
+    # TODO: Convert dataless SEED file to StationXML format
+    # TODO: Add station locations to metadata (from base_meta)
+
     xml_out = ''
     return xml_out

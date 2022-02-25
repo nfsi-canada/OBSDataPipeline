@@ -1,1 +1,1 @@
-from . import io, metadata
+from . import io, metadata, mseed

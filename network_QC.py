@@ -1,10 +1,10 @@
 """
 Check noise levels across an entire deployed network. Basic QC must have been applied to all individual OBS in the
-network prior to running this script (process_single_OBS.py).
+network prior to running this script (OBS_QC.py).
 """
 import argparse
 
-# TODO: Read in noise level output from process_single_OBS.py for all sensors
+# TODO: Read in noise level output from OBS_QC.py for all sensors
 # TODO: Calculate average power level for each channel-hour
 # TODO: DBSCAN clustering of channel-hour power levels
 # TODO: Label channel-hours as good or anomalous
