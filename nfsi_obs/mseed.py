@@ -87,13 +87,13 @@ class MiniSEED:
                         record['header']['microseconds'] = block['microseconds']
                         record['header']['frame_count'] = block['frame_count']
                     else:
-                        raise(Exception, "Unimplemented block type {0}".format(block['type']))
+                        raise Exception("Unimplemented block type {0}".format(block['type']))
 
                     record['header']['subblocks'].append(block)
 
                     # check that record length indicators are consistent
                     if pow(2, record['header']['record_length']) != (64 * (record['header']['frame_count'] + 1)):
-                        raise(ArithmeticError, "Data record length 2^{0} and frame count 64*{1} do not agree!".format(record['header']['record_length'], record['header']['frame_count']))
+                        raise ArithmeticError("Data record length 2^{0} and frame count 64*{1} do not agree!".format(record['header']['record_length'], record['header']['frame_count']))
             except Exception:
                 pass
 

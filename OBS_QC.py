@@ -38,8 +38,8 @@ def process(data_dir, obs_log, network_id, output_dir=None, dataless=None, chann
         ch_name = file_name.split('_')[1]
         labels.append({'channel': ch_name, 'path': rf})
     labeled_files = pd.DataFrame(labels)
+    g_log.info("Files contain data for {0} unique channels".format(len(np.unique(labeled_files['channel'].values))))
 
-    g_log.info("Reading data files...")
     for channel, files in labeled_files.groupby('channel'):
         channel_type = 'health'
         g_log.info("Begin processing channel {0}".format(channel))
@@ -60,36 +60,39 @@ def process(data_dir, obs_log, network_id, output_dir=None, dataless=None, chann
                     if ch_info[code] is not None and ~np.isnan(ch_info[code]):
                         tr.meta[code.lower()] = ch_info[code]
             if tr.meta.network != network_id:
-                raise (AssertionError, 'Channel {0} is not in network {1}'.format(tr.id, network_id))
+                raise AssertionError('Channel {0} is not in network {1}'.format(tr.id, network_id))
         data.merge()
         print(data)
 
         # Assign to relevant group of channels (there should only be one channel in the Stream object)
-        if re.match(r'[BCDEGHLMRUVW][HM][0-9A-F]', data[0].meta.channel):
+        if re.match(r'[BCDEGHLMRUVW][HM][1-3ABCENRTUVWZ]', data[0].meta.channel):
             # seismic data and mass position channels
             channel_type = 'seismic'
         elif data[0].meta.channel in ['LKO', 'MDO', 'MDU']:
             # oceanographic data (external P/T, include APG if present)
             # TODO: Would like this to be more general, but internal temperature is also labeled with "KO" source/subsource code by default
             channel_type = 'ocean'
+        elif data[0].meta.channel in ['LE3', 'ME4']:
+            # battery voltage and power consumption
+            channel_type = 'power'
 
+        # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
+        if channel_type == 'seismic':
+            if full:
+                # TODO: Decide if the same operations are appropriate for the hydrophone data or not
+                # TODO: Calculate hourly PSDs
+                # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
+                # TODO: Linearity of PSD curves
+                g_log.warn("Full QC of seismic noise not yet implemented")
+        else:
+            # Analysis of auxiliary data
+            full_data_plot = os.path.join(output_dir, '{0}_full.png'.format(data[0].id))
+            data.plot(outfile=full_data_plot)
+            # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
 
-    # Basic QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
-    # TODO: Decide if the same operations are appropriate for the hydrophone data or not
-    # TODO: Calculate hourly PSDs
-    # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
-    # TODO: Linearity of PSD curves
-
-    # Analysis of auxiliary data
-    # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
-    for tr in state_of_health:
-        if re.match(r'[A-Z]M[1-3A-Z]', tr.meta.channel):
-            # mass position channel
-            continue
-
-    # TODO: Plot battery draw-down and power consumption over full deployment
-    # TODO: Plot internal state-of-health variables: pressure, temperature, humidity
-    # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
+            # TODO: Plot battery draw-down and power consumption over full deployment
+            # TODO: Plot internal state-of-health variables: pressure, temperature, humidity
+            # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
 
     g_log.info("end")
 
@@ -108,7 +111,7 @@ if __name__ == '__main__':
                              "the column delimiter.")
     parser.add_argument('--obsid', dest="obs_id", default="AQU-0000",
                         help="OBS identifier: station name or serial number")
-    parser.add_argument('--network', "network_id", default='XX',
+    parser.add_argument('--network', dest="network_id", default='XX',
                         help="Network identifier assigned by FDSN for this project. Default 'XX' for test data.")
     parser.add_argument('--outdir', dest="outdir", default=None,
                         help="Output directory, if different from data directory")
@@ -164,9 +167,9 @@ if __name__ == '__main__':
                     break
 
         if row is None or row.empty:
-            raise(IndexError, 'OBS {0} not found in provided metadata.'.format(obs_identifier))
+            raise IndexError('OBS {0} not found in provided metadata.'.format(obs_identifier))
         if isinstance(row, pd.DataFrame):
-            raise(IndexError, 'Multiple entries found for OBS {0} in provided metadata. Please use a unique identifier.'.format(obs_identifier))
+            raise IndexError('Multiple entries found for OBS {0} in provided metadata. Please use a unique identifier.'.format(obs_identifier))
 
         channel_map = None
         if args.channel_map:

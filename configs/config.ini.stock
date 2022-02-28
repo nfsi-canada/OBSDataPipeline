@@ -1,6 +1,6 @@
 [common]
 # General settings
-log_dir=/home/kbosman/resource/OBSDataPipeline/logs
+log_dir=~/resource/OBSDataPipeline/logs
 
 
 [sensor_tracker]

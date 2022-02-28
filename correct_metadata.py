@@ -36,7 +36,7 @@ def fix_metadata(data_dir, obs_log, network_id, output_dir=None, channel_map=Non
         if len(dataless_files) < 1:
             g_log.warn("No metadata file found.")
         elif len(dataless_files) > 1:
-            raise(IOError, "Multiple metadata files found. Please specify a file using the --metadata argument.")
+            raise IOError("Multiple metadata files found. Please specify a file using the --metadata argument.")
         else:
             dataless = dataless_files[0]
     xml_meta = nf.metadata.convert_dataless_to_stationxml(dataless, obs_log, output_dir, channel_map)
@@ -63,7 +63,7 @@ def fix_metadata(data_dir, obs_log, network_id, output_dir=None, channel_map=Non
             if channel_map is not None:
                 ch_info = channel_map.loc[tr.id]
                 if ch_info['Network'] != network_id:
-                    raise(AssertionError, 'Corrected network ID {0} in channel map does not match input --network argument {1}'.format(ch_info['Network'], network_id))
+                    raise AssertionError('Corrected network ID {0} in channel map does not match input --network argument {1}'.format(ch_info['Network'], network_id))
                 for code in ['Station', 'Location', 'Channel']:
                     if ch_info[code] is not None and ~np.isnan(ch_info[code]):
                         tr.meta[code.lower()] = ch_info[code]
@@ -97,7 +97,7 @@ if __name__ == '__main__':
                              "the column delimiter.")
     parser.add_argument('--obsid', dest="obs_id", default="AQU-0000",
                         help="OBS identifier: station name or serial number")
-    parser.add_argument('--network', "network_id", default='XX',
+    parser.add_argument('--network', dest="network_id", default='XX',
                         help="Network identifier assigned by FDSN for this project. Default 'XX' for test data.")
     parser.add_argument('--outdir', dest="outdir", default=None,
                         help="Output directory, if different from data directory")
@@ -151,9 +151,9 @@ if __name__ == '__main__':
                     break
 
         if row is None or row.empty:
-            raise(IndexError, 'OBS {0} not found in provided metadata.'.format(obs_identifier))
+            raise IndexError('OBS {0} not found in provided metadata.'.format(obs_identifier))
         if isinstance(row, pd.DataFrame):
-            raise(IndexError, 'Multiple entries found for OBS {0} in provided metadata. Please use a unique identifier.'.format(obs_identifier))
+            raise IndexError('Multiple entries found for OBS {0} in provided metadata. Please use a unique identifier.'.format(obs_identifier))
 
         channel_map = None
         if args.channel_map:

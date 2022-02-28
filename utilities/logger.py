@@ -5,7 +5,9 @@ from datetime import datetime
 from . import config_handler
 
 config = config_handler.get_config()
-logs_dir = config.get('common', 'log_dir')
+logs_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(config.get('common', 'log_dir'))))
+if not os.path.exists(logs_dir):
+    os.makedirs(logs_dir)
 
 format_str = '%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s - %(message)s'
 formatter = logging.Formatter(format_str)

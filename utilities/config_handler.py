@@ -15,6 +15,7 @@ def get_config():
             # There's no config file or stock config file
             raise IOError('There is no configuration file or stock configuration file - unable to process data')
         else:
+            os.makedirs(os.path.dirname(config_path))
             # Copy the stock config file to the expected config file location
             shutil.copyfile(stock_config_path, config_path)
 
