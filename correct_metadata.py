@@ -63,7 +63,7 @@ def fix_metadata(data_dir, obs_log, network_id, output_dir=None, channel_map=Non
             if channel_map is not None:
                 ch_info = channel_map.loc[tr.id]
                 if ch_info['Network'] != network_id:
-                    raise(IOError, 'Corrected network ID {0} in channel map does not match input --network argument {1}'.format(ch_info['Network'], network_id))
+                    raise(AssertionError, 'Corrected network ID {0} in channel map does not match input --network argument {1}'.format(ch_info['Network'], network_id))
                 for code in ['Station', 'Location', 'Channel']:
                     if ch_info[code] is not None and ~np.isnan(ch_info[code]):
                         tr.meta[code.lower()] = ch_info[code]

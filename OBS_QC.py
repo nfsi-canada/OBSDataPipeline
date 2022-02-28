@@ -18,7 +18,7 @@ if not os.path.isdir(resource_dir):
     os.makedirs(resource_dir)
 
 
-def process(data_dir, obs_log, network_id, output_dir=None, dataless=None):
+def process(data_dir, obs_log, network_id, output_dir=None, dataless=None, channel_map=None, full=True):
     g_log.info("start")
 
     raw_files = glob(os.path.join(data_dir, '**/*.mseed'), recursive=True)
@@ -31,34 +31,48 @@ def process(data_dir, obs_log, network_id, output_dir=None, dataless=None):
             shutil.copy2(rf, raw_dir)
         output_dir = data_dir
 
-    g_log.info("Reading data files...")
-    ocean_data = obspy.Stream()
-    seismic_data = obspy.Stream()
-    state_of_health = obspy.Stream()
+    # label files by channel name
+    labels = []
     for rf in raw_files:
-        g_log.info("Begin processing file {0}".format(rf))
+        file_name = re.split(r'/|\\', rf)[-1]
+        ch_name = file_name.split('_')[1]
+        labels.append({'channel': ch_name, 'path': rf})
+    labeled_files = pd.DataFrame(labels)
 
-        data = obspy.read(rf)
+    g_log.info("Reading data files...")
+    for channel, files in labeled_files.groupby('channel'):
+        channel_type = 'health'
+        g_log.info("Begin processing channel {0}".format(channel))
+
+        data = obspy.Stream()
+        for rf in files['path'].values:
+            temp = obspy.read(rf)
+            for tr in temp:
+                data.append(tr)
+        data.merge()
         print(data)
 
         for tr in data:
+            # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
+            if channel_map is not None:
+                ch_info = channel_map.loc[tr.id]
+                for code in ['Network', 'Station', 'Location', 'Channel']:
+                    if ch_info[code] is not None and ~np.isnan(ch_info[code]):
+                        tr.meta[code.lower()] = ch_info[code]
             if tr.meta.network != network_id:
-                raise (IOError, 'Channel {0} is not in network {1}'.format(tr.id, network_id))
+                raise (AssertionError, 'Channel {0} is not in network {1}'.format(tr.id, network_id))
+        data.merge()
+        print(data)
 
-            # Assign to relevant group of channels
-            if re.match(r'CH[0-9A-F]', tr.meta.channel):
-                # seismic data
-                seismic_data.append(tr)
-            elif tr.meta.channel in ['LKO', 'MDO']:
-                # oceanographic data (external P/T)
-                ocean_data.append(tr)
-            else:
-                # all other channels
-                state_of_health.append(tr)
+        # Assign to relevant group of channels (there should only be one channel in the Stream object)
+        if re.match(r'[BCDEGHLMRUVW][HM][0-9A-F]', data[0].meta.channel):
+            # seismic data and mass position channels
+            channel_type = 'seismic'
+        elif data[0].meta.channel in ['LKO', 'MDO', 'MDU']:
+            # oceanographic data (external P/T, include APG if present)
+            # TODO: Would like this to be more general, but internal temperature is also labeled with "KO" source/subsource code by default
+            channel_type = 'ocean'
 
-    # Combine traces with the same ID
-    for stm in [seismic_data, ocean_data, state_of_health]:
-        stm.merge()
 
     # Basic QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
     # TODO: Decide if the same operations are appropriate for the hydrophone data or not
@@ -81,7 +95,9 @@ def process(data_dir, obs_log, network_id, output_dir=None, dataless=None):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Perform basic QC for OBS data. Assumes metadata is accurate and clock drift correction has been applied.')
+    parser = argparse.ArgumentParser(description='Perform basic QC for OBS data. Will correct channel identifiers if '
+                                                 'optional --channelmap argument is provided. Does not require clock '
+                                                 'drift correction to have been applied.')
     parser.add_argument('--data_dir', dest="data_dir", help="Directory where OBS data is stored.")
     parser.add_argument('--datalog', dest="datalog",
                         help="Log file from deployment/recovery. Must include station identifiers and clock drift "
@@ -96,7 +112,11 @@ if __name__ == '__main__':
                         help="Network identifier assigned by FDSN for this project. Default 'XX' for test data.")
     parser.add_argument('--outdir', dest="outdir", default=None,
                         help="Output directory, if different from data directory")
+    parser.add_argument('--channelmap', dest="channel_map",
+                        help="File mapping as-recorded channel codes to their correct values.")
     parser.add_argument('--metadata', dest="metadata_file", help="Path to metadata file (dataless SEED or StationXML)")
+    parser.add_argument('--function_check', dest="function_check", action="store_true",
+                        help="Perform basic QC to check Aquarius functionality only. False by default to perform full QC.")
 
     try:
         args = parser.parse_args()
@@ -148,12 +168,16 @@ if __name__ == '__main__':
         if isinstance(row, pd.DataFrame):
             raise(IndexError, 'Multiple entries found for OBS {0} in provided metadata. Please use a unique identifier.'.format(obs_identifier))
 
+        channel_map = None
+        if args.channel_map:
+            channel_map = nf.io.read_channel_map(args.channel_map)
+
         metadata_file = None
         if args.metadata_file:
             metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.metadata_file)))
 
         # Process data files to apply clock drift correction and update metadata
-        process(data_dir, row, args.network_id, output_dir, metadata_file)
+        process(data_dir, row, args.network_id, output_dir, metadata_file, channel_map, ~args.function_check)
 
         g_log.info("Processing complete!")
         logger.close_logs()
