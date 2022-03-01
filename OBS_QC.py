@@ -10,7 +10,7 @@ import traceback
 from datetime import datetime
 
 import nfsi_obs as nf
-from utilities import config_handler, logger
+from utilities import config_handler, logger, check_nan
 
 # Ensure resource directory exists
 resource_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'resource/OBSDataPipeline')
@@ -57,7 +57,7 @@ def process(data_dir, obs_log, network_id, output_dir=None, dataless=None, chann
             if channel_map is not None:
                 ch_info = channel_map.loc[tr.id]
                 for code in ['Network', 'Station', 'Location', 'Channel']:
-                    if ch_info[code] is not None and ~np.isnan(ch_info[code]):
+                    if ch_info[code] is not None and ~check_nan(ch_info[code]):
                         tr.meta[code.lower()] = ch_info[code]
             if tr.meta.network != network_id:
                 raise AssertionError('Channel {0} is not in network {1}'.format(tr.id, network_id))
