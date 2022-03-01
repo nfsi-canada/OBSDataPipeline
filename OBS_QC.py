@@ -26,9 +26,12 @@ def process(data_dir, obs_log, network_id, output_dir=None, dataless=None, chann
     if output_dir is None:
         # Make a backup copy of as-recorded raw data if no separate output directory is specified (files will be modified in-place)
         raw_dir = os.path.join(data_dir, 'raw_recorded/')
-        os.makedirs(raw_dir)
-        for rf in raw_files:
-            shutil.copy2(rf, raw_dir)
+        if not os.path.exists(raw_dir):
+            os.makedirs(raw_dir)
+            for rf in raw_files:
+                shutil.copy2(rf, raw_dir)
+        else:
+            raise RuntimeWarning("Directory of raw data already exists: {0}".format(raw_dir))
         output_dir = data_dir
 
     # label files by channel name
@@ -168,7 +171,7 @@ if __name__ == '__main__':
 
         if row is None or row.empty:
             raise IndexError('OBS {0} not found in provided metadata.'.format(obs_identifier))
-        if isinstance(row, pd.DataFrame):
+        if row.shape[0] > 1:
             raise IndexError('Multiple entries found for OBS {0} in provided metadata. Please use a unique identifier.'.format(obs_identifier))
 
         channel_map = None
