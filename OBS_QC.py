@@ -8,6 +8,7 @@ import re
 import shutil
 import traceback
 from datetime import datetime
+from obspy.io.stationxml.core import validate_stationxml
 
 import nfsi_obs as nf
 from utilities import config_handler, logger, check_nan
@@ -32,6 +33,22 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
             station_info = obspy.read_inventory(metadata)
         else:
             g_log.error("Unrecognized file format. Unable to read metadata.")
+    else:
+        # Search data_dir for suitable metadata file
+        seed_files = glob(os.path.join(data_dir, '**/*.dataless'), recursive=True)
+        xml_files = glob(os.path.join(data_dir, '**/*.xml'), recursive=True)
+        if len(seed_files) > 0:
+            if len(seed_files) > 1:
+                g_log.warning("Multiple dataless SEED volumes found in data directory, using {0}.".format(seed_files[0]))
+            # take first dataless SEED file
+            station_info = nf.metadata.read_dataless(seed_files[0])
+        elif len(xml_files) > 0:
+            for xf in xml_files:
+                is_sxml = validate_stationxml(xf)[0]
+                if is_sxml and (station_info is None):
+                    station_info = obspy.read_inventory(xf)
+        else:
+            g_log.warning("No metadata file provided, and none found in data directory.")
 
     raw_files = glob(os.path.join(data_dir, '**/*.mseed'), recursive=True)
     g_log.info("Found {0} miniSEED files in data directory and sub-folders".format(len(raw_files)))
@@ -74,6 +91,10 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
         # print(data)
 
         for tr in data:
+            # Get response info from metadata
+            if station_info is not None:
+                tr.attach_response(station_info)
+                tr.remove_response()
             # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
             if channel_map is not None:
                 ch_info = channel_map.loc[tr.id]
@@ -111,7 +132,7 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
             data.plot(outfile=full_data_plot)
             # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
 
-            print(data[0].stats)
+            # print(data[0].stats)
 
             # TODO: Plot battery draw-down and power consumption over full deployment
             # TODO: Plot internal state-of-health variables: pressure, temperature, humidity
@@ -140,9 +161,12 @@ if __name__ == '__main__':
                         help="Output directory, if different from data directory")
     parser.add_argument('--channelmap', dest="channel_map",
                         help="File mapping as-recorded channel codes to their correct values.")
-    parser.add_argument('--metadata', dest="metadata_file", help="Path to metadata file (dataless SEED or StationXML)")
+    parser.add_argument('--metadata', dest="metadata_file",
+                        help="Path to metadata file (dataless SEED or StationXML). If not specified, will search "
+                             "data_dir for a suitable file.")
     parser.add_argument('--function_check', dest="function_check", action="store_true",
-                        help="Perform basic QC to check Aquarius functionality only. False by default to perform full QC.")
+                        help="Perform basic QC to check Aquarius functionality only. False by default to perform full "
+                             "QC.")
 
     try:
         args = parser.parse_args()
