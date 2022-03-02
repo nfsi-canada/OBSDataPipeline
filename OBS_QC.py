@@ -18,25 +18,43 @@ if not os.path.isdir(resource_dir):
     os.makedirs(resource_dir)
 
 
-def process(data_dir, obs_log, network_id, output_dir=None, dataless=None, channel_map=None, full=True):
+def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, channel_map=None, full=True):
     g_log.info("start")
+
+    station_info = None
+    if metadata is not None:
+        g_log.info("Reading metadata from file {0}".format(metadata))
+        filetype = os.path.splitext(metadata)[-1]
+        if filetype == '.dataless':
+            station_info = nf.metadata.read_dataless(metadata)
+        elif filetype == '.xml':
+            # read as StationXML format
+            station_info = obspy.read_inventory(metadata)
+        else:
+            g_log.error("Unrecognized file format. Unable to read metadata.")
 
     raw_files = glob(os.path.join(data_dir, '**/*.mseed'), recursive=True)
     g_log.info("Found {0} miniSEED files in data directory and sub-folders".format(len(raw_files)))
+    backup_exists = False
     if output_dir is None:
         # Make a backup copy of as-recorded raw data if no separate output directory is specified (files will be modified in-place)
         raw_dir = os.path.join(data_dir, 'raw_recorded/')
         if not os.path.exists(raw_dir):
+            g_log.info("Copying raw data to backup directory {0}".format(raw_dir))
             os.makedirs(raw_dir)
             for rf in raw_files:
                 shutil.copy2(rf, raw_dir)
         else:
-            raise RuntimeWarning("Directory of raw data already exists: {0}".format(raw_dir))
+            backup_exists = True
+            g_log.info("Backup of raw data already exists: {0}".format(raw_dir))
         output_dir = data_dir
 
     # label files by channel name
     labels = []
     for rf in raw_files:
+        if backup_exists:
+            if re.match(r'.*raw_recorded.*', rf):
+                continue
         file_name = re.split(r'/|\\', rf)[-1]
         ch_name = file_name.split('_')[1]
         labels.append({'channel': ch_name, 'path': rf})
@@ -53,7 +71,7 @@ def process(data_dir, obs_log, network_id, output_dir=None, dataless=None, chann
             for tr in temp:
                 data.append(tr)
         data.merge()
-        print(data)
+        # print(data)
 
         for tr in data:
             # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
@@ -68,8 +86,8 @@ def process(data_dir, obs_log, network_id, output_dir=None, dataless=None, chann
         print(data)
 
         # Assign to relevant group of channels (there should only be one channel in the Stream object)
-        if re.match(r'[BCDEGHLMRUVW][HM][1-3ABCENRTUVWZ]', data[0].meta.channel):
-            # seismic data and mass position channels
+        if re.match(r'[BCDEGHLMRUVW][H][1-3ABCENRTUVWZ]', data[0].meta.channel):
+            # seismic data
             channel_type = 'seismic'
         elif data[0].meta.channel in ['LKO', 'MDO', 'MDU']:
             # oceanographic data (external P/T, include APG if present)
@@ -86,12 +104,14 @@ def process(data_dir, obs_log, network_id, output_dir=None, dataless=None, chann
                 # TODO: Calculate hourly PSDs
                 # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
                 # TODO: Linearity of PSD curves
-                g_log.warn("Full QC of seismic noise not yet implemented")
+                g_log.warning("Full QC of seismic noise not yet implemented")
         else:
             # Analysis of auxiliary data
             full_data_plot = os.path.join(output_dir, '{0}_full.png'.format(data[0].id))
             data.plot(outfile=full_data_plot)
             # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
+
+            print(data[0].stats)
 
             # TODO: Plot battery draw-down and power consumption over full deployment
             # TODO: Plot internal state-of-health variables: pressure, temperature, humidity

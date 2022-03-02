@@ -23,3 +23,16 @@ def convert_dataless_to_stationxml(dataless_file, base_meta, output_dir, channel
 
     xml_out = ''
     return xml_out
+
+
+def read_dataless(dataless_file):
+    """
+    Read a dataless SEED file and return an obspy.core.inventory.Inventory object
+
+    :param dataless_file: full path to dataless SEED file
+    :return:
+    """
+    from obspy.io.xseed import Parser
+    metadata = Parser(dataless_file)
+    meta_inv = metadata.get_inventory()
+    return meta_inv
