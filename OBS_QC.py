@@ -40,12 +40,15 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
         if len(seed_files) > 0:
             if len(seed_files) > 1:
                 g_log.warning("Multiple dataless SEED volumes found in data directory, using {0}.".format(seed_files[0]))
+            else:
+                g_log.info("Found dataless SEED volume in data directory: {0}".format(seed_files[0]))
             # take first dataless SEED file
             station_info = nf.metadata.read_dataless(seed_files[0])
         elif len(xml_files) > 0:
             for xf in xml_files:
                 is_sxml = validate_stationxml(xf)[0]
                 if is_sxml and (station_info is None):
+                    g_log.info("Found StationXML file in data directory: {0}".format(xf))
                     station_info = obspy.read_inventory(xf)
         else:
             g_log.warning("No metadata file provided, and none found in data directory.")
