@@ -7,6 +7,7 @@ import pandas as pd
 import re
 import shutil
 import traceback
+import warnings
 from datetime import datetime
 from obspy.io.stationxml.core import validate_stationxml
 
@@ -96,8 +97,10 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
         for tr in data:
             # Get response info from metadata
             if station_info is not None:
-                tr.attach_response(station_info)
-                tr.remove_response()
+                try:
+                    tr.attach_response(station_info)
+                except ValueError:
+                    warnings.warn("No matching response information found")
             # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
             if channel_map is not None:
                 ch_info = channel_map.loc[tr.id]
@@ -110,8 +113,8 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
         print(data)
 
         # Assign to relevant group of channels (there should only be one channel in the Stream object)
-        if re.match(r'[BCDEGHLMRUVW][H][1-3ABCENRTUVWZ]', data[0].meta.channel):
-            # seismic data
+        if (re.match(r'[A-Z][H][1-3ABCENRTUVWZ]', data[0].meta.channel)) or (re.match(r'[A-Z]D[HF]', data[0].meta.channel)):
+            # seismic data and hydrophone
             channel_type = 'seismic'
         elif data[0].meta.channel in ['LKO', 'MDO', 'MDU']:
             # oceanographic data (external P/T, include APG if present)
@@ -131,8 +134,9 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                 g_log.warning("Full QC of seismic noise not yet implemented")
         else:
             # Analysis of auxiliary data
-            full_data_plot = os.path.join(output_dir, '{0}_full.png'.format(data[0].id))
-            data.plot(outfile=full_data_plot)
+            raw_data_plot = os.path.join(output_dir, '{0}_raw.png'.format(data[0].id))
+            data.plot(outfile=raw_data_plot)
+
             # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
 
             # print(data[0].stats)
