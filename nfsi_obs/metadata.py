@@ -1,4 +1,4 @@
-import obspy
+import os
 import pandas as pd
 
 
@@ -16,12 +16,15 @@ def convert_dataless_to_stationxml(dataless_file, base_meta, output_dir, channel
     :return: Path to output StationXMl file
     """
     from obspy.io.xseed import Parser
-    meta_in = Parser(dataless_file)
+    from obspy.io.xseed.core import _parse_to_inventory_object
 
-    # TODO: Convert dataless SEED file to StationXML format
+    metadata = Parser(dataless_file)
+    meta_inv = _parse_to_inventory_object(metadata)
+
     # TODO: Add station locations to metadata (from base_meta)
+    # TODO: Write Inventory object to StationXML format (file `xml_out`)
 
-    xml_out = ''
+    xml_out = os.path.join(output_dir, 'whatever.xml')
     return xml_out
 
 
@@ -33,6 +36,10 @@ def read_dataless(dataless_file):
     :return:
     """
     from obspy.io.xseed import Parser
+    from obspy.io.xseed.core import _parse_to_inventory_object
+
     metadata = Parser(dataless_file)
-    meta_inv = metadata.get_inventory()
+    # Get network/station/channel info as an Inventory object
+    meta_inv = _parse_to_inventory_object(metadata)
+
     return meta_inv
