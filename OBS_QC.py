@@ -135,7 +135,7 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                 g_log.warning("Full QC of seismic noise not yet implemented")
         else:
             # Analysis of auxiliary data
-            raw_data_plot = os.path.join(output_dir, '{0}_raw.png'.format(data[0].id))
+            raw_data_plot = os.path.join(output_dir, 'raw_{0}.png'.format(data[0].id))
             data.plot(outfile=raw_data_plot)
 
             # Apply instrument sensitivity
@@ -146,17 +146,31 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                     sens_applied = True
             if sens_applied:
                 # TODO: Replace with custom plotting routine
-                full_data_plot = os.path.join(output_dir, '{0}_full.png'.format(data[0].id))
+                full_data_plot = os.path.join(output_dir, 'full_{0}.png'.format(data[0].id))
                 fig = data.plot(show=False, handle=True)
                 for i in range(len(data.traces)):
                     if hasattr(data.traces[i].meta, 'description'):
                         ax = fig.axes[i]
                         ax.set_ylabel("{0} ({1})".format(data.traces[i].meta.description, data.traces[i].meta.response.instrument_sensitivity.input_units))
+                plt.grid(True, ls=':')
                 fig.savefig(full_data_plot)
                 plt.close(fig)
 
             # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
 
+            # Summary statistics
+            for tr in data:
+                if hasattr(tr.meta, 'response'):
+                    units = tr.meta.response.instrument_sensitivity.input_units
+                else:
+                    units = ''
+                print("{0} | {1} - {2} | Average {3:.3f} {4}".format(
+                    tr.id,
+                    tr.meta.starttime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                    tr.meta.endtime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                    np.mean(tr.data),
+                    units
+                ))
             # print(data[0].stats)
 
             # TODO: Plot battery draw-down and power consumption over full deployment
