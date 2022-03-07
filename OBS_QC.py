@@ -137,6 +137,16 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
             raw_data_plot = os.path.join(output_dir, '{0}_raw.png'.format(data[0].id))
             data.plot(outfile=raw_data_plot)
 
+            # Apply instrument sensitivity
+            sens_applied = False
+            for tr in data:
+                if hasattr(tr, 'response'):
+                    tr.remove_sensitivity()
+                    sens_applied = True
+            if sens_applied:
+                full_data_plot = os.path.join(output_dir, '{0}_full.png'.format(data[0].id))
+                data.plot(outfile=full_data_plot)
+
             # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
 
             # print(data[0].stats)
