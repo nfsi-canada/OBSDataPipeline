@@ -1,5 +1,6 @@
 import argparse
 from glob import glob
+import matplotlib.pyplot as plt
 import numpy as np
 import obspy
 import os
@@ -104,7 +105,7 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
             # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
             if channel_map is not None:
                 ch_info = channel_map.loc[tr.id]
-                for code in ['Network', 'Station', 'Location', 'Channel']:
+                for code in ['Network', 'Station', 'Location', 'Channel', 'Description']:
                     if ch_info[code] is not None and ~check_nan(ch_info[code]):
                         tr.meta[code.lower()] = ch_info[code]
             if tr.meta.network != network_id:
@@ -140,12 +141,19 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
             # Apply instrument sensitivity
             sens_applied = False
             for tr in data:
-                if hasattr(tr, 'response'):
+                if hasattr(tr.meta, 'response'):
                     tr.remove_sensitivity()
                     sens_applied = True
             if sens_applied:
+                # TODO: Replace with custom plotting routine
                 full_data_plot = os.path.join(output_dir, '{0}_full.png'.format(data[0].id))
-                data.plot(outfile=full_data_plot)
+                fig = data.plot(show=False, handle=True)
+                for i in range(len(data.traces)):
+                    if hasattr(data.traces[i].meta, 'description'):
+                        ax = fig.axes[i]
+                        ax.set_ylabel("{0} ({1})".format(data.traces[i].meta.description, data.traces[i].meta.response.instrument_sensitivity.input_units))
+                fig.savefig(full_data_plot)
+                plt.close(fig)
 
             # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
 
