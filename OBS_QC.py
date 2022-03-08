@@ -6,6 +6,7 @@ import obspy
 import os
 import pandas as pd
 import re
+from scipy import signal
 import shutil
 import traceback
 import warnings
@@ -160,12 +161,36 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                 demean_data_plot = os.path.join(output_dir, 'demean_seismic_{0}.png'.format(network_id))
                 seismic.plot(outfile=demean_data_plot)
 
-            # TODO: Plot spectrograms of data
             for tr in seismic:
+                # Plot spectrogram of full time period
+                # TODO: Have window length chosen automatically based on length of time period
+                # TODO: Deal with RuntimeWarning for divide by zero (due to dbscale?)
                 spectrogram_plot = os.path.join(output_dir, 'spec_seismic_{0}.png'.format(tr.id))
                 tr.spectrogram(per_lap=0.75, wlen=60, dbscale=True, log=True, outfile=spectrogram_plot)
 
-            # TODO: Plot PSD of a section of data
+                # Plot PSDs of data
+                # TODO: Have window length chosen automatically based on length of time period
+                psd_v_plot = os.path.join(output_dir, 'psd_seismic_vel_{0}.png'.format(tr.id))
+                psd_a_plot = os.path.join(output_dir, 'psd_seismic_acc_{0}.png'.format(tr.id))
+                freqs, psds = [], []
+                psd_v_fig, vax = plt.subplots(1, 1)
+                for sect in tr.slide(3600, 900):
+                    seg_len = pow(2, 15)
+                    psd, frq = plt.psd(sect.data, NFFT=seg_len, Fs=tr.meta.sampling_rate, window=signal.get_window(('tukey', 0.1), seg_len, False), detrend='linear', color='0.7', linewidth=0.5)
+                    freqs.append(frq)
+                    psds.append(psd)
+                vax.set_xscale('log')
+                psd_v_fig.savefig(psd_v_plot)
+
+                # Convert PSDs to acceleration and plot
+                psd_a_fig, aax = plt.subplots(1, 1)
+                for f, p in zip(freqs, psds):
+                    # TODO: Figure out what the factor on this should be to match amplitudes from Discovery... not quite there
+                    apsd = p * (2 * np.pi * f) * (2 * np.pi * f) / 2
+                    aax.plot(f, 10 * np.log10(apsd), c='0.8', lw=0.5, marker=None)
+                aax.set_xscale('log')
+                plt.grid(True, ls=':')
+                psd_a_fig.savefig(psd_a_plot)
 
             if full:
                 # TODO: Decide if the same operations are appropriate for the hydrophone data or not
