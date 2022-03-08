@@ -21,7 +21,7 @@ if not os.path.isdir(resource_dir):
     os.makedirs(resource_dir)
 
 
-def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, channel_map=None, full=True):
+def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, channel_map=None, full=True, detrend=False):
     g_log.info("start")
 
     station_info = None
@@ -115,10 +115,10 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
 
         # Cut data to time on seafloor (if start/end times provided)
         start, end = None, None
-        if ~pd.isnull(obs_log['Date/Time on Seafloor (UTC)']):
-            start = obs_log['Date/Time on Seafloor (UTC)']
-        if ~pd.isnull(obs_log['Date/Time Released (UTC)']):
-            end = obs_log['Date/Time Released (UTC)']
+        if ~pd.isnull(obs_log['Date/Time on Seafloor (UTC)'].values[0]):
+            start = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time on Seafloor (UTC)'].values[0]))
+        if ~pd.isnull(obs_log['Date/Time Released (UTC)'].values[0]):
+            end = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time Released (UTC)'].values[0]))
 
         data = data.slice(start, end, nearest_sample=False)
 
@@ -154,14 +154,16 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
             full_data_plot = os.path.join(output_dir, 'full_seismic_{0}.png'.format(network_id))
             seismic.plot(outfile=full_data_plot)
 
-            # detrend
-            seismic.detrend('linear')
-            demean_data_plot = os.path.join(output_dir, 'demean_seismic_{0}.png'.format(network_id))
-            seismic.plot(outfile=demean_data_plot)
+            if detrend:
+                # detrend seismic data (RMS linear fit)
+                seismic.detrend('linear')
+                demean_data_plot = os.path.join(output_dir, 'demean_seismic_{0}.png'.format(network_id))
+                seismic.plot(outfile=demean_data_plot)
 
-            # TODO: Plot spectrogram of data
-            spectrogram_plot = os.path.join(output_dir, 'spec_seismic_{0}.png'.format(network_id))
-            seismic.spectrogram(per_lap=0.5, wlen=60, outfile=spectrogram_plot)
+            # TODO: Plot spectrograms of data
+            for tr in seismic:
+                spectrogram_plot = os.path.join(output_dir, 'spec_seismic_{0}.png'.format(tr.id))
+                tr.spectrogram(per_lap=0.75, wlen=60, dbscale=True, log=True, outfile=spectrogram_plot)
 
             # TODO: Plot PSD of a section of data
 
@@ -328,6 +330,8 @@ if __name__ == '__main__':
     parser.add_argument('--function_check', dest="function_check", action="store_true",
                         help="Perform basic QC to check Aquarius functionality only. False by default to perform full "
                              "QC.")
+    parser.add_argument('--detrend_seismic', dest="detrend_seis", action="store_true",
+                        help="Detrend seismic data (RMS linear fit). False by default.")
 
     try:
         args = parser.parse_args()
@@ -388,7 +392,7 @@ if __name__ == '__main__':
             metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.metadata_file)))
 
         # Process data files to apply clock drift correction and update metadata
-        process(data_dir, row, args.network_id, output_dir, metadata_file, channel_map, ~args.function_check)
+        process(data_dir, row, args.network_id, output_dir, metadata_file, channel_map, ~args.function_check, args.detrend_seis)
 
         g_log.info("Processing complete!")
         logger.close_logs()
