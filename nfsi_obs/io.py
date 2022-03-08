@@ -14,9 +14,10 @@ def parse_obs_log(log_file, delimiter=','):
     :rtype: dict
     """
     # If there are changes to the template, these column names will need to be updated. Consider putting in config.ini?
-    location_cols = ['Station', 'OBS Name', 'OBS ID', 'Launch Date/Time (UTC)', 'Survey Start Date/Time (UTC)',
-                     'Surfaced Date/Time (UTC)', 'Recovery Date/Time (UTC)', 'Planned Latitude', 'Planned Longitude',
-                     'Planned Depth (m)', 'Launch Latitude', 'Launch Longitude', 'Water Depth at Launch (m)',
+    location_cols = ['Station', 'OBS Name', 'OBS ID', 'Launch Date/Time (UTC)', 'Date/Time on Seafloor (UTC)',
+                     'Survey Start Date/Time (UTC)', 'Date/Time Released (UTC)', 'Surfaced Date/Time (UTC)',
+                     'Recovery Date/Time (UTC)', 'Planned Latitude', 'Planned Longitude', 'Planned Depth (m)',
+                     'Launch Latitude', 'Launch Longitude', 'Water Depth at Launch (m)',
                      'Distance Launch from Planned (km)', 'Surveyed Latitude', 'Surveyed Longitude',
                      'Survey Horizontal Error (m)', 'Horizontal Drift during Fall (m)', 'Bearing Surveyed from Launch',
                      'Surfacing Latitude', 'Surfacing Longitude', 'Horizontal Drift during Rise (m)',
@@ -29,10 +30,11 @@ def parse_obs_log(log_file, delimiter=','):
                    'Apollo S/N', 'XMB S/N', 'Radio beacon frequency (MHz)', 'Comments']
     recover_cols = ['Station', 'Surveyed Latitude', 'Surveyed Longitude', 'Water Depth (m)', 'OBS Name', 'OBS ID',
                     'Acoustic Modem Address', 'Acoustic Modem UID', 'Date/Time Acoustic Contact Established (UTC)',
-                    'Surfacing Date/Time (UTC)', 'On Deck Date/Time (UTC)', 'Date/Time Recording Stopped (UTC)',
-                    'Surfacing Latitude', 'Surfacing Longitude', 'Horizontal Drift during Rise (m)',
-                    'Recovery Latitude', 'Recovery Longitude', 'Drift on Surface (m)', 'Clock Offset at Seabed (ms)',
-                    'Clock Offset on Deck (ms)', 'Battery SOC (%)', 'Backup hard drive IDs', 'Comments']
+                    'Date/Time Released from Anchor (UTC)', 'Surfacing Date/Time (UTC)', 'On Deck Date/Time (UTC)',
+                    'Date/Time Recording Stopped (UTC)', 'Surfacing Latitude', 'Surfacing Longitude',
+                    'Horizontal Drift during Rise (m)', 'Recovery Latitude', 'Recovery Longitude',
+                    'Drift on Surface (m)', 'Clock Offset at Seabed (ms)', 'Clock Offset on Deck (ms)',
+                    'Battery SOC (%)', 'Backup hard drive IDs', 'Comments']
 
     log_info = {}
     dm_info = None
@@ -50,7 +52,7 @@ def parse_obs_log(log_file, delimiter=','):
         for df in [locations, deployment, recovery]:
             df.set_index('Station', drop=False, inplace=True)
 
-        dm_info = locations[['Station', 'OBS Name', 'OBS ID', 'Launch Date/Time (UTC)', 'Recovery Date/Time (UTC)']].copy()
+        dm_info = locations[['Station', 'OBS Name', 'OBS ID', 'Launch Date/Time (UTC)', 'Date/Time on Seafloor (UTC)', 'Date/Time Released (UTC)', 'Recovery Date/Time (UTC)']].copy()
         dm_info.join(recovery[['Surveyed Latitude', 'Surveyed Longitude', 'Water Depth (m)', 'Clock Offset on Deck (ms)']].copy())
 
         log_info['locations'] = locations

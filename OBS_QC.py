@@ -28,7 +28,7 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
     if metadata is not None:
         g_log.info("Reading metadata from file {0}".format(metadata))
         filetype = os.path.splitext(metadata)[-1]
-        if filetype == '.dataless':
+        if filetype in ['.dataless', '.metadata']:
             station_info = nf.metadata.read_dataless(metadata)
         elif filetype == '.xml':
             # read as StationXML format
@@ -38,6 +38,7 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
     else:
         # Search data_dir for suitable metadata file
         seed_files = glob(os.path.join(data_dir, '**/*.dataless'), recursive=True)
+        seed_files.extend(glob(os.path.join(data_dir, '**/*.metadata'), recursive=True))
         xml_files = glob(os.path.join(data_dir, '**/*.xml'), recursive=True)
         if len(seed_files) > 0:
             if len(seed_files) > 1:
@@ -56,11 +57,11 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
             g_log.warning("No metadata file provided, and none found in data directory.")
 
     raw_files = glob(os.path.join(data_dir, '**/*.mseed'), recursive=True)
-    g_log.info("Found {0} miniSEED files in data directory and sub-folders".format(len(raw_files)))
+    g_log.info("Found {0} miniSEED file(s) in data directory and sub-folders".format(len(raw_files)))
     backup_exists = False
     if output_dir is None:
         # Make a backup copy of as-recorded raw data if no separate output directory is specified (files will be modified in-place)
-        raw_dir = os.path.join(data_dir, 'raw_recorded/')
+        raw_dir = os.path.join(data_dir, 'raw_recorded')
         if not os.path.exists(raw_dir):
             g_log.info("Copying raw data to backup directory {0}".format(raw_dir))
             os.makedirs(raw_dir)
@@ -81,11 +82,10 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
         ch_name = file_name.split('_')[1]
         labels.append({'channel': ch_name, 'path': rf})
     labeled_files = pd.DataFrame(labels)
-    g_log.info("Files contain data for {0} unique channels".format(len(np.unique(labeled_files['channel'].values))))
+    g_log.info("Files contain data for {0} unique set of channels".format(len(np.unique(labeled_files['channel'].values))))
 
-    for channel, files in labeled_files.groupby('channel'):
-        channel_type = 'health'
-        g_log.info("Begin processing channel {0}".format(channel))
+    for label, files in labeled_files.groupby('channel'):
+        g_log.info("Begin processing channel set {0}".format(label))
 
         data = obspy.Stream()
         for rf in files['path'].values:
@@ -113,69 +113,191 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
         data.merge()
         print(data)
 
-        # Assign to relevant group of channels (there should only be one channel in the Stream object)
-        if (re.match(r'[A-Z][H][1-3ABCENRTUVWZ]', data[0].meta.channel)) or (re.match(r'[A-Z]D[HF]', data[0].meta.channel)):
-            # seismic data and hydrophone
-            channel_type = 'seismic'
-        elif data[0].meta.channel in ['LKO', 'MDO', 'MDU']:
-            # oceanographic data (external P/T, include APG if present)
-            # TODO: Would like this to be more general, but internal temperature is also labeled with "KO" source/subsource code by default
-            channel_type = 'ocean'
-        elif data[0].meta.channel in ['LE3', 'ME4']:
-            # battery voltage and power consumption
-            channel_type = 'power'
+        # Cut data to time on seafloor (if start/end times provided)
+        start, end = None, None
+        if ~pd.isnull(obs_log['Date/Time on Seafloor (UTC)']):
+            start = obs_log['Date/Time on Seafloor (UTC)']
+        if ~pd.isnull(obs_log['Date/Time Released (UTC)']):
+            end = obs_log['Date/Time Released (UTC)']
 
-        # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
-        if channel_type == 'seismic':
+        data = data.slice(start, end, nearest_sample=False)
+
+        if len(data.traces) > 1:
+            # Multiple channels in one miniSEED file
+            seismic = obspy.Stream()
+            ocean = obspy.Stream()
+            power = obspy.Stream()
+            health = obspy.Stream()
+            for tr in data:
+                # Assign to relevant group of channels (there should only be one channel in the Stream object)
+                if (re.match(r'[A-Z][H][1-3ABCENRTUVWZ]', tr.meta.channel)): #or (re.match(r'[A-Z]D[HF]', data[0].meta.channel)):
+                    # seismic data and maybe hydrophone (commented out for now)
+                    seismic.append(tr)
+                elif tr.meta.channel in ['LKO', 'MDO', 'MDU']:
+                    # oceanographic data (external P/T, include APG if present)
+                    # TODO: Would like this to be more general, but internal temperature is also labeled with "KO" source/subsource code by default
+                    ocean.append(tr)
+                elif tr.meta.channel in ['LE3', 'ME4']:
+                    # battery voltage and power consumption
+                    power.append(tr)
+                else:
+                    health.append(tr)
+
+            # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
+            raw_data_plot = os.path.join(output_dir, 'raw_seismic_{0}.png'.format(network_id))
+            seismic.plot(outfile=raw_data_plot)
+
+            for tr in seismic:
+                if hasattr(tr.meta, 'response'):
+                    tr.remove_sensitivity()
+
+            full_data_plot = os.path.join(output_dir, 'full_seismic_{0}.png'.format(network_id))
+            seismic.plot(outfile=full_data_plot)
+
+            # detrend
+            seismic.detrend('linear')
+            demean_data_plot = os.path.join(output_dir, 'demean_seismic_{0}.png'.format(network_id))
+            seismic.plot(outfile=demean_data_plot)
+
+            # TODO: Plot spectrogram of data
+            spectrogram_plot = os.path.join(output_dir, 'spec_seismic_{0}.png'.format(network_id))
+            seismic.spectrogram(per_lap=0.5, wlen=60, outfile=spectrogram_plot)
+
+            # TODO: Plot PSD of a section of data
+
             if full:
                 # TODO: Decide if the same operations are appropriate for the hydrophone data or not
                 # TODO: Calculate hourly PSDs
                 # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
                 # TODO: Linearity of PSD curves
                 g_log.warning("Full QC of seismic noise not yet implemented")
+
+            for data, description in zip([ocean, power, health], ['ocean', 'power', 'health']):
+                # Analysis of auxiliary data
+                raw_data_plot = os.path.join(output_dir, 'raw_{0}_{1}.png'.format(description, network_id))
+                data.plot(outfile=raw_data_plot)
+
+                # Apply instrument sensitivity
+                sens_applied = False
+                for tr in data:
+                    if hasattr(tr.meta, 'response'):
+                        tr.remove_sensitivity()
+                        sens_applied = True
+                if sens_applied:
+                    # TODO: Replace with custom plotting routine
+                    full_data_plot = os.path.join(output_dir, 'full_{0}_{1}.png'.format(description, network_id))
+                    fig = data.plot(show=False, handle=True)
+                    for i in range(len(data.traces)):
+                        if hasattr(data.traces[i].meta, 'description'):
+                            ax = fig.axes[i]
+                            ax.set_ylabel("{0} ({1})".format(data.traces[i].meta.description, data.traces[i].meta.response.instrument_sensitivity.input_units))
+                    plt.grid(True, ls=':')
+                    fig.savefig(full_data_plot)
+                    plt.close(fig)
+
+                # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
+
+                # Summary statistics
+                for tr in data:
+                    if hasattr(tr.meta, 'response'):
+                        units = tr.meta.response.instrument_sensitivity.input_units
+                    else:
+                        units = ''
+                    print("{0} | {1} - {2} | Average {3:.3f} {4}".format(
+                        tr.id,
+                        tr.meta.starttime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                        tr.meta.endtime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                        np.mean(tr.data),
+                        units
+                    ))
+                # print(data[0].stats)
+
+                # TODO: Analysis of state-of-health variables?
+                # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
         else:
-            # Analysis of auxiliary data
-            raw_data_plot = os.path.join(output_dir, 'raw_{0}.png'.format(data[0].id))
-            data.plot(outfile=raw_data_plot)
+            # Single channel per miniSEED file
+            channel_type = 'health'
+            # Assign to relevant group of channels (there should only be one channel in the Stream object)
+            if (re.match(r'[A-Z][H][1-3ABCENRTUVWZ]', data[0].meta.channel)): #or (re.match(r'[A-Z]D[HF]', data[0].meta.channel)):
+                # seismic data and maybe hydrophone (commented out for now)
+                channel_type = 'seismic'
+            elif data[0].meta.channel in ['LKO', 'MDO', 'MDU']:
+                # oceanographic data (external P/T, include APG if present)
+                # TODO: Would like this to be more general, but internal temperature is also labeled with "KO" source/subsource code by default
+                channel_type = 'ocean'
+            elif data[0].meta.channel in ['LE3', 'ME4']:
+                # battery voltage and power consumption
+                channel_type = 'power'
 
-            # Apply instrument sensitivity
-            sens_applied = False
-            for tr in data:
-                if hasattr(tr.meta, 'response'):
-                    tr.remove_sensitivity()
-                    sens_applied = True
-            if sens_applied:
-                # TODO: Replace with custom plotting routine
-                full_data_plot = os.path.join(output_dir, 'full_{0}.png'.format(data[0].id))
-                fig = data.plot(show=False, handle=True)
-                for i in range(len(data.traces)):
-                    if hasattr(data.traces[i].meta, 'description'):
-                        ax = fig.axes[i]
-                        ax.set_ylabel("{0} ({1})".format(data.traces[i].meta.description, data.traces[i].meta.response.instrument_sensitivity.input_units))
-                plt.grid(True, ls=':')
-                fig.savefig(full_data_plot)
-                plt.close(fig)
+            # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
+            if channel_type == 'seismic':
+                for tr in data:
+                    if hasattr(tr.meta, 'response'):
+                        tr.remove_sensitivity()
 
-            # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
+                full_data_plot = os.path.join(output_dir, 'full_seismic_{0}.png'.format(data[0].id))
+                data.plot(outfile=full_data_plot)
 
-            # Summary statistics
-            for tr in data:
-                if hasattr(tr.meta, 'response'):
-                    units = tr.meta.response.instrument_sensitivity.input_units
-                else:
-                    units = ''
-                print("{0} | {1} - {2} | Average {3:.3f} {4}".format(
-                    tr.id,
-                    tr.meta.starttime.strftime('%Y-%m-%d %H:%M:%S.%f'),
-                    tr.meta.endtime.strftime('%Y-%m-%d %H:%M:%S.%f'),
-                    np.mean(tr.data),
-                    units
-                ))
-            # print(data[0].stats)
+                # detrend
+                data.detrend('linear')
+                demean_data_plot = os.path.join(output_dir, 'demean_{0}.png'.format(data[0].id))
+                data.plot(outfile=demean_data_plot)
 
-            # TODO: Plot battery draw-down and power consumption over full deployment
-            # TODO: Plot internal state-of-health variables: pressure, temperature, humidity
-            # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
+                # TODO: Plot spectrogram of data
+                spectrogram_plot = os.path.join(output_dir, 'spec_{0}.png'.format(data[0].id))
+                data.spectrogram(per_lap=0.5, wlen=60, outfile=spectrogram_plot)
+
+                # TODO: Plot PSD of a section of data
+
+                if full:
+                    # TODO: Decide if the same operations are appropriate for the hydrophone data or not
+                    # TODO: Calculate hourly PSDs
+                    # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
+                    # TODO: Linearity of PSD curves
+                    g_log.warning("Full QC of seismic noise not yet implemented")
+
+            else:
+                # Analysis of auxiliary data
+                raw_data_plot = os.path.join(output_dir, 'raw_{0}.png'.format(data[0].id))
+                data.plot(outfile=raw_data_plot)
+
+                # Apply instrument sensitivity
+                sens_applied = False
+                for tr in data:
+                    if hasattr(tr.meta, 'response'):
+                        tr.remove_sensitivity()
+                        sens_applied = True
+                if sens_applied:
+                    # TODO: Replace with custom plotting routine
+                    full_data_plot = os.path.join(output_dir, 'full_{0}.png'.format(data[0].id))
+                    fig = data.plot(show=False, handle=True)
+                    for i in range(len(data.traces)):
+                        if hasattr(data.traces[i].meta, 'description'):
+                            ax = fig.axes[i]
+                            ax.set_ylabel("{0} ({1})".format(data.traces[i].meta.description, data.traces[i].meta.response.instrument_sensitivity.input_units))
+                    plt.grid(True, ls=':')
+                    fig.savefig(full_data_plot)
+                    plt.close(fig)
+
+                # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
+
+                # Summary statistics
+                for tr in data:
+                    if hasattr(tr.meta, 'response'):
+                        units = tr.meta.response.instrument_sensitivity.input_units
+                    else:
+                        units = ''
+                    print("{0} | {1} - {2} | Average {3:.3f} {4}".format(
+                        tr.id,
+                        tr.meta.starttime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                        tr.meta.endtime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                        np.mean(tr.data),
+                        units
+                    ))
+                # print(data[0].stats)
+
+                # TODO: Analysis of state-of-health variables?
+                # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
 
     g_log.info("end")
 
