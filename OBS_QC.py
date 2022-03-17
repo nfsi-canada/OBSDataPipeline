@@ -175,8 +175,8 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                 freqs, psds = [], []
                 psd_v_fig, vax = plt.subplots(1, 1)
                 for sect in tr.slide(3600, 900):
-                    seg_len = pow(2, 15)
-                    psd, frq = plt.psd(sect.data, NFFT=seg_len, Fs=tr.meta.sampling_rate, window=signal.get_window(('tukey', 0.1), seg_len, False), detrend='linear', color='0.7', linewidth=0.5)
+                    seg_len = pow(2, 17)
+                    psd, frq = plt.psd(sect.data, NFFT=seg_len, Fs=tr.meta.sampling_rate, window=signal.get_window('hamming', seg_len, False), detrend='linear', color='0.7', linewidth=0.5)
                     freqs.append(frq)
                     psds.append(psd)
                 vax.set_xscale('log')
@@ -186,7 +186,7 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                 psd_a_fig, aax = plt.subplots(1, 1)
                 for f, p in zip(freqs, psds):
                     # TODO: Figure out what the factor on this should be to match amplitudes from Discovery... not quite there
-                    apsd = p * (2 * np.pi * f) * (2 * np.pi * f) / 2
+                    apsd = p * (2 * np.pi * f) * (2 * np.pi * f)
                     aax.plot(f, 10 * np.log10(apsd), c='0.8', lw=0.5, marker=None)
                 aax.set_xscale('log')
                 plt.grid(True, ls=':')
@@ -200,6 +200,8 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                 g_log.warning("Full QC of seismic noise not yet implemented")
 
             for data, description in zip([ocean, power, health], ['ocean', 'power', 'health']):
+                # TODO: Make vertical scales for each channel appropriate
+
                 # Analysis of auxiliary data
                 raw_data_plot = os.path.join(output_dir, 'raw_{0}_{1}.png'.format(description, network_id))
                 data.plot(outfile=raw_data_plot)
