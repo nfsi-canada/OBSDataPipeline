@@ -29,10 +29,14 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
     """
     g_log.info("start")
 
-    # TODO: Build report parameter dictionary during QC process
+    # Initialize report parameters dictionary with input keywords
     report_params = {}
     report_params.update(kwargs)
+    # Add empty lists for channel-specific information
+    for key in ['seismic_channels', 'ocean_channels', 'power_channels', 'other_channels']:
+        report_params[key] = []
 
+    # Read station metadata file
     station_info = None
     if metadata is not None:
         g_log.info("Reading metadata from file {0}".format(metadata))
@@ -65,6 +69,8 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
         else:
             g_log.warning("No metadata file provided, and none found in data directory.")
 
+    # Find data files and backup if necessary
+    # TODO: Remove file backup here once it has been copied to pre-processing script (QC doesn't change miniSEED files)
     raw_files = glob(os.path.join(data_dir, '**/*.mseed'), recursive=True)
     g_log.info("Found {0} miniSEED file(s) in data directory and sub-folders".format(len(raw_files)))
     backup_exists = False
@@ -93,6 +99,7 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
     labeled_files = pd.DataFrame(labels)
     g_log.info("Files contain data for {0} unique set of channels".format(len(np.unique(labeled_files['channel'].values))))
 
+    # Loop through data files
     for label, files in labeled_files.groupby('channel'):
         g_log.info("Begin processing channel set {0}".format(label))
 
@@ -131,6 +138,7 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
 
         data = data.slice(start, end, nearest_sample=False)
 
+        # Perform QC
         if len(data.traces) > 1:
             # Multiple channels in one miniSEED file
             seismic = obspy.Stream()
@@ -170,11 +178,26 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                 seismic.plot(outfile=demean_data_plot)
 
             for tr in seismic:
+                trace_info = {
+                    'seedID': tr.id,
+                    'channelName': '',
+                    'azimuth': 0,
+                    'dip': 0,
+                    'windowLength': 3600,
+                    'overlapPercent': 75
+                }
+
+                # Plot each trace individually for QC report
+                trace_plot = os.path.join(output_dir, 'full_seismic_{0}.png'.format(tr.id))
+                tr.plot(outfile=trace_plot)
+                trace_info['traceLoc'] = trace_plot
+
                 # Plot spectrogram of full time period
                 # TODO: Have window length chosen automatically based on length of time period
                 # TODO: Deal with RuntimeWarning for divide by zero (due to dbscale?)
                 spectrogram_plot = os.path.join(output_dir, 'spec_seismic_{0}.png'.format(tr.id))
                 tr.spectrogram(per_lap=0.75, wlen=60, dbscale=True, log=True, outfile=spectrogram_plot)
+                trace_info['specLoc'] = spectrogram_plot
 
                 # Plot PSDs of data
                 # TODO: Have window length chosen automatically based on length of time period
@@ -193,15 +216,17 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                 # Convert PSDs to acceleration and plot
                 psd_a_fig, aax = plt.subplots(1, 1)
                 for f, p in zip(freqs, psds):
-                    # TODO: Figure out what the factor on this should be to match amplitudes from Discovery... not quite there
                     apsd = p * (2 * np.pi * f) * (2 * np.pi * f)
                     aax.plot(f, 10 * np.log10(apsd), c='0.8', lw=0.5, marker=None)
                 aax.set_xscale('log')
                 plt.grid(True, ls=':')
                 psd_a_fig.savefig(psd_a_plot)
+                trace_info['psdLoc'] = psd_a_plot
+
+                report_params['seismic_channels'].append(trace_info)
 
             if full:
-                # TODO: Decide if the same operations are appropriate for the hydrophone data or not
+                # TODO: Decide if these operations are appropriate for the hydrophone data or not
                 # TODO: Calculate hourly PSDs
                 # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
                 # TODO: Linearity of PSD curves
