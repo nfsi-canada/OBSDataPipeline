@@ -11,7 +11,7 @@ from scipy import signal
 import shutil
 import traceback
 import warnings
-from datetime import datetime
+from datetime import datetime, timedelta
 from obspy.io.stationxml.core import validate_stationxml
 
 import nfsi_obs as nf
@@ -443,6 +443,13 @@ if __name__ == '__main__':
         report_kwargs['stationName'] = row['Station'].values[0]
         report_kwargs['obsName'] = row['OBS Name'].values[0]
         report_kwargs['obsId'] = row['OBS ID'].values[0]
+        report_kwargs['latitude'] = row['Surveyed Latitude'].values[0]
+        report_kwargs['longitude'] = row['Surveyed Longitude'].values[0]
+        report_kwargs['waterDepth'] = row['Water Depth (m)'].values[0]
+        report_kwargs['deployed'] = pd.to_datetime(row['Launch Date/Time (UTC)'].values[0])
+        report_kwargs['recovered'] = pd.to_datetime(row['Recovery Date/Time (UTC)'].values[0])
+        report_kwargs['deploymentDays'] = (report_kwargs['recovered'] - report_kwargs['deployed']) / timedelta(days=1)
+        report_kwargs['clockDrift'] = row['Clock Offset on Deck (ms)'].values[0]
 
         # Process data files to apply clock drift correction and update metadata
         process(data_dir, row, args.network_id, output_dir, metadata_file, channel_map, ~args.function_check, args.detrend_seis, **report_kwargs)

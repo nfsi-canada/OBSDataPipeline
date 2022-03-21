@@ -1,6 +1,8 @@
-# OBS Data Quality Report - {{ stationName }}
+# OBS Data Quality Report - {{ obsName }}
 
 ## Summary
+
+OBS name/serial: {{ obsName }} / {{ obsId }}
 
 Project: {{ projectName }}
 
@@ -8,9 +10,7 @@ Station name: {{ stationName }}
 
 Location (lat/lon): {{ latString }}, {{ lonString }}
 
-OBS name: {{ obsName }}
-
-OBS serial: {{ obsId }}
+Water depth (m): {{ waterDepth }}
 
 Deployment date: {{ deployDate }}
 
@@ -38,7 +38,7 @@ Remaining battery SOC: {{ batteryLevel }}%
 ### {{ ch.channelName }}
 SEED ID: {{ ch.seedID }}
 
-Orientation: {{ azimuth }} / {{ dip }}
+Orientation: {{ ch.azimuth }} / {{ ch.dip }}
 
 #### Full trace
 ![trace]({{ ch.traceLoc }})
@@ -49,7 +49,7 @@ Orientation: {{ azimuth }} / {{ dip }}
 #### Power Spectral Density[^psd]
 ![PSD]({{ ch.psdLoc }})
 
-[^psd]: Power spectral density curves are calculating using {{ windowLength }} windows, with {{ overlapPercent }}% overlap.
+[^psd]: Power spectral density curves are calculating using {{ ch.windowLength }} windows, with {{ ch.overlapPercent }}% overlap.
 
 {% endfor %}
 
