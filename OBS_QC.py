@@ -409,23 +409,28 @@ if __name__ == '__main__':
             data_log_file = os.path.join(data_dir, 'log.xlsx')
 
         obs_log_info = nf.io.parse_obs_log(data_log_file, args.log_delim)
-        base_meta = obs_log_info['basic']
-        # Find this OBS in the basic metadata table
-        row = None
+        # Find this OBS in the basic, deployment, and recovery metadata tables
+        base_meta, dep, rec = None, None, None
         if id_type == 'serial':
-            row = base_meta.loc[base_meta['OBS ID'] == obs_identifier]
+            base_meta = obs_log_info['basic'].loc[obs_log_info['basic']['OBS ID'] == obs_identifier]
+            dep = obs_log_info['deployment'].loc[obs_log_info['deployment']['OBS ID'] == obs_identifier]
+            rec = obs_log_info['recovery'].loc[obs_log_info['recovery']['OBS ID'] == obs_identifier]
         elif id_type == 'obs_name':
-            row = base_meta.loc[base_meta['OBS Name'] == obs_identifier]
+            base_meta = obs_log_info['basic'].loc[obs_log_info['basic']['OBS Name'] == obs_identifier]
+            dep = obs_log_info['deployment'].loc[obs_log_info['deployment']['OBS Name'] == obs_identifier]
+            rec = obs_log_info['recovery'].loc[obs_log_info['recovery']['OBS Name'] == obs_identifier]
         else:
             id_columns = ['Station', 'OBS Name', 'OBS ID']
             for col in id_columns:
-                if obs_identifier in base_meta[col].values:
-                    row = base_meta.loc[base_meta[col] == obs_identifier]
+                if obs_identifier in obs_log_info['basic'][col].values:
+                    base_meta = obs_log_info['basic'].loc[obs_log_info['basic'][col] == obs_identifier]
+                    dep = obs_log_info['deployment'].loc[obs_log_info['deployment'][col] == obs_identifier]
+                    rec = obs_log_info['recovery'].loc[obs_log_info['recovery'][col] == obs_identifier]
                     break
 
-        if row is None or row.empty:
+        if base_meta is None or base_meta.empty:
             raise IndexError('OBS {0} not found in provided metadata.'.format(obs_identifier))
-        if row.shape[0] > 1:
+        if base_meta.shape[0] > 1:
             raise IndexError('Multiple entries found for OBS {0} in provided metadata. Please use a unique identifier.'.format(obs_identifier))
 
         channel_map = None
@@ -440,19 +445,24 @@ if __name__ == '__main__':
         report_kwargs = {}
         if args.project_name:
             report_kwargs['projectName'] = args.project_name
-        report_kwargs['stationName'] = row['Station'].values[0]
-        report_kwargs['obsName'] = row['OBS Name'].values[0]
-        report_kwargs['obsId'] = row['OBS ID'].values[0]
-        report_kwargs['latitude'] = row['Surveyed Latitude'].values[0]
-        report_kwargs['longitude'] = row['Surveyed Longitude'].values[0]
-        report_kwargs['waterDepth'] = row['Water Depth (m)'].values[0]
-        report_kwargs['deployed'] = pd.to_datetime(row['Launch Date/Time (UTC)'].values[0])
-        report_kwargs['recovered'] = pd.to_datetime(row['Recovery Date/Time (UTC)'].values[0])
+        else:
+            report_kwargs['projectName'] = 'Test Recording'
+        report_kwargs['stationName'] = base_meta['Station'].values[0]
+        report_kwargs['obsName'] = base_meta['OBS Name'].values[0]
+        report_kwargs['obsId'] = base_meta['OBS ID'].values[0]
+        report_kwargs['latitude'] = base_meta['Surveyed Latitude'].values[0]
+        report_kwargs['longitude'] = base_meta['Surveyed Longitude'].values[0]
+        report_kwargs['waterDepth'] = base_meta['Water Depth (m)'].values[0]
+        report_kwargs['deployed'] = pd.to_datetime(base_meta['Launch Date/Time (UTC)'].values[0])
+        report_kwargs['deployComments'] = dep['Comments'].values[0]
+        report_kwargs['recovered'] = pd.to_datetime(base_meta['Recovery Date/Time (UTC)'].values[0])
+        report_kwargs['recoverComments'] = rec['Comments'].values[0]
         report_kwargs['deploymentDays'] = (report_kwargs['recovered'] - report_kwargs['deployed']) / timedelta(days=1)
-        report_kwargs['clockDrift'] = row['Clock Offset on Deck (ms)'].values[0]
+        report_kwargs['clockDrift'] = base_meta['Clock Offset on Deck (ms)'].values[0]
+        report_kwargs['introText'] = ''
 
         # Process data files to apply clock drift correction and update metadata
-        process(data_dir, row, args.network_id, output_dir, metadata_file, channel_map, ~args.function_check, args.detrend_seis, **report_kwargs)
+        process(data_dir, base_meta, args.network_id, output_dir, metadata_file, channel_map, ~args.function_check, args.detrend_seis, **report_kwargs)
 
         g_log.info("Processing complete!")
         logger.close_logs()
