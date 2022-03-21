@@ -10,3 +10,5 @@ dependencies:
   - pandas
   - openpyxl
   - bitstring
+  - pypandoc
+  - jinja2

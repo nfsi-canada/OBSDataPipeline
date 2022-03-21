@@ -5,6 +5,7 @@ import numpy as np
 import obspy
 import os
 import pandas as pd
+import pypandoc
 import re
 from scipy import signal
 import shutil
@@ -14,7 +15,7 @@ from datetime import datetime
 from obspy.io.stationxml.core import validate_stationxml
 
 import nfsi_obs as nf
-from utilities import config_handler, logger, check_nan
+from utilities import config_handler, logger, check_nan, ReportGenerator
 
 # Ensure resource directory exists
 resource_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'resource/OBSDataPipeline')
@@ -22,8 +23,15 @@ if not os.path.isdir(resource_dir):
     os.makedirs(resource_dir)
 
 
-def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, channel_map=None, full=True, detrend=False):
+def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, channel_map=None, full=True, detrend=False, **kwargs):
+    """
+    Extra keyword arguments are included as report parameters (must match variables in template file).
+    """
     g_log.info("start")
+
+    # TODO: Build report parameter dictionary during QC process
+    report_params = {}
+    report_params.update(kwargs)
 
     station_info = None
     if metadata is not None:
@@ -328,6 +336,14 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                 # TODO: Analysis of state-of-health variables?
                 # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
 
+    # Save report to *.md and *.pdf formats
+    report_md = os.path.join(output_dir, 'QC_report_{0}_auto.md'.format(obs_log['OBS ID'].values[0]))
+    qcReport = ReportGenerator(type='qc')
+    md_out, report_buffer = qcReport.write_report(report_params, report_md)
+
+    report_pdf = os.path.join(output_dir, 'QC_report_{0}_auto.pdf'.format(obs_log['OBS ID'].values[0]))
+    report_converted = pypandoc.convert_text(report_buffer, to='pdf', format='md', outputfile=report_pdf)
+
     g_log.info("end")
 
 
@@ -359,6 +375,8 @@ if __name__ == '__main__':
                              "QC.")
     parser.add_argument('--detrend_seismic', dest="detrend_seis", action="store_true",
                         help="Detrend seismic data (RMS linear fit). False by default.")
+    # TODO: When using ST, project name will come from there instead
+    parser.add_argument('--projectname', dest="project_name", help="Project name to be displayed in reports")
 
     try:
         args = parser.parse_args()
@@ -418,8 +436,16 @@ if __name__ == '__main__':
         if args.metadata_file:
             metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.metadata_file)))
 
+        # Gather some basic information for report
+        report_kwargs = {}
+        if args.project_name:
+            report_kwargs['projectName'] = args.project_name
+        report_kwargs['stationName'] = row['Station'].values[0]
+        report_kwargs['obsName'] = row['OBS Name'].values[0]
+        report_kwargs['obsId'] = row['OBS ID'].values[0]
+
         # Process data files to apply clock drift correction and update metadata
-        process(data_dir, row, args.network_id, output_dir, metadata_file, channel_map, ~args.function_check, args.detrend_seis)
+        process(data_dir, row, args.network_id, output_dir, metadata_file, channel_map, ~args.function_check, args.detrend_seis, **report_kwargs)
 
         g_log.info("Processing complete!")
         logger.close_logs()
