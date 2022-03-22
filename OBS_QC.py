@@ -183,7 +183,7 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                     'channelName': tr.meta.description,
                     'azimuth': 0,
                     'dip': 0,
-                    'windowLength': 3600,
+                    'windowSecs': 3600,
                     'overlapPercent': 75
                 }
 

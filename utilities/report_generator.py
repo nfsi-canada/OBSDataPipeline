@@ -46,16 +46,16 @@ class ReportGenerator:
         :param input_variables: dictionary of variables to fill in template
         :param output_path: full path to output file
         """
-        if 'latString' not in input_variables:
-            if 'latitude' in input_variables:
+        if not hasattr(input_variables, 'latString'):
+            if hasattr(input_variables, 'latitude'):
                 if input_variables['latitude'] < 0:
                     input_variables['latString'] = '{0:.6f} S'.format(-input_variables['latitude'])
                 else:
                     input_variables['latString'] = '{0:.6f} N'.format(input_variables['latitude'])
             else:
                 input_variables['latString'] = 'none'
-        if 'lonString' not in input_variables:
-            if 'longitude' in input_variables:
+        if not hasattr(input_variables, 'lonString'):
+            if hasattr(input_variables, 'longitude'):
                 if input_variables['longitude'] < 0:
                     input_variables['lonString'] = '{0:.6f} W'.format(-input_variables['longitude'])
                 else:
@@ -63,12 +63,23 @@ class ReportGenerator:
             else:
                 input_variables['lonString'] = 'none'
 
-        if 'deployDate' not in input_variables:
+        if not hasattr(input_variables, 'deployDate'):
             if 'deployed' in input_variables:
                 input_variables['deployDate'] = input_variables['deployed'].strftime('%Y-%m-%d')
-        if 'recoverDate' not in input_variables:
+        if not hasattr(input_variables, 'recoverDate'):
             if 'recovered' in input_variables:
                 input_variables['recoverDate'] = input_variables['recovered'].strftime('%Y-%m-%d')
+
+        if not hasattr(input_variables, 'windowLength'):
+            if hasattr(input_variables, 'windowSecs'):
+                if input_variables['windowSecs'] < 3*60:     # 3 minutes
+                    input_variables['windowLength'] = '{0} second'.format(input_variables['windowSecs'])
+                elif input_variables['windowSecs'] < 3*60*60:    # 3 hours
+                    input_variables['windowLength'] = '{0} minute'.format(input_variables['windowSecs'] / 60)
+                elif input_variables['windowSecs'] < 3*60*60*24:    # 3 days
+                    input_variables['windowLength'] = '{0} hour'.format(input_variables['windowSecs'] / 60 / 60)
+                else:
+                    input_variables['windowLength'] = '{0} day'.format(input_variables['windowSecs'] / 60 / 60 / 24)
 
         report_str = (self.env.render(
             **input_variables
