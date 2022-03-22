@@ -286,6 +286,11 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                     report_params[description+'_channels'].append(trace_info)
                 # print(data[0].stats)
 
+                if description == 'power':
+                    for tr in data:
+                        if tr.meta.channel == 'LE3':
+                            report_params['meanPower'] = np.mean(tr.data)
+
                 # TODO: Analysis of state-of-health variables?
                 # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
         else:
@@ -496,6 +501,7 @@ if __name__ == '__main__':
         report_kwargs['recoverComments'] = rec['Comments'].values[0]
         report_kwargs['deploymentDays'] = (report_kwargs['recovered'] - report_kwargs['deployed']) / timedelta(days=1)
         report_kwargs['clockDrift'] = base_meta['Clock Offset on Deck (ms)'].values[0]
+        report_kwargs['batteryLevel'] = rec['Battery SOC (%)'].values[0]
         report_kwargs['introText'] = ''
 
         # Process data files to apply clock drift correction and update metadata
