@@ -70,6 +70,18 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
         else:
             g_log.warning("No metadata file provided, and none found in data directory.")
 
+    project_meta = None
+    if channel_map is None:
+        g_log.info("No channel map provided. Checking data directory for project_info.json...")
+        # Search data_dir for project JSON (should have channel descriptions)
+        # TODO: Replace with ST integration once we have an instance running
+        project_json = os.path.join(data_dir, 'project_info.json')
+        if os.path.isfile(project_json):
+            pj = open(project_json)
+            project_meta = json.load(pj)
+        else:
+            g_log.info("No project metadata JSON found at {0}".format(project_json))
+
     # Find data files and backup if necessary
     # TODO: Remove file backup here once it has been copied to pre-processing script (QC doesn't change miniSEED files)
     raw_files = glob(os.path.join(data_dir, '**/*.mseed'), recursive=True)
@@ -127,26 +139,18 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                         tr.stats[key] = orient[key]
 
             # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
-            if channel_map is None:
-                g_log.info("No channel map provided. Checking data directory for project_info.json...")
-                # Search data_dir for project JSON (should have channel descriptions)
-                # TODO: Replace with ST integration once we have an instance running
-                project_json = os.path.join(data_dir, 'project_info.json')
-                if os.path.isfile(project_json):
-                    pj = open(project_json)
-                    project_info = json.load(pj)
-                    try:
-                        channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_info['channels']))[0]
-                        tr.meta.description = channel_info['description']
-                    except (KeyError, IndexError):
-                        g_log.warn("No matching description found in project metadata for channel {0}".format(tr.id))
-                else:
-                    g_log.info("No project metadata JSON found at {0}".format(project_json))
-            else:
+            if channel_map is not None:
                 ch_info = channel_map.loc[tr.id]
                 for code in ['Network', 'Station', 'Location', 'Channel', 'Description']:
                     if ch_info[code] is not None and ~check_nan(ch_info[code]):
                         tr.meta[code.lower()] = ch_info[code]
+            else:
+                if project_meta is not None:
+                    try:
+                        channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_meta['channels']))[0]
+                        tr.meta.description = channel_info['description']
+                    except (KeyError, IndexError):
+                        g_log.warn("No matching description found in project metadata for channel {0}".format(tr.id))
             if tr.meta.network != network_id:
                 raise AssertionError('Channel {0} is not in network {1}'.format(tr.id, network_id))
         data.merge()
@@ -170,7 +174,7 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
             health = obspy.Stream()
             for tr in data:
                 # Assign to relevant group of channels (there should only be one channel in the Stream object)
-                if (re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', tr.meta.channel)) or (re.match(r'[A-Z]D[HF]', data[0].meta.channel)):
+                if (re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', tr.meta.channel)) or (re.match(r'[A-Z]D[HF]', tr.meta.channel)):
                     # seismic data and hydrophone
                     seismic.append(tr)
                 elif tr.meta.channel in ['LKO', 'MDO', 'MDU']:
