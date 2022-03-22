@@ -1,5 +1,6 @@
 import argparse
 from glob import glob
+import json
 import matplotlib.pyplot as plt
 import numpy as np
 import obspy
@@ -120,13 +121,27 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                     warnings.warn("No matching response information found")
 
                 # Get orientations of seismic channels
-                if (re.match(r'[A-Z][H][1-3ABCENRTUVWZ]', tr.meta.channel)):
+                if re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', tr.meta.channel):
                     orient = station_info.get_orientation(tr.id)
                     for key in ['azimuth', 'dip']:
                         tr.stats[key] = orient[key]
 
             # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
-            if channel_map is not None:
+            if channel_map is None:
+                g_log.info("No channel map provided. Checking data directory for project_info.json...")
+                # Search data_dir for project JSON (should have channel descriptions)
+                # TODO: Replace with ST integration once we have an instance running
+                project_json = os.path.join(data_dir, 'project_info.json')
+                if os.path.isfile(project_json):
+                    project_info = json.load(project_json)
+                    try:
+                        channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_info['channels']))[0]
+                        tr.meta.description = channel_info['description']
+                    except (KeyError, IndexError):
+                        g_log.warn("No matching description found in project metadata for channel {0}".format(tr.id))
+                else:
+                    g_log.info("No project metadata JSON found at {0}".format(project_json))
+            else:
                 ch_info = channel_map.loc[tr.id]
                 for code in ['Network', 'Station', 'Location', 'Channel', 'Description']:
                     if ch_info[code] is not None and ~check_nan(ch_info[code]):
@@ -187,12 +202,14 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
             for tr in seismic:
                 trace_info = {
                     'seedID': tr.id,
-                    'channelName': tr.meta.description,
+                    'channelName': tr.id,
                     'azimuth': tr.meta.azimuth,
                     'dip': tr.meta.dip,
                     'windowSecs': 3600,
                     'overlapPercent': 75
                 }
+                if hasattr(tr.meta, 'description'):
+                    trace_info['channelName'] = tr.meta.description
 
                 # Plot each trace individually for QC report
                 trace_plot = os.path.join(output_dir, 'full_seismic_{0}.png'.format(tr.id))
@@ -269,8 +286,10 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                 for tr in data:
                     trace_info = {
                         'seedID': tr.id,
-                        'channelName': tr.meta.description,
+                        'channelName': tr.id,
                     }
+                    if hasattr(tr.meta, 'description'):
+                        trace_info['channelName'] = tr.meta.description
 
                     # Plot each trace individually for QC report
                     trace_plot = os.path.join(output_dir, 'full_{0}_{1}.png'.format(description, tr.id))
@@ -289,7 +308,7 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                         units
                     ))
 
-                    report_params[description+'_channels'].append(trace_info)
+                    report_params[description + '_channels'].append(trace_info)
                 # print(data[0].stats)
 
                 if description == 'power':
@@ -316,8 +335,10 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
 
             trace_info = {
                 'seedID': data[0].id,
-                'channelName': data[0].meta.description,
+                'channelName': data[0].id,
             }
+            if hasattr(data[0].meta, 'description'):
+                trace_info['channelName'] = data[0].meta.description
 
             # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
             if channel_type == 'seismic':
