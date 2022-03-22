@@ -133,7 +133,8 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                 # TODO: Replace with ST integration once we have an instance running
                 project_json = os.path.join(data_dir, 'project_info.json')
                 if os.path.isfile(project_json):
-                    project_info = json.load(project_json)
+                    pj = open(project_json)
+                    project_info = json.load(pj)
                     try:
                         channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_info['channels']))[0]
                         tr.meta.description = channel_info['description']
@@ -203,13 +204,12 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                 trace_info = {
                     'seedID': tr.id,
                     'channelName': tr.id,
-                    'azimuth': tr.meta.azimuth,
-                    'dip': tr.meta.dip,
                     'windowSecs': 3600,
                     'overlapPercent': 75
                 }
-                if hasattr(tr.meta, 'description'):
-                    trace_info['channelName'] = tr.meta.description
+                for metaKey, reportKey in zip(['description', 'azimuth', 'dip'], ['channelName', 'azimuth', 'dip']):
+                    if hasattr(tr.meta, metaKey):
+                        trace_info[reportKey] = tr.meta[metaKey]
 
                 # Plot each trace individually for QC report
                 trace_plot = os.path.join(output_dir, 'full_seismic_{0}.png'.format(tr.id))

@@ -38,7 +38,9 @@ Remaining battery SOC: {{ batteryLevel }}%
 ### {{ ch.channelName }}
 SEED ID: {{ ch.seedID }}
 
+{% if ch.azimuth %}
 Orientation: {{ ch.azimuth }} / {{ ch.dip }}
+{% endif %}
 
 #### Full trace
 ![trace]({{ ch.traceLoc }})
