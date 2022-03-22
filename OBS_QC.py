@@ -118,6 +118,13 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                     tr.attach_response(station_info)
                 except ValueError:
                     warnings.warn("No matching response information found")
+
+                # Get orientations of seismic channels
+                if (re.match(r'[A-Z][H][1-3ABCENRTUVWZ]', tr.meta.channel)):
+                    orient = station_info.get_orientation(tr.id)
+                    for key in ['azimuth', 'dip']:
+                        tr.stats[key] = orient[key]
+
             # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
             if channel_map is not None:
                 ch_info = channel_map.loc[tr.id]
@@ -147,8 +154,8 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
             health = obspy.Stream()
             for tr in data:
                 # Assign to relevant group of channels (there should only be one channel in the Stream object)
-                if (re.match(r'[A-Z][H][1-3ABCENRTUVWZ]', tr.meta.channel)): #or (re.match(r'[A-Z]D[HF]', data[0].meta.channel)):
-                    # seismic data and maybe hydrophone (commented out for now)
+                if (re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', tr.meta.channel)) or (re.match(r'[A-Z]D[HF]', data[0].meta.channel)):
+                    # seismic data and hydrophone
                     seismic.append(tr)
                 elif tr.meta.channel in ['LKO', 'MDO', 'MDU']:
                     # oceanographic data (external P/T, include APG if present)
@@ -178,12 +185,11 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                 seismic.plot(outfile=demean_data_plot)
 
             for tr in seismic:
-                # TODO: Find channel orientation info somewhere
                 trace_info = {
                     'seedID': tr.id,
                     'channelName': tr.meta.description,
-                    'azimuth': None,
-                    'dip': None,
+                    'azimuth': tr.meta.azimuth,
+                    'dip': tr.meta.dip,
                     'windowSecs': 3600,
                     'overlapPercent': 75
                 }
@@ -235,7 +241,6 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
 
             for data, description in zip([ocean, power, health], ['ocean', 'power', 'health']):
                 # TODO: Make vertical scales for each channel appropriate
-
                 # Analysis of auxiliary data
                 raw_data_plot = os.path.join(output_dir, 'raw_{0}_{1}.png'.format(description, network_id))
                 data.plot(outfile=raw_data_plot)
@@ -298,8 +303,8 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
             # Single channel per miniSEED file
             channel_type = 'health'
             # Assign to relevant group of channels (there should only be one channel in the Stream object)
-            if (re.match(r'[A-Z][H][1-3ABCENRTUVWZ]', data[0].meta.channel)): #or (re.match(r'[A-Z]D[HF]', data[0].meta.channel)):
-                # seismic data and maybe hydrophone (commented out for now)
+            if (re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', data[0].meta.channel)) or (re.match(r'[A-Z]D[HF]', data[0].meta.channel)):
+                # seismic data and hydrophone
                 channel_type = 'seismic'
             elif data[0].meta.channel in ['LKO', 'MDO', 'MDU']:
                 # oceanographic data (external P/T, include APG if present)
@@ -316,11 +321,12 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
 
             # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
             if channel_type == 'seismic':
-                # TODO: Find channel orientation info somewhere
-                trace_info['azimuth'] = None
-                trace_info['dip'] = None
-                trace_info['windowSecs'] = 3600
-                trace_info['overlapPercent'] = 75
+                trace_info.update({
+                    'azimuth': data[0].meta.azimuth,
+                    'dip': data[0].meta.dip,
+                    'windowSecs': 3600,
+                    'overlapPercent': 75,
+                })
 
                 for tr in data:
                     if hasattr(tr.meta, 'response'):
