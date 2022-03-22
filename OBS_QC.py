@@ -33,7 +33,7 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
     report_params = {}
     report_params.update(kwargs)
     # Add empty lists for channel-specific information
-    for key in ['seismic_channels', 'ocean_channels', 'power_channels', 'other_channels']:
+    for key in ['seismic_channels', 'ocean_channels', 'power_channels', 'health_channels']:
         report_params[key] = []
 
     # Read station metadata file
@@ -180,7 +180,7 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
             for tr in seismic:
                 trace_info = {
                     'seedID': tr.id,
-                    'channelName': '',
+                    'channelName': tr.meta.description,
                     'azimuth': 0,
                     'dip': 0,
                     'windowLength': 3600,
@@ -261,6 +261,16 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
 
                 # Summary statistics
                 for tr in data:
+                    trace_info = {
+                        'seedID': tr.id,
+                        'channelName': tr.meta.description,
+                    }
+
+                    # Plot each trace individually for QC report
+                    trace_plot = os.path.join(output_dir, 'full_{0}_{1}.png'.format(description, tr.id))
+                    tr.plot(outfile=trace_plot)
+                    trace_info['traceLoc'] = trace_plot
+
                     if hasattr(tr.meta, 'response'):
                         units = tr.meta.response.instrument_sensitivity.input_units
                     else:
@@ -272,6 +282,8 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                         np.mean(tr.data),
                         units
                     ))
+
+                    report_params[description+'_channels'].append(trace_info)
                 # print(data[0].stats)
 
                 # TODO: Analysis of state-of-health variables?

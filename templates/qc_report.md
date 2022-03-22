@@ -67,7 +67,7 @@ Orientation: {{ ch.azimuth }} / {{ ch.dip }}
 
 ## Instrument State-of-Health
 
-{% for ch in other_channels %}
+{% for ch in health_channels %}
 ![trace]({{ ch.traceLoc }})
 {% endfor %}
 
