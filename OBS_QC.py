@@ -178,11 +178,12 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                 seismic.plot(outfile=demean_data_plot)
 
             for tr in seismic:
+                # TODO: Find channel orientation info somewhere
                 trace_info = {
                     'seedID': tr.id,
                     'channelName': tr.meta.description,
-                    'azimuth': 0,
-                    'dip': 0,
+                    'azimuth': None,
+                    'dip': None,
                     'windowSecs': 3600,
                     'overlapPercent': 75
                 }
@@ -308,25 +309,59 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                 # battery voltage and power consumption
                 channel_type = 'power'
 
+            trace_info = {
+                'seedID': data[0].id,
+                'channelName': data[0].meta.description,
+            }
+
             # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
             if channel_type == 'seismic':
+                # TODO: Find channel orientation info somewhere
+                trace_info['azimuth'] = None
+                trace_info['dip'] = None
+                trace_info['windowSecs'] = 3600
+                trace_info['overlapPercent'] = 75
+
                 for tr in data:
                     if hasattr(tr.meta, 'response'):
                         tr.remove_sensitivity()
 
                 full_data_plot = os.path.join(output_dir, 'full_seismic_{0}.png'.format(data[0].id))
                 data.plot(outfile=full_data_plot)
+                trace_info['traceLoc'] = full_data_plot
 
                 # detrend
                 data.detrend('linear')
                 demean_data_plot = os.path.join(output_dir, 'demean_{0}.png'.format(data[0].id))
                 data.plot(outfile=demean_data_plot)
 
-                # TODO: Plot spectrogram of data
                 spectrogram_plot = os.path.join(output_dir, 'spec_{0}.png'.format(data[0].id))
                 data.spectrogram(per_lap=0.5, wlen=60, outfile=spectrogram_plot)
+                trace_info['specLoc'] = spectrogram_plot
 
-                # TODO: Plot PSD of a section of data
+                # Plot PSDs of data
+                # TODO: Have window length chosen automatically based on length of time period
+                psd_v_plot = os.path.join(output_dir, 'psd_seismic_vel_{0}.png'.format(data[0].id))
+                psd_a_plot = os.path.join(output_dir, 'psd_seismic_acc_{0}.png'.format(data[0].id))
+                freqs, psds = [], []
+                psd_v_fig, vax = plt.subplots(1, 1)
+                for sect in data[0].slide(3600, 900):
+                    seg_len = pow(2, 17)
+                    psd, frq = plt.psd(sect.data, NFFT=seg_len, Fs=data[0].meta.sampling_rate, window=signal.get_window('hamming', seg_len, False), detrend='linear', color='0.7', linewidth=0.5)
+                    freqs.append(frq)
+                    psds.append(psd)
+                vax.set_xscale('log')
+                psd_v_fig.savefig(psd_v_plot)
+
+                # Convert PSDs to acceleration and plot
+                psd_a_fig, aax = plt.subplots(1, 1)
+                for f, p in zip(freqs, psds):
+                    apsd = p * (2 * np.pi * f) * (2 * np.pi * f)
+                    aax.plot(f, 10 * np.log10(apsd), c='0.8', lw=0.5, marker=None)
+                aax.set_xscale('log')
+                plt.grid(True, ls=':')
+                psd_a_fig.savefig(psd_a_plot)
+                trace_info['psdLoc'] = psd_a_plot
 
                 if full:
                     # TODO: Decide if the same operations are appropriate for the hydrophone data or not
@@ -357,6 +392,7 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
                     plt.grid(True, ls=':')
                     fig.savefig(full_data_plot)
                     plt.close(fig)
+                    trace_info['traceLoc'] = full_data_plot
 
                 # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
 
@@ -377,6 +413,8 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
 
                 # TODO: Analysis of state-of-health variables?
                 # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
+
+            report_params[channel_type + '_channels'].append(trace_info)
 
     # Save report to *.md and *.pdf formats
     report_md = os.path.join(output_dir, 'QC_report_{0}_auto.md'.format(obs_log['OBS ID'].values[0]))
