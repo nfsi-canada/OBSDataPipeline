@@ -18,6 +18,7 @@ from obspy.io.stationxml.core import validate_stationxml
 import nfsi_obs as nf
 from utilities import config_handler, logger, check_nan, ReportGenerator
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
 # Ensure resource directory exists
 resource_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'resource/OBSDataPipeline')
 if not os.path.isdir(resource_dir):
@@ -459,7 +460,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     pandoc_args.extend(['--toc'])
 
     report_pdf = os.path.join(output_dir, 'QC_report_{0}_auto.pdf'.format(obs_log['OBS ID'].values[0]))
-    report_converted = pypandoc.convert_text(report_buffer, to='pdf', format='markdown-implicit_figures', outputfile=report_pdf, extra_args=pandoc_args)
+    report_converted = pypandoc.convert_text(report_buffer, to='pdf', format='md', outputfile=report_pdf, extra_args=pandoc_args)
 
     g_log.info("end")
 
@@ -565,7 +566,9 @@ if __name__ == '__main__':
             config = config_handler.get_config()
 
         # Gather some basic information for report
-        report_kwargs = {}
+        report_kwargs = {
+            'today': datetime.now().strftime('%Y-%m-%d'),
+        }
         if args.project_name:
             report_kwargs['projectName'] = args.project_name
         else:
