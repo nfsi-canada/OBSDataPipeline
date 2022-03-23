@@ -70,16 +70,16 @@ class ReportGenerator:
             if 'recovered' in input_variables:
                 input_variables['recoverDate'] = input_variables['recovered'].strftime('%Y-%m-%d')
 
-        if not hasattr(input_variables, 'windowLength'):
-            if hasattr(input_variables, 'windowSecs'):
-                if input_variables['windowSecs'] < 3*60:     # 3 minutes
-                    input_variables['windowLength'] = '{0} second'.format(input_variables['windowSecs'])
-                elif input_variables['windowSecs'] < 3*60*60:    # 3 hours
-                    input_variables['windowLength'] = '{0} minute'.format(input_variables['windowSecs'] / 60)
-                elif input_variables['windowSecs'] < 3*60*60*24:    # 3 days
-                    input_variables['windowLength'] = '{0} hour'.format(input_variables['windowSecs'] / 60 / 60)
+        if not hasattr(input_variables, 'psdWindowLength'):
+            if hasattr(input_variables, 'psdWindowSecs'):
+                if input_variables['psdWindowSecs'] < 3*60:     # 3 minutes
+                    input_variables['psdWindowLength'] = '{0} second'.format(input_variables['psdWindowSecs'])
+                elif input_variables['psdWindowSecs'] < 3*60*60:    # 3 hours
+                    input_variables['psdWindowLength'] = '{0} minute'.format(input_variables['psdWindowSecs'] / 60)
+                elif input_variables['psdWindowSecs'] < 3*60*60*24:    # 3 days
+                    input_variables['psdWindowLength'] = '{0} hour'.format(input_variables['psdWindowSecs'] / 60 / 60)
                 else:
-                    input_variables['windowLength'] = '{0} day'.format(input_variables['windowSecs'] / 60 / 60 / 24)
+                    input_variables['psdWindowLength'] = '{0} day'.format(input_variables['psdWindowSecs'] / 60 / 60 / 24)
 
         report_str = (self.env.render(
             **input_variables

@@ -24,12 +24,10 @@ if not os.path.isdir(resource_dir):
     os.makedirs(resource_dir)
 
 
-def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, channel_map=None, full=True, detrend=False, **kwargs):
+def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, full=True, detrend=False, **kwargs):
     """
     Extra keyword arguments are included as report parameters (must match variables in template file).
     """
-    config = config_handler.get_config()
-
     g_log.info("start")
 
     # Initialize report parameters dictionary with input keywords
@@ -496,6 +494,7 @@ if __name__ == '__main__':
                         help="Detrend seismic data (RMS linear fit). False by default.")
     # TODO: When using ST, project name will come from there instead
     parser.add_argument('--projectname', dest="project_name", help="Project name to be displayed in reports")
+    parser.add_argument('--config', dest='config_path', help="Path to config file (if not using default).")
 
     try:
         args = parser.parse_args()
@@ -560,6 +559,11 @@ if __name__ == '__main__':
         if args.metadata_file:
             metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.metadata_file)))
 
+        if args.config_path:
+            config = config_handler.get_config(os.path.abspath(os.path.expanduser(os.path.expandvars(args.config_path))))
+        else:
+            config = config_handler.get_config()
+
         # Gather some basic information for report
         report_kwargs = {}
         if args.project_name:
@@ -580,9 +584,11 @@ if __name__ == '__main__':
         report_kwargs['clockDrift'] = base_meta['Clock Offset on Deck (ms)'].values[0]
         report_kwargs['batteryLevel'] = rec['Battery SOC (%)'].values[0]
         report_kwargs['introText'] = ''
+        report_kwargs['psdWindowSecs'] = config.get('seismic', 'window_length')
+        report_kwargs['psdOverlapPercent'] = config.get('seismic', 'overlap_percent')
 
         # Process data files to apply clock drift correction and update metadata
-        process(data_dir, base_meta, args.network_id, output_dir, metadata_file, channel_map, ~args.function_check, args.detrend_seis, **report_kwargs)
+        process(data_dir, base_meta, args.network_id, config, output_dir, metadata_file, channel_map, ~args.function_check, args.detrend_seis, **report_kwargs)
 
         g_log.info("Processing complete!")
         logger.close_logs()
