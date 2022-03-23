@@ -46,16 +46,16 @@ class ReportGenerator:
         :param input_variables: dictionary of variables to fill in template
         :param output_path: full path to output file
         """
-        if not hasattr(input_variables, 'latString'):
-            if hasattr(input_variables, 'latitude'):
+        if 'latString' not in input_variables:
+            if 'latitude' in input_variables:
                 if input_variables['latitude'] < 0:
                     input_variables['latString'] = '{0:.6f} S'.format(-input_variables['latitude'])
                 else:
                     input_variables['latString'] = '{0:.6f} N'.format(input_variables['latitude'])
             else:
                 input_variables['latString'] = 'none'
-        if not hasattr(input_variables, 'lonString'):
-            if hasattr(input_variables, 'longitude'):
+        if 'lonString' not in input_variables:
+            if 'longitude' in input_variables:
                 if input_variables['longitude'] < 0:
                     input_variables['lonString'] = '{0:.6f} W'.format(-input_variables['longitude'])
                 else:
@@ -63,15 +63,15 @@ class ReportGenerator:
             else:
                 input_variables['lonString'] = 'none'
 
-        if not hasattr(input_variables, 'deployDate'):
+        if 'deployDate' not in input_variables:
             if 'deployed' in input_variables:
                 input_variables['deployDate'] = input_variables['deployed'].strftime('%Y-%m-%d')
-        if not hasattr(input_variables, 'recoverDate'):
+        if 'recoverDate' not in input_variables:
             if 'recovered' in input_variables:
                 input_variables['recoverDate'] = input_variables['recovered'].strftime('%Y-%m-%d')
 
-        if not hasattr(input_variables, 'psdWindowLength'):
-            if hasattr(input_variables, 'psdWindowSecs'):
+        if 'psdWindowLength' not in input_variables:
+            if 'psdWindowSecs' in input_variables:
                 if input_variables['psdWindowSecs'] < 3*60:     # 3 minutes
                     input_variables['psdWindowLength'] = '{0} second'.format(input_variables['psdWindowSecs'])
                 elif input_variables['psdWindowSecs'] < 3*60*60:    # 3 hours

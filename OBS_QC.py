@@ -459,7 +459,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     pandoc_args.extend(['--toc'])
 
     report_pdf = os.path.join(output_dir, 'QC_report_{0}_auto.pdf'.format(obs_log['OBS ID'].values[0]))
-    report_converted = pypandoc.convert_text(report_buffer, to='pdf', format='md', outputfile=report_pdf, extra_args=pandoc_args)
+    report_converted = pypandoc.convert_text(report_buffer, to='pdf', format='markdown-implicit_figures', outputfile=report_pdf, extra_args=pandoc_args)
 
     g_log.info("end")
 
@@ -584,8 +584,8 @@ if __name__ == '__main__':
         report_kwargs['clockDrift'] = base_meta['Clock Offset on Deck (ms)'].values[0]
         report_kwargs['batteryLevel'] = rec['Battery SOC (%)'].values[0]
         report_kwargs['introText'] = ''
-        report_kwargs['psdWindowSecs'] = config.get('seismic', 'window_length')
-        report_kwargs['psdOverlapPercent'] = config.get('seismic', 'overlap_percent')
+        report_kwargs['psdWindowSecs'] = int(config.get('seismic', 'window_length'))
+        report_kwargs['psdOverlapPercent'] = int(config.get('seismic', 'overlap_percent'))
 
         # Process data files to apply clock drift correction and update metadata
         process(data_dir, base_meta, args.network_id, config, output_dir, metadata_file, channel_map, ~args.function_check, args.detrend_seis, **report_kwargs)
