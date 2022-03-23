@@ -3,6 +3,9 @@
 % Prepared on: {{ today }}
 
 ---
+toc-depth: 2
+geometry:
+- margin=1in
 header-includes:
 - |
   ```{=latex}
@@ -41,11 +44,13 @@ Average power consumption (W): {{ meanPower }}
 
 Remaining battery SOC: {{ batteryLevel }}%
 
+Power spectral density curves are calculated using {{ psdWindowLength }} windows, with {{ psdOverlapPercent }}% overlap.
+
 # Introduction
 
 {{ introText }}
 
-# Seismic Data QC
+# Seismic Data
 
 {% for ch in seismic_channels %}
 ## {{ ch.channelName }}
@@ -63,7 +68,7 @@ Orientation: {{ ch.azimuth }} / {{ ch.dip }}
 
 ![Spectrogram of channel {{ ch.seedID }}]({{ ch.specLoc }})
 
-### Power Spectral Density[^psd]
+### Power Spectral Density
 
 ![Power spectral density curves for channel {{ ch.seedID }}]({{ ch.psdLoc }})
 
@@ -98,5 +103,3 @@ SEED ID: {{ ch.seedID }}
 ![Recorded data for channel {{ ch.seedID }}]({{ ch.traceLoc }})
 
 {% endfor %}
-
-[^psd]: Power spectral density curves are calculating using {{ psdWindowLength }} windows, with {{ psdOverlapPercent }}% overlap.
