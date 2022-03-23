@@ -28,6 +28,8 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
     """
     Extra keyword arguments are included as report parameters (must match variables in template file).
     """
+    config = config_handler.get_config()
+
     g_log.info("start")
 
     # Initialize report parameters dictionary with input keywords
@@ -452,9 +454,14 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
     qcReport = ReportGenerator(type='qc')
     md_out, report_buffer = qcReport.write_report(report_params, report_md)
 
+    pandoc_args = []
+    tex_path = os.path.abspath(os.path.expanduser(os.path.expandvars(config.get('common', 'pdftex_path', fallback=None))))
+    if tex_path is not None:
+        pandoc_args.append('--pdf-engine={0}'.format(tex_path))
+    pandoc_args.extend(['--toc'])
+
     report_pdf = os.path.join(output_dir, 'QC_report_{0}_auto.pdf'.format(obs_log['OBS ID'].values[0]))
-    report_converted = pypandoc.convert_text(report_buffer, to='pdf', format='md', outputfile=report_pdf,
-                                             extra_args=['--pdf-engine=C:/texlive/2021/bin/win32/pdflatex', '--toc'])
+    report_converted = pypandoc.convert_text(report_buffer, to='pdf', format='md', outputfile=report_pdf, extra_args=pandoc_args)
 
     g_log.info("end")
 

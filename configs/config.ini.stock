@@ -1,6 +1,7 @@
 [common]
 # General settings
 log_dir=~/resource/OBSDataPipeline/logs
+pdftex_path=C:/texlive/2021/bin/win32/pdflatex
 
 
 [sensor_tracker]
