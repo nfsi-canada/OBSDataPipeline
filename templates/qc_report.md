@@ -58,18 +58,27 @@ Orientation: {{ ch.azimuth }} / {{ ch.dip }}
 ## Oceanographic Data
 
 {% for ch in ocean_channels %}
+### {{ ch.channelName }}
+SEED ID: {{ ch.seedID }}
+
 ![trace]({{ ch.traceLoc }})
 {% endfor %}
 
 ## Battery Condition
 
 {% for ch in power_channels %}
+### {{ ch.channelName }}
+SEED ID: {{ ch.seedID }}
+
 ![trace]({{ ch.traceLoc }})
 {% endfor %}
 
 ## Instrument State-of-Health
 
 {% for ch in health_channels %}
+### {{ ch.channelName }}
+SEED ID: {{ ch.seedID }}
+
 ![trace]({{ ch.traceLoc }})
 {% endfor %}
 
