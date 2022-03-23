@@ -453,7 +453,8 @@ def process(data_dir, obs_log, network_id, output_dir=None, metadata=None, chann
     md_out, report_buffer = qcReport.write_report(report_params, report_md)
 
     report_pdf = os.path.join(output_dir, 'QC_report_{0}_auto.pdf'.format(obs_log['OBS ID'].values[0]))
-    report_converted = pypandoc.convert_text(report_buffer, to='pdf', format='md', outputfile=report_pdf)
+    report_converted = pypandoc.convert_text(report_buffer, to='pdf', format='md', outputfile=report_pdf,
+                                             extra_args=['--pdf-engine=C:/texlive/2021/bin/win32/pdflatex', '--toc'])
 
     g_log.info("end")
 
