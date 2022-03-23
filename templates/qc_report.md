@@ -24,7 +24,7 @@ Length of deployment (days): {{ deploymentDays }}
 
 Total clock drift (ms): {{ clockDrift }}
 
-Average power consumption (mW): {{ meanPower }}
+Average power consumption (W): {{ meanPower }}
 
 Remaining battery SOC: {{ batteryLevel }}%
 
@@ -43,15 +43,13 @@ Orientation: {{ ch.azimuth }} / {{ ch.dip }}
 {% endif %}
 
 #### Full trace
-![trace]({{ ch.traceLoc }})
+![Recorded data for channel {{ ch.seedID }}]({{ ch.traceLoc }})
 
 #### Spectrogram
-![spectrogram]({{ ch.specLoc }})
+![Spectrogram of channel {{ ch.seedID }}]({{ ch.specLoc }})
 
 #### Power Spectral Density[^psd]
-![PSD]({{ ch.psdLoc }})
-
-[^psd]: Power spectral density curves are calculating using {{ ch.windowLength }} windows, with {{ ch.overlapPercent }}% overlap.
+![Power spectral density curves for channel {{ ch.seedID }}]({{ ch.psdLoc }})
 
 {% endfor %}
 
@@ -61,7 +59,8 @@ Orientation: {{ ch.azimuth }} / {{ ch.dip }}
 ### {{ ch.channelName }}
 SEED ID: {{ ch.seedID }}
 
-![trace]({{ ch.traceLoc }})
+![Recorded data for channel {{ ch.seedID }}]({{ ch.traceLoc }})
+
 {% endfor %}
 
 ## Battery Condition
@@ -70,7 +69,8 @@ SEED ID: {{ ch.seedID }}
 ### {{ ch.channelName }}
 SEED ID: {{ ch.seedID }}
 
-![trace]({{ ch.traceLoc }})
+![Recorded data for channel {{ ch.seedID }}]({{ ch.traceLoc }})
+
 {% endfor %}
 
 ## Instrument State-of-Health
@@ -79,6 +79,8 @@ SEED ID: {{ ch.seedID }}
 ### {{ ch.channelName }}
 SEED ID: {{ ch.seedID }}
 
-![trace]({{ ch.traceLoc }})
+![Recorded data for channel {{ ch.seedID }}]({{ ch.traceLoc }})
+
 {% endfor %}
 
+[^psd]: Power spectral density curves are calculating using {{ psdWindowLength }} windows, with {{ psdOverlapPercent }}% overlap.
