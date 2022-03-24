@@ -16,6 +16,8 @@ header-includes:
   ```
 ---
 
+\newpage{}
+
 # Summary
 
 OBS name/serial: {{ obsName }} / {{ obsId }}
@@ -46,9 +48,13 @@ Remaining battery SOC: {{ batteryLevel }}%
 
 Power spectral density curves are calculated using {{ psdWindowLength }} windows, with {{ psdOverlapPercent }}% overlap.
 
+\newpage{}
+
 # Introduction
 
 {{ introText }}
+
+\newpage{}
 
 # Seismic Data
 
@@ -74,6 +80,8 @@ Orientation: {{ ch.azimuth }} / {{ ch.dip }}
 
 {% endfor %}
 
+\newpage{}
+
 # Oceanographic Data
 
 {% for ch in ocean_channels %}
@@ -84,6 +92,8 @@ SEED ID: {{ ch.seedID }}
 
 {% endfor %}
 
+\newpage{}
+
 # Battery Condition
 
 {% for ch in power_channels %}
@@ -93,6 +103,8 @@ SEED ID: {{ ch.seedID }}
 ![Recorded data for channel {{ ch.seedID }}]({{ ch.traceLoc }})
 
 {% endfor %}
+
+\newpage{}
 
 # Instrument State-of-Health
 
