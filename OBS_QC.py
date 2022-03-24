@@ -38,6 +38,15 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     for key in ['seismic_channels', 'ocean_channels', 'power_channels', 'health_channels']:
         report_params[key] = []
 
+    # Windowing parameters for seismic data
+    win_len = 3600
+    overlap = 0.75
+    if 'psdWindowsSecs' in report_params:
+        win_len = report_params['psdWindowSecs']
+    if 'psdOverlapPercent' in report_params:
+        overlap = report_params['psdOverlapPercent'] / 100
+    spec_win = config.get('seismic', 'spectrogram_window', 60)
+
     # Read station metadata file
     station_info = None
     if metadata is not None:
@@ -209,8 +218,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 trace_info = {
                     'seedID': tr.id,
                     'channelName': tr.id,
-                    'windowSecs': 3600,
-                    'overlapPercent': 75
                 }
                 for metaKey, reportKey in zip(['description', 'azimuth', 'dip'], ['channelName', 'azimuth', 'dip']):
                     if hasattr(tr.meta, metaKey):
@@ -222,19 +229,17 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 trace_info['traceLoc'] = trace_plot
 
                 # Plot spectrogram of full time period
-                # TODO: Have window length chosen automatically based on length of time period
                 # TODO: Deal with RuntimeWarning for divide by zero (due to dbscale?)
                 spectrogram_plot = os.path.join(output_dir, 'spec_seismic_{0}.png'.format(tr.id))
-                tr.spectrogram(per_lap=0.75, wlen=60, dbscale=True, log=True, outfile=spectrogram_plot)
+                tr.spectrogram(per_lap=overlap, wlen=spec_win, dbscale=True, log=True, outfile=spectrogram_plot)
                 trace_info['specLoc'] = spectrogram_plot
 
                 # Plot PSDs of data
-                # TODO: Have window length chosen automatically based on length of time period
                 psd_v_plot = os.path.join(output_dir, 'psd_seismic_vel_{0}.png'.format(tr.id))
                 psd_a_plot = os.path.join(output_dir, 'psd_seismic_acc_{0}.png'.format(tr.id))
                 freqs, psds = [], []
                 psd_v_fig, vax = plt.subplots(1, 1)
-                for sect in tr.slide(3600, 900):
+                for sect in tr.slide(win_len, win_len * (1 - overlap)):
                     seg_len = pow(2, 17)
                     psd, frq = plt.psd(sect.data, NFFT=seg_len, Fs=tr.meta.sampling_rate, window=signal.get_window('hamming', seg_len, False), detrend='linear', color='0.7', linewidth=0.5)
                     freqs.append(frq)
@@ -368,16 +373,15 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 data.plot(outfile=demean_data_plot)
 
                 spectrogram_plot = os.path.join(output_dir, 'spec_{0}.png'.format(data[0].id))
-                data.spectrogram(per_lap=0.5, wlen=60, outfile=spectrogram_plot)
+                data.spectrogram(per_lap=overlap, wlen=spec_win, outfile=spectrogram_plot)
                 trace_info['specLoc'] = spectrogram_plot
 
                 # Plot PSDs of data
-                # TODO: Have window length chosen automatically based on length of time period
                 psd_v_plot = os.path.join(output_dir, 'psd_seismic_vel_{0}.png'.format(data[0].id))
                 psd_a_plot = os.path.join(output_dir, 'psd_seismic_acc_{0}.png'.format(data[0].id))
                 freqs, psds = [], []
                 psd_v_fig, vax = plt.subplots(1, 1)
-                for sect in data[0].slide(3600, 900):
+                for sect in data[0].slide(win_len, win_len * (1 - overlap)):
                     seg_len = pow(2, 17)
                     psd, frq = plt.psd(sect.data, NFFT=seg_len, Fs=data[0].meta.sampling_rate, window=signal.get_window('hamming', seg_len, False), detrend='linear', color='0.7', linewidth=0.5)
                     freqs.append(frq)

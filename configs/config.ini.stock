@@ -13,3 +13,4 @@ pdftex_path=C:/texlive/2021/bin/win32/pdflatex
 [seismic]
 window_length=3600
 overlap_percent=75
+spectrogram_window=60
