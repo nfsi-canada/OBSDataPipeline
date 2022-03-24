@@ -498,8 +498,8 @@ if __name__ == '__main__':
     parser.add_argument('--config', dest='config_path', help="Path to config file (if not using default).")
 
     try:
-        args = parser.parse_args()
         start_time = datetime.now()
+        args = parser.parse_args()
         obs_id = args.obs_id
 
         g_log = logger.get_general_logger(start_time, obs_id)
@@ -594,6 +594,10 @@ if __name__ == '__main__':
         process(data_dir, base_meta, args.network_id, config, output_dir, metadata_file, channel_map, ~args.function_check, args.detrend_seis, **report_kwargs)
 
         g_log.info("Processing complete!")
+        end_time = datetime.now()
+        run_time = end_time - start_time
+        g_log.info("Total run time: {0} seconds".format(run_time.total_seconds()))
+
         logger.close_logs()
     except Exception as e:
         print(traceback.print_exc())
