@@ -238,15 +238,13 @@ class WaveformPlotting(object):
 
     def plot_waveform(self, *args, **kwargs):
         """
-        Creates a graph of any given ObsPy Stream object. It either saves the
-        image directly to the file system or returns a binary image string.
+        Creates a graph of any given ObsPy Stream object. It either saves the image directly to the file system or
+        returns a binary image string.
 
-        For all color values you can use legit HTML names, HTML hex strings
-        (e.g. '#eeefff') or you can pass an RGB tuple, where each of R, G, and
-        B are in the range [0, 1]. You can also use single letters for basic
-        built-in colors ('b' = blue, 'g' = green, 'r' = red, 'c' = cyan,
-        'm' = magenta, 'y' = yellow, 'k' = black, 'w' = white) and gray shades
-        can be given as a string encoding a float in the 0-1 range.
+        For all color values you can use legit HTML names, HTML hex strings (e.g. '#eeefff') or you can pass an RGB
+        tuple, where each of R, G, and B are in the range [0, 1]. You can also use single letters for basic built-in
+        colors ('b' = blue, 'g' = green, 'r' = red, 'c' = cyan, 'm' = magenta, 'y' = yellow, 'k' = black, 'w' = white)
+        and gray shades can be given as a string encoding a float in the 0-1 range.
         """
         import matplotlib.pyplot as plt
         # Setup the figure if not passed explicitly.
@@ -266,17 +264,14 @@ class WaveformPlotting(object):
             fract_y = 60.0 / self.height
             fract_y2 = 40.0 / self.height
             fract_x = 80.0 / self.width
-            self.fig.subplots_adjust(top=1.0 - fract_y, bottom=fract_y2,
-                                     left=fract_x, right=1.0 - fract_x / 2)
+            self.fig.subplots_adjust(top=1.0 - fract_y, bottom=fract_y2, left=fract_x, right=1.0 - fract_x / 2)
         if self.type == 'section':
             self.fig.subplots_adjust(bottom=0.12)
         with warnings.catch_warnings(record=True):
-            warnings.filterwarnings("ignore", DATELOCATOR_WARNING_MSG,
-                                    UserWarning, "matplotlib.dates")
+            warnings.filterwarnings("ignore", DATELOCATOR_WARNING_MSG, UserWarning, "matplotlib.dates")
             if self.draw:
                 self.fig.canvas.draw()
-            # The following just serves as a unified way of saving and
-            # displaying the plots.
+            # The following just serves as a unified way of saving and displaying the plots.
             if not self.transparent:
                 extra_args = {'dpi': self.dpi,
                               'facecolor': self.face_color,
@@ -288,18 +283,15 @@ class WaveformPlotting(object):
             if self.outfile:
                 # If format is set use it.
                 if self.format:
-                    self.fig.savefig(self.outfile, format=self.format,
-                                     **extra_args)
+                    self.fig.savefig(self.outfile, format=self.format, **extra_args)
                 # Otherwise use format from self.outfile or default to PNG.
                 else:
                     self.fig.savefig(self.outfile, **extra_args)
             else:
-                # Return a binary image string if not self.outfile but
-                # self.format.
+                # Return a binary image string if not self.outfile but self.format.
                 if self.format:
                     imgdata = io.BytesIO()
-                    self.fig.savefig(imgdata, format=self.format,
-                                     **extra_args)
+                    self.fig.savefig(imgdata, format=self.format, **extra_args)
                     imgdata.seek(0)
                     return imgdata.read()
                 elif self.handle:
@@ -310,16 +302,14 @@ class WaveformPlotting(object):
                             plt.show(block=self.block)
                         except Exception:
                             plt.show()
-                    # Also return the figure to make it work the jupyter
-                    # notebooks.
+                    # Also return the figure to make it work the jupyter notebooks.
                     return self.fig
 
     def plot(self, *args, **kwargs):
         """
         Plot the Traces showing one graph per Trace.
 
-        Plots the whole time series for self.max_npts points and less. For more
-        points it plots minmax values.
+        Plots the whole time series for self.max_npts points and less. For more points it plots minmax values.
         """
         stream_new = []
         # Just remove empty traces.
@@ -356,8 +346,7 @@ class WaveformPlotting(object):
             # Each trace needs to have the same sampling rate.
             sampling_rates = {_tr.stats.sampling_rate for _tr in tr}
             if len(sampling_rates) > 1:
-                msg = "All traces with the same id need to have the same " + \
-                      "sampling rate."
+                msg = "All traces with the same id need to have the same sampling rate."
                 raise Exception(msg)
             sampling_rate = sampling_rates.pop()
             if _i == 0:
@@ -365,14 +354,12 @@ class WaveformPlotting(object):
             else:
                 sharex = self.axis[0]
             axis_facecolor_kwargs = dict(facecolor=self.background_color)
-            ax = self.fig.add_subplot(len(stream_new), 1, _i + 1,
-                                      sharex=sharex, **axis_facecolor_kwargs)
+            ax = self.fig.add_subplot(len(stream_new), 1, _i + 1, sharex=sharex, **axis_facecolor_kwargs)
             self.axis.append(ax)
             # XXX: Also enable the minmax plotting for previews.
             method_ = self.plotting_method
             if method_ is None:
-                if ((self.endtime - self.starttime) * sampling_rate >
-                        self.max_npts):
+                if ((self.endtime - self.starttime) * sampling_rate > self.max_npts):
                     method_ = "fast"
                 else:
                     method_ = "full"
@@ -407,9 +394,7 @@ class WaveformPlotting(object):
         # Normalize array
         self.__dayplot_normalize_values(self, *args, **kwargs)
         # Get timezone information. If none is given, use local time.
-        self.time_offset = kwargs.get(
-            'time_offset',
-            round((UTCDateTime(datetime.now()) - UTCDateTime()) / 3600.0, 2))
+        self.time_offset = kwargs.get('time_offset',round((UTCDateTime(datetime.now()) - UTCDateTime()) / 3600.0, 2))
         self.timezone = kwargs.get('timezone', 'local time')
         # Try to guess how many steps are needed to advance one full time unit.
         self.repeat = None
@@ -481,8 +466,7 @@ class WaveformPlotting(object):
                                       minmagnitude=events["min_magnitude"])
             except Exception as e:
                 events = None
-                msg = "Could not download the events because of '%s: %s'." % \
-                    (e.__class__.__name__, str(e))
+                msg = "Could not download the events because of '%s: %s'." % (e.__class__.__name__, str(e))
                 warnings.warn(msg)
         if events:
             for event in events:
@@ -495,8 +479,7 @@ class WaveformPlotting(object):
         ax = self.fig.axes[0]
         seed_id = self.stream[0].id
         if hasattr(event, "preferred_origin"):
-            # Get the time from the preferred origin, alternatively the first
-            # origin.
+            # Get the time from the preferred origin, alternatively the first origin.
             origin = event.preferred_origin()
             if origin is None:
                 if event.origins:
@@ -515,8 +498,7 @@ class WaveformPlotting(object):
             else:
                 mag = "%.1f %s" % (mag.mag, mag.magnitude_type)
 
-            region = FlinnEngdahl().get_region(origin.longitude,
-                                               origin.latitude)
+            region = FlinnEngdahl().get_region(origin.longitude, origin.latitude)
             text = region
             if mag:
                 text += ", %s" % mag
@@ -539,12 +521,10 @@ class WaveformPlotting(object):
         x_pos, y_pos = time2xy(time)
 
         if text:
-            # Some logic to get a somewhat sane positioning of the annotation
-            # box and the arrow..
+            # Some logic to get a somewhat sane positioning of the annotation box and the arrow..
             text_offset_x = 0.10 * self.width
             text_offset_y = 1.00
-            # Relpos determines the connection of the arrow on the box in
-            # relative coordinates.
+            # Relpos determines the connection of the arrow on the box in relative coordinates.
             relpos = [0.0, 0.5]
             # Arc strength is the amount of bending of the arrow.
             arc_strength = 0.25
@@ -573,10 +553,8 @@ class WaveformPlotting(object):
             ax.annotate(text,
                         # The position of the event.
                         xy=(x_pos, y_pos),
-                        # The position of the text, offset depending on the
-                        # previously calculated variables.
-                        xytext=(x_pos + text_offset_x_sign * text_offset_x,
-                                y_pos + text_offset_y_sign * text_offset_y),
+                        # The position of the text, offset depending on the previously calculated variables.
+                        xytext=(x_pos + text_offset_x_sign * text_offset_x, y_pos + text_offset_y_sign * text_offset_y),
                         # Everything in data coordinates.
                         xycoords="data", textcoords="data",
                         # Set the text alignment.
@@ -586,22 +564,18 @@ class WaveformPlotting(object):
                         # Arrow style
                         arrowprops=dict(
                             arrowstyle="-",
-                            connectionstyle="arc3, rad=%s%.1f" % (
-                                arc_sign, arc_strength),
+                            connectionstyle="arc3, rad=%s%.1f" % (arc_sign, arc_strength),
                             relpos=relpos, shrinkB=7),
                         zorder=10)
         # Draw the actual point. Use a marker with a star shape.
-        ax.plot(x_pos, y_pos, "*", color="yellow",
-                markersize=12, linewidth=self.linewidth)
+        ax.plot(x_pos, y_pos, "*", color="yellow", markersize=12, linewidth=self.linewidth)
 
         for pick in getattr(event, 'picks', []):
             # check that network/station/location matches
-            if pick.waveform_id.get_seed_string().split(".")[:-1] != \
-               seed_id.split(".")[:-1]:
+            if pick.waveform_id.get_seed_string().split(".")[:-1] != seed_id.split(".")[:-1]:
                 continue
             x_pos, y_pos = time2xy(pick.time)
-            ax.plot(x_pos, y_pos, "|", color="red",
-                    markersize=50, markeredgewidth=self.linewidth * 4)
+            ax.plot(x_pos, y_pos, "|", color="red", markersize=50, markeredgewidth=self.linewidth * 4)
 
     def _plot_dayplot_scale(self, unit):
         """
@@ -651,9 +625,8 @@ class WaveformPlotting(object):
 
     def __plot_straight(self, trace, ax, *args, **kwargs):  # @UnusedVariable
         """
-        Just plots the data samples in the self.stream. Useful for smaller
-        datasets up to around 1000000 samples (depending on the machine on
-        which it's being run).
+        Just plots the data samples in the self.stream. Useful for smaller datasets up to around 1000000 samples
+        (depending on the machine on which it's being run).
 
         Slow and high memory consumption for large datasets.
         """
@@ -675,21 +648,17 @@ class WaveformPlotting(object):
                 data[1::2] = -trace.data / 2.0
                 trace.data = data
                 # The times are not supposed to change.
-                trace.stats.delta = (
-                    old_time_range / float(trace.stats.npts - 1))
+                trace.stats.delta = (old_time_range / float(trace.stats.npts - 1))
             trace.data = np.require(trace.data, np.float64) * trace.stats.calib
             if self.type == 'relative':
-                # use seconds of relative sample times and shift by trace's
-                # start time, which was set relative to `reftime`.
+                # use seconds of relative sample times and shift by trace's start time, which was set relative to
+                # `reftime`.
                 x_values = (
                     trace.times() + (trace.stats.starttime - self.reftime))
             else:
-                # convert seconds of relative sample times to days and add
-                # start time of trace.
-                x_values = ((trace.times() / SECONDS_PER_DAY) +
-                            date2num(trace.stats.starttime.datetime))
-            ax.plot(x_values, trace.data, color=self.color,
-                    linewidth=self.linewidth, linestyle=self.linestyle)
+                # convert seconds of relative sample times to days and add start time of trace.
+                x_values = ((trace.times() / SECONDS_PER_DAY) + date2num(trace.stats.starttime.datetime))
+            ax.plot(x_values, trace.data, color=self.color, linewidth=self.linewidth, linestyle=self.linestyle)
         # Write to self.ids
         trace = st[0]
         if trace.stats.get('preview'):
@@ -702,9 +671,8 @@ class WaveformPlotting(object):
 
     def __plot_min_max(self, trace, ax, *args, **kwargs):  # @UnusedVariable
         """
-        Plots the data using a min/max approach that calculated the minimum and
-        maximum values of each "pixel" and then plots only these values. Works
-        much faster with large data sets.
+        Plots the data using a min/max approach that calculated the minimum and maximum values of each "pixel" and then
+        plots only these values. Works much faster with large data sets.
         """
         self._draw_overlap_axvspans(Stream(trace), ax)
         # Some variables to help calculate the values.
@@ -718,10 +686,8 @@ class WaveformPlotting(object):
         if self.type != "relative":
             x_width = x_width * SECONDS_PER_DAY
         # number of samples that get represented by one min-max pair
-        pixel_length = int(
-            np.ceil((x_width * sampling_rate + 1) / self.width))
-        # Loop over all the traces. Do not merge them as there are many samples
-        # and therefore merging would be slow.
+        pixel_length = int(np.ceil((x_width * sampling_rate + 1) / self.width))
+        # Loop over all the traces. Do not merge them as there are many samples and therefore merging would be slow.
         for _i, tr in enumerate(trace):
             trace_length = len(tr.data)
             pixel_count = int(trace_length // pixel_length)
@@ -729,8 +695,7 @@ class WaveformPlotting(object):
             remaining_seconds = remaining_samples / sampling_rate
             if self.type != "relative":
                 remaining_seconds /= SECONDS_PER_DAY
-            # Reference to new data array which does not copy data but can be
-            # reshaped.
+            # Reference to new data array which does not copy data but can be reshaped.
             if remaining_samples:
                 data = tr.data[:-remaining_samples]
             else:
@@ -743,10 +708,8 @@ class WaveformPlotting(object):
                 extreme_values = np.empty((pixel_count + 1, 2), dtype=float)
                 extreme_values[:-1, 0] = min_
                 extreme_values[:-1, 1] = max_
-                extreme_values[-1, 0] = \
-                    tr.data[-remaining_samples:].min() * tr.stats.calib
-                extreme_values[-1, 1] = \
-                    tr.data[-remaining_samples:].max() * tr.stats.calib
+                extreme_values[-1, 0] = tr.data[-remaining_samples:].min() * tr.stats.calib
+                extreme_values[-1, 1] = tr.data[-remaining_samples:].max() * tr.stats.calib
             else:
                 extreme_values = np.empty((pixel_count, 2), dtype=float)
                 extreme_values[:, 0] = min_
@@ -756,8 +719,7 @@ class WaveformPlotting(object):
             end = self._time_to_xvalue(tr.stats.endtime)
             if remaining_samples:
                 # the last minmax pair is inconsistent regarding x-spacing
-                x_values = np.linspace(start, end - remaining_seconds,
-                                       num=extreme_values.shape[0] - 1)
+                x_values = np.linspace(start, end - remaining_seconds, num=extreme_values.shape[0] - 1)
                 x_values = np.concatenate([x_values, [end]])
             else:
                 x_values = np.linspace(start, end, num=extreme_values.shape[0])
@@ -765,8 +727,7 @@ class WaveformPlotting(object):
             y_values = extreme_values.flatten()
             ax.plot(x_values, y_values, color=self.color)
         # remember xlim state and add callback to warn when zooming in
-        self._initial_xrange = (self._time_to_xvalue(self.endtime) -
-                                self._time_to_xvalue(self.starttime))
+        self._initial_xrange = (self._time_to_xvalue(self.endtime) - self._time_to_xvalue(self.starttime))
         self._minmax_plot_xrange_dangerous = False
         ax.callbacks.connect("xlim_changed", self._warn_on_xaxis_zoom)
         # set label, write to self.ids
@@ -792,8 +753,7 @@ class WaveformPlotting(object):
             ax.xaxis.set_major_locator(locator)
         else:
             _set_xaxis_obspy_dates(ax)
-        plt.setp(ax.get_xticklabels(), fontsize='small',
-                 rotation=self.tick_rotation)
+        plt.setp(ax.get_xticklabels(), fontsize='small', rotation=self.tick_rotation)
 
     def __plot_set_y_ticks(self, *args, **kwargs):  # @UnusedVariable
         """
@@ -810,6 +770,7 @@ class WaveformPlotting(object):
                 ax.set_ylim(*ylims_)
         for _i, ax in enumerate(self.axis):
             # Set the title of each plot.
+            # TODO: Make this label optional
             ax.text(0.02, 0.95, self.ids[_i], transform=ax.transAxes,
                     fontdict=dict(fontsize="small", ha='left', va='top'),
                     bbox=dict(boxstyle="round", fc="w", alpha=0.8))
@@ -819,12 +780,10 @@ class WaveformPlotting(object):
 
     def __dayplot_get_min_max_values(self, *args, **kwargs):  # @UnusedVariable
         """
-        Takes a Stream object and calculates the min and max values for each
-        pixel in the dayplot.
+        Takes a Stream object and calculates the min and max values for each pixel in the dayplot.
 
-        Writes a three dimensional array. The first axis is the step, i.e
-        number of trace, the second is the pixel in that step and the third
-        contains the minimum and maximum value of the pixel.
+        Writes a three dimensional array. The first axis is the step, i.e number of trace, the second is the pixel in
+        that step and the third contains the minimum and maximum value of the pixel.
         """
         # Helper variables for easier access.
         trace = self.stream[0]
@@ -832,8 +791,7 @@ class WaveformPlotting(object):
 
         # Samples per interval.
         spi = int(self.interval * trace.stats.sampling_rate)
-        # Check the approximate number of samples per pixel and raise
-        # error as fit.
+        # Check the approximate number of samples per pixel and raise error as fit.
         spp = float(spi) / self.width
         if spp < 1.0:
             msg = """
@@ -845,9 +803,8 @@ class WaveformPlotting(object):
         # Number of intervals plotted.
         noi = float(trace_length) / spi
         inoi = int(round(noi))
-        # Plot an extra interval if at least 2 percent of the last interval
-        # will actually contain data. Do it this way to lessen floating point
-        # inaccuracies.
+        # Plot an extra interval if at least 2 percent of the last interval will actually contain data. Do it this way
+        # to lessen floating point inaccuracies.
         if abs(noi - inoi) > 2E-2:
             noi = inoi + 1
         else:
@@ -885,29 +842,24 @@ class WaveformPlotting(object):
             extreme_values[_i, :, 1] = cur_interval.max(axis=1)
             # Add the rest.
             if delta:
-                extreme_values[_i, -1, 0] = min(extreme_values[_i, -1, 0],
-                                                rest.min())
-                extreme_values[_i, -1, 1] = max(extreme_values[_i, -1, 0],
-                                                rest.max())
+                extreme_values[_i, -1, 0] = min(extreme_values[_i, -1, 0], rest.min())
+                extreme_values[_i, -1, 1] = max(extreme_values[_i, -1, 0], rest.max())
         # Set class variable.
         self.extreme_values = extreme_values
 
     def __dayplot_normalize_values(self, *args, **kwargs):  # @UnusedVariable
         """
-        Normalizes all values in the 3 dimensional array, so that the minimum
-        value will be 0 and the maximum value will be 1.
+        Normalizes all values in the 3 dimensional array, so that the minimum value will be 0 and the maximum value will
+        be 1.
 
         It will also convert all values to floats.
         """
         # Convert to native floats.
-        self.extreme_values = self.extreme_values.astype(float) * \
-            self.stream[0].stats.calib
+        self.extreme_values = self.extreme_values.astype(float) * self.stream[0].stats.calib
         # Make sure that the mean value is at 0
-        # raises underflow warning / error for numpy 1.9
-        # even though mean is 0.09
+        # raises underflow warning / error for numpy 1.9 even though mean is 0.09
         # self.extreme_values -= self.extreme_values.mean()
-        self.extreme_values -= self.extreme_values.sum() / \
-            self.extreme_values.size
+        self.extreme_values -= self.extreme_values.sum() / self.extreme_values.size
 
         # Scale so that 99.5 % of the data will fit the given range.
         if self.vertical_scaling_range is None:
@@ -934,12 +886,9 @@ class WaveformPlotting(object):
         self._normalization_factor = max(abs(max_val), abs(min_val)) * 2
 
         # Scale from 0 to 1.
-        # raises underflow warning / error for numpy 1.9
-        # even though normalization_factor is 2.5
-        # self.extreme_values = self.extreme_values / \
-        #     self._normalization_factor
-        self.extreme_values = self.extreme_values * \
-            (1. / self._normalization_factor)
+        # raises underflow warning / error for numpy 1.9 even though normalization_factor is 2.5
+        # self.extreme_values = self.extreme_values / self._normalization_factor
+        self.extreme_values = self.extreme_values * (1. / self._normalization_factor)
         self.extreme_values += 0.5
 
     def __dayplot_set_x_ticks(self, *args, **kwargs):  # @UnusedVariable
@@ -963,8 +912,8 @@ class WaveformPlotting(object):
             time_type = localization_dict['hours']
             time_value = self.interval / 3600
         count = None
-        # Hardcode some common values. The plus one is intentional. It had
-        # hardly any performance impact and enhances readability.
+        # Hardcode some common values. The plus one is intentional. It had hardly any performance impact and enhances
+        # readability.
         if self.interval == 15 * 60:
             count = 15 + 1
         elif self.interval == 20 * 60:
@@ -992,8 +941,8 @@ class WaveformPlotting(object):
             # Up to 15 time units and if it's a full number, show every unit.
             if time_value <= 15 and time_value % 1 == 0:
                 count = int(time_value)
-            # Otherwise determine whether they are divisible for numbers up to
-            # 15. If a number is not divisible just show 10 units.
+            # Otherwise determine whether they are divisible for numbers up to 15. If a number is not divisible just
+            # show 10 units.
             else:
                 count = 10
                 for _i in range(15, 1, -1):
@@ -1010,18 +959,15 @@ class WaveformPlotting(object):
         ticks = np.linspace(0.0, max_value, count)
         ticklabels = ['%i' % _i for _i in np.linspace(0.0, time_value, count)]
         self.axis[0].set_xticks(ticks)
-        self.axis[0].set_xticklabels(ticklabels, rotation=self.tick_rotation,
-                                     size=self.x_labels_size)
-        self.axis[0].set_xlabel('%s %s' % (localization_dict['time in'],
-                                           time_type), size=self.x_labels_size)
+        self.axis[0].set_xticklabels(ticklabels, rotation=self.tick_rotation, size=self.x_labels_size)
+        self.axis[0].set_xlabel('%s %s' % (localization_dict['time in'], time_type), size=self.x_labels_size)
 
     def __dayplot_set_y_ticks(self, *args, **kwargs):  # @UnusedVariable
         """
         Sets the yticks for the dayplot.
         """
         intervals = self.extreme_values.shape[0]
-        # Only display all ticks if there are five or less steps or if option
-        # is set.
+        # Only display all ticks if there are five or less steps or if option is set.
         if intervals <= 5 or self.one_tick_per_line:
             tick_steps = list(range(0, intervals))
             ticks = np.arange(intervals, 0, -1, dtype=float)
@@ -1031,16 +977,13 @@ class WaveformPlotting(object):
             ticks = np.arange(intervals, 0, -1 * self.repeat, dtype=float)
             ticks -= 0.5
 
-        # Complicated way to calculate the label of
-        # the y-axis showing the second time zone.
+        # Complicated way to calculate the label of the y-axis showing the second time zone.
         sign = '%+i' % self.time_offset
         sign = sign[0]
         label = "UTC (%s = UTC %s %02i:%02i)" % (
             self.timezone.strip(), sign, abs(self.time_offset),
             (self.time_offset % 1 * 60))
-        ticklabels = [(self.starttime + _i *
-                       self.interval).strftime(self.tick_format)
-                      for _i in tick_steps]
+        ticklabels = [(self.starttime + _i * self.interval).strftime(self.tick_format) for _i in tick_steps]
         self.axis[0].set_yticks(ticks)
         self.axis[0].set_yticklabels(ticklabels, size=self.y_labels_size)
         # Show time zone label if requested
@@ -1054,8 +997,7 @@ class WaveformPlotting(object):
             y_ticklabels_twin = [(self.starttime + (_i + 1) *
                                   self.interval).strftime(self.tick_format)
                                  for _i in tick_steps]
-            self.twin_x.set_yticklabels(y_ticklabels_twin,
-                                        size=self.y_labels_size)
+            self.twin_x.set_yticklabels(y_ticklabels_twin, size=self.y_labels_size)
 
     def plot_section(self, *args, **kwargs):  # @UnusedVariable
         """
@@ -1083,9 +1025,7 @@ class WaveformPlotting(object):
             legend_lines = []
             legend_labels = []
             for name, color in sorted(names_colors):
-                legend_lines.append(
-                    mlines.Line2D([], [], color=color, alpha=self.alpha,
-                                  linewidth=self.linewidth))
+                legend_lines.append(mlines.Line2D([], [], color=color, alpha=self.alpha, linewidth=self.linewidth))
                 legend_labels.append(name)
             ax.legend(legend_lines, legend_labels)
 
@@ -1147,11 +1087,9 @@ class WaveformPlotting(object):
         """
         Arrange the trace data used for plotting.
 
-        If necessary the data is resampled before
-        being collected in a continuous list.
+        If necessary the data is resampled before being collected in a continuous list.
         """
-        # Extract distances from st[].stats.distance
-        # or from st.[].stats.coordinates.latitude...
+        # Extract distances from st[].stats.distance or from st.[].stats.coordinates.latitude...
         self._tr_offsets = np.empty(len(self.stream))
         if not self.sect_dist_degree:
             # Define offset in km from tr.stats.distance
@@ -1159,9 +1097,7 @@ class WaveformPlotting(object):
                 for _i, tr in enumerate(self.stream):
                     self._tr_offsets[_i] = tr.stats.distance
             except Exception:
-                msg = 'trace.stats.distance undefined ' +\
-                      '(set before plotting [in m], ' +\
-                      'or use the ev_coords argument)'
+                msg = 'trace.stats.distance undefined (set before plotting [in m], or use the ev_coords argument)'
                 raise ValueError(msg)
         else:
             # Define offset as degree from epicenter
@@ -1172,14 +1108,12 @@ class WaveformPlotting(object):
                         tr.stats.coordinates.longitude,
                         self.ev_coord[0], self.ev_coord[1])
             except Exception:
-                msg = 'Define latitude/longitude in trace.stats.' + \
-                    'coordinates and ev_coord. See documentation.'
+                msg = 'Define latitude/longitude in trace.stats.coordinates and ev_coord. See documentation.'
                 raise ValueError(msg)
         # Define minimum and maximum offsets
         if (self.sect_offset_min is None and self.sect_offset_max is None
                 and len(self._tr_offsets) == 1):
-            # avoid flatline in case of a single trace and no custom offsets
-            # specified
+            # avoid flatline in case of a single trace and no custom offsets specified
             self._offset_min = self._tr_offsets[0] * 0.8
             self._offset_max = self._tr_offsets[0] * 1.2
         else:
@@ -1193,8 +1127,7 @@ class WaveformPlotting(object):
                 self._offset_max = self.sect_offset_max
 
         # Reduce data to indexes within offset_min/max
-        mask = ((self._tr_offsets >= self._offset_min) &
-                (self._tr_offsets <= self._offset_max))
+        mask = ((self._tr_offsets >= self._offset_min) & (self._tr_offsets <= self._offset_max))
         self._tr_offsets = self._tr_offsets[mask]
         self.stream = [tr for m, tr in zip(mask, self.stream) if m]
         # Use km on distance axis, if not degrees
@@ -1222,9 +1155,7 @@ class WaveformPlotting(object):
             self._tr_starttimes.append(tr.stats.starttime)
             self._tr_max_count[_i] = tmp_data.max()
             self._tr_npts[_i] = tmp_data.size
-            self._tr_delta[_i] = (
-                tr.stats.endtime -
-                tr.stats.starttime) / self._tr_npts[_i]
+            self._tr_delta[_i] = (tr.stats.endtime - tr.stats.starttime) / self._tr_npts[_i]
         # Init time vectors
         self.__sect_init_time()
         # Init trace colors
@@ -1232,12 +1163,10 @@ class WaveformPlotting(object):
 
     def __sect_scale_traces(self):
         """
-        The traces have to be scaled to fit between 0-1., each trace
-        gets distance-range/num_traces space. adjustable by scale=1.0.
+        The traces have to be scaled to fit between 0-1., each tracegets distance-range/num_traces space. adjustable by
+        scale=1.0.
         """
-        self._sect_scale = (
-            (self._offset_max - self._offset_min) * self.sect_user_scale /
-            (self._tr_num * 1.5))
+        self._sect_scale = ((self._offset_max - self._offset_min) * self.sect_user_scale / (self._tr_num * 1.5))
 
     def __sect_init_time(self):
         """
@@ -1247,8 +1176,7 @@ class WaveformPlotting(object):
         self._tr_times = []
         for _tr in range(self._tr_num):
             self._tr_times.append(
-                np.arange(self._tr_npts[_tr]) * self._tr_delta[_tr] +
-                (self._tr_starttimes[_tr] - reftime))
+                np.arange(self._tr_npts[_tr]) * self._tr_delta[_tr] + (self._tr_starttimes[_tr] - reftime))
             if self.sect_vred:
                 self._tr_times[-1] -= self._tr_offsets[_tr] / self.sect_vred
 
@@ -1292,8 +1220,7 @@ class WaveformPlotting(object):
         if self.sect_orientation == 'vertical':
             self.fillfun = functools.partial(ax.fill_betweenx, **fill_kwargs)
         else:
-            self.fillfun = functools.partial(ax.fill_between, interpolate=True,
-                                             **fill_kwargs)
+            self.fillfun = functools.partial(ax.fill_between, interpolate=True, **fill_kwargs)
         # Calculate normalizing factor
         self.__sect_normalize_traces()
         # Calculate scaling factor
@@ -1302,24 +1229,19 @@ class WaveformPlotting(object):
         # ax.plot() preferred over containers
         for _tr in range(self._tr_num):
             # Scale, normalize and shift traces by offset for plotting
-            data = ((self._tr_data[_tr] / self._tr_normfac[_tr] *
-                     self._sect_scale) +
-                    self._tr_offsets[_tr])
+            data = ((self._tr_data[_tr] / self._tr_normfac[_tr] * self._sect_scale) + self._tr_offsets[_tr])
             time = self._tr_times[_tr]
             if self.sect_orientation == 'vertical':
                 lines += ax.plot(data, time)
             elif self.sect_orientation == 'horizontal':
                 lines += ax.plot(time, data)
             else:
-                raise NotImplementedError("sect_orientiation '%s' is not "
-                                          "valid." % self.sect_orientation)
+                raise NotImplementedError("sect_orientiation '%s' is not valid." % self.sect_orientation)
             if self.fillcolor_pos:
-                self.fillfun(time, data, self._tr_offsets[_tr],
-                             where=data > self._tr_offsets[_tr],
+                self.fillfun(time, data, self._tr_offsets[_tr], where=data > self._tr_offsets[_tr],
                              facecolor=self.fillcolor_pos)
             if self.fillcolor_neg:
-                self.fillfun(time, data, self._tr_offsets[_tr],
-                             where=data < self._tr_offsets[_tr],
+                self.fillfun(time, data, self._tr_offsets[_tr], where=data < self._tr_offsets[_tr],
                              facecolor=self.fillcolor_neg)
 
         # Set correct axes orientation
@@ -1351,8 +1273,7 @@ class WaveformPlotting(object):
             self.get_time_lim = ax.get_xlim
             self.set_time_label = ax.set_xlabel
         else:
-            raise NotImplementedError("sect_orientiation '%s' is not "
-                                      "valid." % self.sect_orientation)
+            raise NotImplementedError("sect_orientation '%s' is not valid." % self.sect_orientation)
 
         return ax, lines
 
@@ -1370,8 +1291,7 @@ class WaveformPlotting(object):
             tr_max_count_glob = np.abs(self._tr_max_count).max()
             self._tr_normfac.fill(tr_max_count_glob)
         else:
-            msg = 'Define a normalisation method. Valid normalisations' + \
-                'are \'trace\', \'stream\'. See documentation.'
+            msg = 'Define a normalisation method. Valid normalisations are \'trace\', \'stream\'. See documentation.'
             raise ValueError(msg)
 
     def __setup_figure(self):
@@ -1381,8 +1301,7 @@ class WaveformPlotting(object):
         import matplotlib.pyplot as plt
         # Setup figure and axes
         self.fig = plt.figure(num=None, dpi=self.dpi,
-                              figsize=(float(self.width) / self.dpi,
-                                       float(self.height) / self.dpi))
+                              figsize=(float(self.width) / self.dpi, float(self.height) / self.dpi))
         # XXX: Figure out why this is needed sometimes.
         # Set size and dpi.
         self.fig.set_dpi(self.dpi)
@@ -1392,27 +1311,23 @@ class WaveformPlotting(object):
         if hasattr(self.stream, 'label'):
             suptitle = self.stream.label
         elif self.type == 'relative':
-            suptitle = ("Time in seconds relative to %s" %
-                        _timestring(self.reftime))
+            suptitle = ("Time in seconds relative to %s" % _timestring(self.reftime))
         elif self.type == 'dayplot':
-            suptitle = '%s %s' % (self.stream[0].id,
-                                  self.starttime.strftime('%Y-%m-%d'))
+            suptitle = '%s %s' % (self.stream[0].id, self.starttime.strftime('%Y-%m-%d'))
         elif self.type == 'section':
             suptitle = 'Network: %s [%s] - (%i traces / %s)' % \
                 (self.stream[-1].stats.network, self.stream[-1].stats.channel,
                  len(self.stream), _timestring(self.starttime))
         else:
-            suptitle = '%s  -  %s' % (_timestring(self.starttime),
-                                      _timestring(self.endtime))
+            suptitle = '%s  -  %s' % (_timestring(self.starttime), _timestring(self.endtime))
         # add suptitle
         y = (self.height - 15.0) / self.height
-        self.fig.suptitle(suptitle, y=y, fontsize='small',
-                          horizontalalignment='center')
+        self.fig.suptitle(suptitle, y=y, fontsize='small', horizontalalignment='center')
 
     def _warn_on_xaxis_zoom(self, ax):
         """
-        Method to be used as a callback on `method=fast`, "minmax"-type plots
-        to warn the user when zooming into the plot.
+        Method to be used as a callback on `method=fast`, "minmax"-type plots to warn the user when zooming into the
+        plot.
         """
         xlim = ax.get_xlim()
         if xlim[1] - xlim[0] < 0.9 * self._initial_xrange:
@@ -1427,9 +1342,8 @@ class WaveformPlotting(object):
 
     def _add_zoomlevel_warning_text(self):
         ax = self.fig.axes[0]
-        self._minmax_warning_text = ax.text(
-            0.95, 0.9, MINMAX_ZOOMLEVEL_WARNING_TEXT, color="r",
-            ha="right", va="top", transform=ax.transAxes)
+        self._minmax_warning_text = ax.text(0.95, 0.9, MINMAX_ZOOMLEVEL_WARNING_TEXT, color="r", ha="right", va="top",
+                                            transform=ax.transAxes)
 
     def _remove_zoomlevel_warning_text(self):
         ax = self.fig.axes[0]
@@ -1443,14 +1357,11 @@ class WaveformPlotting(object):
                 continue
             start = self._time_to_xvalue(start)
             end = self._time_to_xvalue(end)
-            self._overlap_axvspan = \
-                ax.axvspan(start, end, color="r", zorder=-10, alpha=0.5)
+            self._overlap_axvspan = ax.axvspan(start, end, color="r", zorder=-10, alpha=0.5)
 
     def _draw_overlap_axvspan_legend(self):
         if hasattr(self, "_overlap_axvspan"):
-            self.fig.axes[-1].legend(
-                [self._overlap_axvspan], ["Overlaps"],
-                loc="lower right", prop=dict(size="small"))
+            self.fig.axes[-1].legend([self._overlap_axvspan], ["Overlaps"], loc="lower right", prop=dict(size="small"))
 
     def _time_to_xvalue(self, t):
         if self.type == 'relative':
