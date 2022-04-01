@@ -26,7 +26,7 @@ if not os.path.isdir(resource_dir):
     os.makedirs(resource_dir)
 
 
-def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, full=True, detrend=False, **kwargs):
+def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, project_meta=None, full=True, detrend=False, **kwargs):
     """
     Extra keyword arguments are included as report parameters (must match variables in template file).
     """
@@ -80,19 +80,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     station_info = obspy.read_inventory(xf)
         else:
             g_log.warning("No metadata file provided, and none found in data directory.")
-
-    project_meta = None
-    # TODO: Get introductory text for QC report from metadata JSON
-    if channel_map is None:
-        g_log.info("No channel map provided. Checking data directory for project_info.json...")
-        # Search data_dir for project JSON (should have channel descriptions)
-        # TODO: Replace with ST integration once we have an instance running
-        project_json = os.path.join(data_dir, 'project_info.json')
-        if os.path.isfile(project_json):
-            pj = open(project_json)
-            project_meta = json.load(pj)
-        else:
-            g_log.info("No project metadata JSON found at {0}".format(project_json))
 
     # Find data files and backup if necessary
     # TODO: Remove file backup here once it has been copied to pre-processing script (QC doesn't change miniSEED files)
@@ -150,19 +137,22 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     for key in ['azimuth', 'dip']:
                         tr.stats[key] = orient[key]
 
+            # Get channel info from project metadata JSON
+            channel_info = None
+            if project_meta is not None:
+                try:
+                    channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_meta['channels']))[0]
+                except (KeyError, IndexError):
+                    g_log.warn("No matching information found in project metadata for channel {0}".format(tr.id))
+
             # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
             if channel_map is not None:
                 ch_info = channel_map.loc[tr.id]
                 for code in ['Network', 'Station', 'Location', 'Channel', 'Description']:
                     if ch_info[code] is not None and ~check_nan(ch_info[code]):
                         tr.meta[code.lower()] = ch_info[code]
-            else:
-                if project_meta is not None:
-                    try:
-                        channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_meta['channels']))[0]
-                        tr.meta.description = channel_info['description']
-                    except (KeyError, IndexError):
-                        g_log.warn("No matching description found in project metadata for channel {0}".format(tr.id))
+            elif channel_info is not None:
+                tr.meta.description = channel_info['description']
             if tr.meta.network != network_id:
                 raise AssertionError('Channel {0} is not in network {1}'.format(tr.id, network_id))
         data.merge()
@@ -227,6 +217,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                 # Plot each trace individually for QC report
                 trace_plot = os.path.join(output_dir, 'full_seismic_{0}.png'.format(tr.id))
+                # TODO: Remove channel ID from top left corner of plot
                 tr.plot(outfile=trace_plot)
                 trace_info['traceLoc'] = trace_plot
 
@@ -308,8 +299,26 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                 # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
 
-                # Summary statistics
+                # Summary statistics and individual channel plots
                 for tr in data:
+                    # Get channel info from project metadata JSON
+                    channel_info = None
+                    if project_meta is not None:
+                        try:
+                            channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_meta['channels']))[0]
+                        except (KeyError, IndexError):
+                            pass
+
+                    dmin, dmax = None, None
+                    if channel_info is not None:
+                        if 'hide' in channel_info:
+                            if channel_info['hide']:
+                                continue
+                        if 'max' in channel_info:
+                            dmax = float(channel_info['max'])
+                        if 'min' in channel_info:
+                            dmin = float(channel_info['min'])
+
                     trace_info = {
                         'seedID': tr.id,
                         'channelName': tr.id,
@@ -319,7 +328,10 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                     # Plot each trace individually for QC report
                     trace_plot = os.path.join(output_dir, 'full_{0}_{1}.png'.format(description, tr.id))
-                    tr.plot(outfile=trace_plot)
+                    # TODO: Remove channel ID from top left corner of plot
+                    tfig = tr.plot(handle=True)
+                    plt.gca().set_ylim(dmin, dmax)
+                    tfig.savefig(trace_plot)
                     trace_info['traceLoc'] = trace_plot
 
                     if hasattr(tr.meta, 'response'):
@@ -360,6 +372,24 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 # battery voltage and power consumption
                 channel_type = 'power'
 
+            # Get channel info from project metadata JSON
+            channel_info = None
+            if project_meta is not None:
+                try:
+                    channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_meta['channels']))[0]
+                except (KeyError, IndexError):
+                    pass
+
+            dmin, dmax = None, None
+            if channel_info is not None:
+                if 'hide' in channel_info:
+                    if channel_info['hide']:
+                        continue
+                if 'max' in channel_info:
+                    dmax = float(channel_info['max'])
+                if 'min' in channel_info:
+                    dmin = float(channel_info['min'])
+
             trace_info = {
                 'seedID': data[0].id,
                 'channelName': data[0].id,
@@ -382,6 +412,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         tr.remove_sensitivity()
 
                 full_data_plot = os.path.join(output_dir, 'full_seismic_{0}.png'.format(data[0].id))
+                # TODO: Remove channel ID from top left corner of plot
                 data.plot(outfile=full_data_plot)
                 trace_info['traceLoc'] = full_data_plot
 
@@ -442,6 +473,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             else:
                 # Analysis of auxiliary data
                 raw_data_plot = os.path.join(output_dir, 'raw_{0}.png'.format(data[0].id))
+                # TODO: Remove channel ID from top left corner of plot
                 data.plot(outfile=raw_data_plot)
 
                 # Apply instrument sensitivity
@@ -452,12 +484,14 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         sens_applied = True
                 if sens_applied:
                     # TODO: Replace with custom plotting routine
+                    # TODO: Remove channel ID from top left corner of plot
                     full_data_plot = os.path.join(output_dir, 'full_{0}.png'.format(data[0].id))
                     fig = data.plot(show=False, handle=True)
                     for i in range(len(data.traces)):
                         if hasattr(data.traces[i].meta, 'description'):
                             ax = fig.axes[i]
                             ax.set_ylabel("{0} ({1})".format(data.traces[i].meta.description, data.traces[i].meta.response.instrument_sensitivity.input_units))
+                            ax.set_ylim(dmin, dmax)
                     plt.grid(True, ls=':')
                     fig.savefig(full_data_plot)
                     plt.close(fig)
@@ -610,12 +644,37 @@ if __name__ == '__main__':
         else:
             config = config_handler.get_config()
 
+        # Read project metadata JSON file
+        project_meta = None
+        # TODO: Get introductory text for QC report from metadata JSON
+        # TODO: Replace with ST integration once we have an instance running
+        if channel_map is None:
+            g_log.info("No channel map provided. Checking data directory for project_info.json...")
+        else:
+            g_log.info("Reading project metadata from [data_dir]/project_info.json...")
+        # Search data_dir for project JSON (should have channel descriptions)
+        project_json = os.path.join(data_dir, 'project_info.json')
+        if os.path.isfile(project_json):
+            pj = open(project_json)
+            project_meta = json.load(pj)
+        else:
+            g_log.info("No project metadata JSON found at {0}".format(project_json))
+
+        station_meta = None
+        if project_meta is not None:
+            try:
+                station_meta = list(filter(lambda x: x['name'] == base_meta['Station'].values[0], project_meta['stations']))[0]
+            except (KeyError, IndexError):
+                g_log.info("No matching station information found in project metadata JSON.")
+
         # Gather some basic information for report
         report_kwargs = {
             'today': datetime.now().strftime('%Y-%m-%d'),
         }
         if args.project_name:
             report_kwargs['projectName'] = args.project_name
+        elif project_meta is not None:
+            report_kwargs['projectName'] = project_meta['project']
         else:
             report_kwargs['projectName'] = 'Test Recording'
         report_kwargs['stationName'] = base_meta['Station'].values[0]
@@ -631,12 +690,13 @@ if __name__ == '__main__':
         report_kwargs['deploymentDays'] = (report_kwargs['recovered'] - report_kwargs['deployed']) / timedelta(days=1)
         report_kwargs['clockDrift'] = base_meta['Clock Offset on Deck (ms)'].values[0]
         report_kwargs['batteryLevel'] = rec['Battery SOC (%)'].values[0]
-        report_kwargs['introText'] = ''
+        if station_meta is not None:
+            report_kwargs['introText'] = station_meta['qc_intro']
         report_kwargs['psdWindowSecs'] = int(config.get('seismic', 'window_length'))
         report_kwargs['psdOverlapPercent'] = int(config.get('seismic', 'overlap_percent'))
 
         # Process data files to apply clock drift correction and update metadata
-        process(data_dir, base_meta, args.network_id, config, output_dir, metadata_file, channel_map, ~args.function_check, args.detrend_seis, **report_kwargs)
+        process(data_dir, base_meta, args.network_id, config, output_dir, metadata_file, channel_map, project_meta, ~args.function_check, args.detrend_seis, **report_kwargs)
 
         g_log.info("Processing complete!")
         end_time = datetime.now()
