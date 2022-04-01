@@ -14,6 +14,7 @@ import traceback
 import warnings
 from datetime import datetime, timedelta
 from obspy.io.stationxml.core import validate_stationxml
+from obspy.signal import PPSD
 
 import nfsi_obs as nf
 from utilities import config_handler, logger, check_nan, ReportGenerator
@@ -45,7 +46,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         win_len = report_params['psdWindowSecs']
     if 'psdOverlapPercent' in report_params:
         overlap = report_params['psdOverlapPercent'] / 100
-    spec_win = config.get('seismic', 'spectrogram_window', 60)
+    spec_win = int(config.get('seismic', 'spectrogram_window', fallback=60))
 
     # Read station metadata file
     station_info = None
@@ -81,6 +82,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             g_log.warning("No metadata file provided, and none found in data directory.")
 
     project_meta = None
+    # TODO: Get introductory text for QC report from metadata JSON
     if channel_map is None:
         g_log.info("No channel map provided. Checking data directory for project_info.json...")
         # Search data_dir for project JSON (should have channel descriptions)
@@ -168,9 +170,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
         # Cut data to time on seafloor (if start/end times provided)
         start, end = None, None
-        if ~pd.isnull(obs_log['Date/Time on Seafloor (UTC)'].values[0]):
+        if not pd.isnull(obs_log['Date/Time on Seafloor (UTC)'].values[0]):
             start = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time on Seafloor (UTC)'].values[0]))
-        if ~pd.isnull(obs_log['Date/Time Released (UTC)'].values[0]):
+        if not pd.isnull(obs_log['Date/Time Released (UTC)'].values[0]):
             end = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time Released (UTC)'].values[0]))
 
         data = data.slice(start, end, nearest_sample=False)
@@ -353,11 +355,12 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
             if channel_type == 'seismic':
                 trace_info.update({
-                    'azimuth': data[0].meta.azimuth,
-                    'dip': data[0].meta.dip,
                     'windowSecs': 3600,
                     'overlapPercent': 75,
                 })
+                for metaKey, reportKey in zip(['azimuth', 'dip'], ['azimuth', 'dip']):
+                    if hasattr(data[0].meta, metaKey):
+                        trace_info[reportKey] = data[0].meta[metaKey]
 
                 for tr in data:
                     if hasattr(tr.meta, 'response'):
@@ -373,7 +376,15 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 data.plot(outfile=demean_data_plot)
 
                 spectrogram_plot = os.path.join(output_dir, 'spec_{0}.png'.format(data[0].id))
-                data.spectrogram(per_lap=overlap, wlen=spec_win, outfile=spectrogram_plot)
+                #data.spectrogram(per_lap=overlap, wlen=spec_win, outfile=spectrogram_plot)
+                # Alternate spectrogram method (hopefully lower memory)
+                npts = int(spec_win * data[0].meta.sampling_rate)
+                sfig, sax = plt.subplots(1, 1)
+                plt.specgram(data[0].data, NFFT=npts, Fs=data[0].meta.sampling_rate, window=signal.get_window('hamming', npts, False), detrend='linear', scale='dB')
+                sax.set_yscale('log')
+                sax.set_ylim(ymin=1e-3, ymax=data[0].meta.sampling_rate / 2)
+                sfig.savefig(spectrogram_plot)
+
                 trace_info['specLoc'] = spectrogram_plot
 
                 # Plot PSDs of data
@@ -429,8 +440,15 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     fig.savefig(full_data_plot)
                     plt.close(fig)
                     trace_info['traceLoc'] = full_data_plot
+                else:
+                    trace_info['traceLoc'] = raw_data_plot
 
                 # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
+
+                if channel_type == 'power':
+                    for tr in data:
+                        if tr.meta.channel == 'LE3':
+                            report_params['meanPower'] = np.mean(tr.data)
 
                 # Summary statistics
                 for tr in data:
