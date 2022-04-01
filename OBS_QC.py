@@ -326,10 +326,11 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         units = tr.meta.response.instrument_sensitivity.input_units
                     else:
                         units = ''
-                    print("{0} | {1} - {2} | Average {3:.3f} {4}".format(
+                    print("{0} | {1} - {2} | {3} | Average {4:.3f} {5}".format(
                         tr.id,
                         tr.meta.starttime.strftime('%Y-%m-%d %H:%M:%S.%f'),
                         tr.meta.endtime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                        trace_info['channelName'],
                         np.mean(tr.data),
                         units
                     ))
@@ -477,10 +478,11 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         units = tr.meta.response.instrument_sensitivity.input_units
                     else:
                         units = ''
-                    print("{0} | {1} - {2} | Average {3:.3f} {4}".format(
+                    print("{0} | {1} - {2} | {3} | Average {4:.3f} {5}".format(
                         tr.id,
                         tr.meta.starttime.strftime('%Y-%m-%d %H:%M:%S.%f'),
                         tr.meta.endtime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                        trace_info['channelName'],
                         np.mean(tr.data),
                         units
                     ))
