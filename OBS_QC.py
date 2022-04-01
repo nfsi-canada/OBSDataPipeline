@@ -233,7 +233,17 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 # Plot spectrogram of full time period
                 # TODO: Deal with RuntimeWarning for divide by zero (due to dbscale?)
                 spectrogram_plot = os.path.join(output_dir, 'spec_seismic_{0}.png'.format(tr.id))
-                tr.spectrogram(per_lap=overlap, wlen=spec_win, dbscale=True, log=True, outfile=spectrogram_plot)
+                #tr.spectrogram(per_lap=overlap, wlen=spec_win, dbscale=True, log=True, outfile=spectrogram_plot)
+                # Alternate spectrogram method (lower memory usage)
+                npts = int(spec_win * tr.meta.sampling_rate)
+                nover = int(overlap * npts)
+                sfig, sax = plt.subplots(1, 1)
+                plt.specgram(tr.data, NFFT=npts, Fs=tr.meta.sampling_rate, window=signal.get_window('hamming', npts, False), noverlap=nover, detrend='linear', scale='dB')
+                sax.set_yscale('log')
+                sax.set_ylim(ymin=1e-3, ymax=tr.meta.sampling_rate / 2)
+                sax.set_ylabel('Frequency (Hz)')
+                sfig.savefig(spectrogram_plot)
+
                 trace_info['specLoc'] = spectrogram_plot
 
                 # Plot PSDs of data
@@ -247,6 +257,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     freqs.append(frq)
                     psds.append(psd)
                 vax.set_xscale('log')
+                vax.set_xlabel('Frequency (Hz)')
+                vax.set_ylabel('Amplitude (dB)')
                 psd_v_fig.savefig(psd_v_plot)
 
                 # Convert PSDs to acceleration and plot
@@ -255,6 +267,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     apsd = p * (2 * np.pi * f) * (2 * np.pi * f)
                     aax.plot(f, 10 * np.log10(apsd), c='0.8', lw=0.5, marker=None)
                 aax.set_xscale('log')
+                aax.set_xlabel('Frequency (Hz)')
+                aax.set_ylabel('Amplitude (dB)')
                 plt.grid(True, ls=':')
                 psd_a_fig.savefig(psd_a_plot)
                 trace_info['psdLoc'] = psd_a_plot
@@ -326,7 +340,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 if description == 'power':
                     for tr in data:
                         if tr.meta.channel == 'LE3':
-                            report_params['meanPower'] = np.mean(tr.data)
+                            report_params['meanPower'] = '{:.3f}'.format(np.mean(tr.data))
 
                 # TODO: Analysis of state-of-health variables?
                 # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
@@ -370,19 +384,22 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 data.plot(outfile=full_data_plot)
                 trace_info['traceLoc'] = full_data_plot
 
-                # detrend
-                data.detrend('linear')
-                demean_data_plot = os.path.join(output_dir, 'demean_{0}.png'.format(data[0].id))
-                data.plot(outfile=demean_data_plot)
+                # Detrend seismic data (RMS linear fit)
+                if detrend:
+                    data.detrend('linear')
+                    demean_data_plot = os.path.join(output_dir, 'demean_{0}.png'.format(data[0].id))
+                    data.plot(outfile=demean_data_plot)
 
                 spectrogram_plot = os.path.join(output_dir, 'spec_{0}.png'.format(data[0].id))
                 #data.spectrogram(per_lap=overlap, wlen=spec_win, outfile=spectrogram_plot)
-                # Alternate spectrogram method (hopefully lower memory)
+                # Alternate spectrogram method (lower memory usage)
                 npts = int(spec_win * data[0].meta.sampling_rate)
+                nover = int(overlap * npts)
                 sfig, sax = plt.subplots(1, 1)
-                plt.specgram(data[0].data, NFFT=npts, Fs=data[0].meta.sampling_rate, window=signal.get_window('hamming', npts, False), detrend='linear', scale='dB')
+                plt.specgram(data[0].data, NFFT=npts, Fs=data[0].meta.sampling_rate, window=signal.get_window('hamming', npts, False), noverlap=nover, detrend='linear', scale='dB')
                 sax.set_yscale('log')
                 sax.set_ylim(ymin=1e-3, ymax=data[0].meta.sampling_rate / 2)
+                sax.set_ylabel('Frequency (Hz)')
                 sfig.savefig(spectrogram_plot)
 
                 trace_info['specLoc'] = spectrogram_plot
@@ -398,6 +415,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     freqs.append(frq)
                     psds.append(psd)
                 vax.set_xscale('log')
+                vax.set_xlabel('Frequency (Hz)')
+                vax.set_ylabel('Amplitude (dB)')
                 psd_v_fig.savefig(psd_v_plot)
 
                 # Convert PSDs to acceleration and plot
@@ -407,6 +426,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     aax.plot(f, 10 * np.log10(apsd), c='0.8', lw=0.5, marker=None)
                 aax.set_xscale('log')
                 plt.grid(True, ls=':')
+                aax.set_xlabel('Frequency (Hz)')
+                aax.set_ylabel('Amplitude (dB)')
                 psd_a_fig.savefig(psd_a_plot)
                 trace_info['psdLoc'] = psd_a_plot
 
@@ -448,7 +469,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 if channel_type == 'power':
                     for tr in data:
                         if tr.meta.channel == 'LE3':
-                            report_params['meanPower'] = np.mean(tr.data)
+                            report_params['meanPower'] = '{:.3f}'.format(np.mean(tr.data))
 
                 # Summary statistics
                 for tr in data:
