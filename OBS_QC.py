@@ -143,7 +143,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 try:
                     channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_meta['channels']))[0]
                 except (KeyError, IndexError):
-                    g_log.warn("No matching information found in project metadata for channel {0}".format(tr.id))
+                    g_log.warning("No matching information found in project metadata for channel {0}".format(tr.id))
 
             # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
             if channel_map is not None:
@@ -217,8 +217,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                 # Plot each trace individually for QC report
                 trace_plot = os.path.join(output_dir, 'full_seismic_{0}.png'.format(tr.id))
-                # TODO: Remove channel ID from top left corner of plot
-                tr.plot(outfile=trace_plot)
+                waveform = nf.waveform.WaveformPlotting(stream=tr, outfile=trace_plot)
+                waveform.plot_waveform(label_traces=False)
+                #tr.plot(outfile=trace_plot)
                 trace_info['traceLoc'] = trace_plot
 
                 # Plot spectrogram of full time period
@@ -328,8 +329,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                     # Plot each trace individually for QC report
                     trace_plot = os.path.join(output_dir, 'full_{0}_{1}.png'.format(description, tr.id))
-                    # TODO: Remove channel ID from top left corner of plot
-                    tfig = tr.plot(handle=True)
+                    waveform = nf.waveform.WaveformPlotting(stream=tr, handle=True)
+                    tfig = waveform.plot_waveform(label_traces=False)
+                    #tfig = tr.plot(handle=True)
                     plt.gca().set_ylim(dmin, dmax)
                     tfig.savefig(trace_plot)
                     trace_info['traceLoc'] = trace_plot
@@ -413,7 +415,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                 full_data_plot = os.path.join(output_dir, 'full_seismic_{0}.png'.format(data[0].id))
                 # TODO: Remove channel ID from top left corner of plot
-                data.plot(outfile=full_data_plot)
+                waveform = nf.waveform.WaveformPlotting(stream=data, outfile=full_data_plot)
+                waveform.plot_waveform(label_traces=False)
+                #data.plot(outfile=full_data_plot)
                 trace_info['traceLoc'] = full_data_plot
 
                 # Detrend seismic data (RMS linear fit)
@@ -473,8 +477,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             else:
                 # Analysis of auxiliary data
                 raw_data_plot = os.path.join(output_dir, 'raw_{0}.png'.format(data[0].id))
-                # TODO: Remove channel ID from top left corner of plot
-                data.plot(outfile=raw_data_plot)
+                waveform = nf.waveform.WaveformPlotting(stream=data, outfile=raw_data_plot)
+                waveform.plot_waveform(label_traces=False)
+                #data.plot(outfile=raw_data_plot)
 
                 # Apply instrument sensitivity
                 sens_applied = False
@@ -484,9 +489,10 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         sens_applied = True
                 if sens_applied:
                     # TODO: Replace with custom plotting routine
-                    # TODO: Remove channel ID from top left corner of plot
                     full_data_plot = os.path.join(output_dir, 'full_{0}.png'.format(data[0].id))
-                    fig = data.plot(show=False, handle=True)
+                    waveform = nf.waveform.WaveformPlotting(stream=data, handle=True)
+                    fig = waveform.plot_waveform(label_traces=False)
+                    #fig = data.plot(show=False, handle=True)
                     for i in range(len(data.traces)):
                         if hasattr(data.traces[i].meta, 'description'):
                             ax = fig.axes[i]

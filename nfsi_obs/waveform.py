@@ -373,7 +373,7 @@ class WaveformPlotting(object):
                 raise ValueError(msg)
         # Set ticks.
         self.__plot_set_x_ticks()
-        self.__plot_set_y_ticks()
+        self.__plot_set_y_ticks(**kwargs)
         xmin = self._time_to_xvalue(self.starttime)
         xmax = self._time_to_xvalue(self.endtime)
         ax.set_xlim(xmin, xmax)
@@ -759,6 +759,7 @@ class WaveformPlotting(object):
         """
         """
         import matplotlib.pyplot as plt
+        label_traces = kwargs.pop('label_traces', True)
         if self.equal_scale:
             ylims = np.vstack([ax.get_ylim() for ax in self.axis])
             yranges = np.diff(ylims).flatten()
@@ -770,10 +771,10 @@ class WaveformPlotting(object):
                 ax.set_ylim(*ylims_)
         for _i, ax in enumerate(self.axis):
             # Set the title of each plot.
-            # TODO: Make this label optional
-            ax.text(0.02, 0.95, self.ids[_i], transform=ax.transAxes,
-                    fontdict=dict(fontsize="small", ha='left', va='top'),
-                    bbox=dict(boxstyle="round", fc="w", alpha=0.8))
+            if label_traces:
+                ax.text(0.02, 0.95, self.ids[_i], transform=ax.transAxes,
+                        fontdict=dict(fontsize="small", ha='left', va='top'),
+                        bbox=dict(boxstyle="round", fc="w", alpha=0.8))
             plt.setp(ax.get_yticklabels(), fontsize='small')
             ax.yaxis.set_major_locator(MaxNLocator(7, prune="both"))
             ax.yaxis.set_major_formatter(ScalarFormatter())

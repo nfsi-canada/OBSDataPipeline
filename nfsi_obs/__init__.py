@@ -1,1 +1,1 @@
-from . import io, metadata, mseed
+from . import io, metadata, mseed, waveform
