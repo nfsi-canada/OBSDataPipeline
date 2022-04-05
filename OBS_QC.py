@@ -223,10 +223,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 trace_info['traceLoc'] = trace_plot
 
                 # Plot spectrogram of full time period
-                # TODO: Deal with RuntimeWarning for divide by zero (due to dbscale?)
                 spectrogram_plot = os.path.join(output_dir, 'spec_seismic_{0}.png'.format(tr.id))
                 #tr.spectrogram(per_lap=overlap, wlen=spec_win, dbscale=True, log=True, outfile=spectrogram_plot)
-                # Alternate spectrogram method (lower memory usage)
+                # Alternate spectrogram method (lower memory usage), actually plots for test data N channel
                 npts = int(spec_win * tr.meta.sampling_rate)
                 nover = int(overlap * npts)
                 sfig, sax = plt.subplots(1, 1)
@@ -414,7 +413,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         tr.remove_sensitivity()
 
                 full_data_plot = os.path.join(output_dir, 'full_seismic_{0}.png'.format(data[0].id))
-                # TODO: Remove channel ID from top left corner of plot
                 waveform = nf.waveform.WaveformPlotting(stream=data, outfile=full_data_plot)
                 waveform.plot_waveform(label_traces=False)
                 #data.plot(outfile=full_data_plot)
@@ -652,7 +650,6 @@ if __name__ == '__main__':
 
         # Read project metadata JSON file
         project_meta = None
-        # TODO: Get introductory text for QC report from metadata JSON
         # TODO: Replace with ST integration once we have an instance running
         if channel_map is None:
             g_log.info("No channel map provided. Checking data directory for project_info.json...")
