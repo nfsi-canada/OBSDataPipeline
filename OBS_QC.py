@@ -109,20 +109,21 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         ch_name = file_name.split('_')[1]
         labels.append({'channel': ch_name, 'path': rf})
     labeled_files = pd.DataFrame(labels)
-    g_log.info("Files contain data for {0} unique set of channels".format(len(np.unique(labeled_files['channel'].values))))
+    g_log.info("Files contain data for {0} unique set(s) of channels".format(len(np.unique(labeled_files['channel'].values))))
 
-    # Loop through data files
+    # Loop through data files (grouped by channel set)
     for label, files in labeled_files.groupby('channel'):
         g_log.info("Begin processing channel set {0}".format(label))
 
+        # Read all files in list
         data = obspy.Stream()
         for rf in files['path'].values:
             temp = obspy.read(rf)
             for tr in temp:
                 data.append(tr)
         data.merge()
-        # print(data)
 
+        # Populate metadata from other files as necessary
         for tr in data:
             # Get response info from metadata
             if station_info is not None:
@@ -137,24 +138,24 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     for key in ['azimuth', 'dip']:
                         tr.stats[key] = orient[key]
 
-            # Get channel info from project metadata JSON
-            channel_info = None
-            if project_meta is not None:
-                try:
-                    channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_meta['channels']))[0]
-                except (KeyError, IndexError):
-                    g_log.warning("No matching information found in project metadata for channel {0}".format(tr.id))
-
             # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
             if channel_map is not None:
                 ch_info = channel_map.loc[tr.id]
                 for code in ['Network', 'Station', 'Location', 'Channel', 'Description']:
                     if ch_info[code] is not None and ~check_nan(ch_info[code]):
                         tr.meta[code.lower()] = ch_info[code]
-            elif channel_info is not None:
-                tr.meta.description = channel_info['description']
             if tr.meta.network != network_id:
                 raise AssertionError('Channel {0} is not in network {1}'.format(tr.id, network_id))
+
+            # Get channel info from project metadata JSON
+            if project_meta is not None:
+                try:
+                    channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_meta['channels']))[0]
+                    if 'description' in channel_info:
+                        tr.meta.description = channel_info['description']
+                except (KeyError, IndexError):
+                    g_log.warning("No matching information found in project metadata for channel {0}".format(tr.id))
+
         data.merge()
         print(data)
 
@@ -168,64 +169,103 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         data = data.slice(start, end, nearest_sample=False)
 
         # Perform QC
-        if len(data.traces) > 1:
-            # Multiple channels in one miniSEED file
-            seismic = obspy.Stream()
-            ocean = obspy.Stream()
-            power = obspy.Stream()
-            health = obspy.Stream()
-            for tr in data:
-                # Assign to relevant group of channels (there should only be one channel in the Stream object)
-                if (re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', tr.meta.channel)) or (re.match(r'[A-Z]D[HF]', tr.meta.channel)):
-                    # seismic data and hydrophone
-                    seismic.append(tr)
-                elif tr.meta.channel in ['LKO', 'MDO', 'MDU']:
-                    # oceanographic data (external P/T, include APG if present)
-                    # TODO: Would like this to be more general, but internal temperature is also labeled with "KO" source/subsource code by default
-                    ocean.append(tr)
-                elif tr.meta.channel in ['LE3', 'ME4']:
-                    # battery voltage and power consumption
-                    power.append(tr)
-                else:
-                    health.append(tr)
+        # TODO: Combine single and multi-channel cases to simplify code (no real reason to separate)
+        seismic = obspy.Stream()
+        ocean = obspy.Stream()
+        power = obspy.Stream()
+        health = obspy.Stream()
+
+        for tr in data:
+            # Assign to relevant group of channels
+            channel_type = 'health'
+            if (re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', tr.meta.channel)) or (re.match(r'[A-Z]D[HF]', tr.meta.channel)):
+                # seismic data and hydrophone
+                channel_type = 'seismic'
+                seismic.append(tr)
+            elif tr.meta.channel in ['LKO', 'MDO', 'MDU']:
+                # oceanographic data (external P/T, include APG if present)
+                # TODO: Would like this to be more general, but internal temperature is also labeled with "KO" source/subsource code by default
+                channel_type = 'ocean'
+                ocean.append(tr)
+            elif tr.meta.channel in ['LE3', 'ME4']:
+                # battery voltage and power consumption
+                channel_type = 'power'
+                power.append(tr)
+            else:
+                health.append(tr)
+
+            # Start gathering trace information for report
+            trace_info = {
+                'seedID': tr.id,
+                'channelName': tr.id,
+                'order': 100
+            }
+            if hasattr(tr.meta, 'description'):
+                trace_info['channelName'] = tr.meta.description
+
+            # Get channel info from project metadata JSON
+            channel_info = None
+            if project_meta is not None:
+                try:
+                    channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_meta['channels']))[0]
+                except (KeyError, IndexError):
+                    pass
+
+            dmin, dmax = None, None
+            if channel_info is not None:
+                if 'hide' in channel_info:
+                    if channel_info['hide']:
+                        continue
+                if 'max' in channel_info:
+                    dmax = float(channel_info['max'])
+                if 'min' in channel_info:
+                    dmin = float(channel_info['min'])
+                if 'order' in channel_info:
+                    trace_info['order'] = int(channel_info['order'])
+
+            # Plot raw data (counts as recorded)
+            raw_data_plot = os.path.join(output_dir, 'raw_{0}.png'.format(tr.id))
+            waveform = nf.waveform.WaveformPlotting(stream=tr, outfile=raw_data_plot)
+            waveform.plot_waveform(label_traces=False)
+            #data.plot(outfile=raw_data_plot)
+
+            # Apply instrument sensitivity
+            sens_applied = False
+            if hasattr(tr.meta, 'response'):
+                tr.remove_sensitivity()
+                sens_applied = True
+            if sens_applied:
+                # Plot data in real units
+                full_data_plot = os.path.join(output_dir, 'full_{0}.png'.format(tr.id))
+                waveform = nf.waveform.WaveformPlotting(stream=tr, handle=True)
+                fig = waveform.plot_waveform(label_traces=False)
+                #fig = tr.plot(show=False, handle=True)
+                if hasattr(tr.meta, 'description'):
+                    ax = plt.gca()
+                    ax.set_ylabel("{0} ({1})".format(tr.meta.description, tr.meta.response.instrument_sensitivity.input_units))
+                    ax.set_ylim(dmin, dmax)
+                plt.grid(True, ls=':')
+                fig.savefig(full_data_plot)
+                plt.close(fig)
+                trace_info['traceLoc'] = full_data_plot
+            else:
+                trace_info['traceLoc'] = raw_data_plot
 
             # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
-            raw_data_plot = os.path.join(output_dir, 'raw_seismic_{0}.png'.format(network_id))
-            seismic.plot(outfile=raw_data_plot)
-
-            for tr in seismic:
-                if hasattr(tr.meta, 'response'):
-                    tr.remove_sensitivity()
-
-            full_data_plot = os.path.join(output_dir, 'full_seismic_{0}.png'.format(network_id))
-            seismic.plot(outfile=full_data_plot)
-
-            if detrend:
-                # detrend seismic data (RMS linear fit)
-                seismic.detrend('linear')
-                demean_data_plot = os.path.join(output_dir, 'demean_seismic_{0}.png'.format(network_id))
-                seismic.plot(outfile=demean_data_plot)
-
-            for tr in seismic:
-                trace_info = {
-                    'seedID': tr.id,
-                    'channelName': tr.id,
-                }
-                for metaKey, reportKey in zip(['description', 'azimuth', 'dip'], ['channelName', 'azimuth', 'dip']):
+            if channel_type == 'seismic':
+                for metaKey, reportKey in zip(['azimuth', 'dip'], ['azimuth', 'dip']):
                     if hasattr(tr.meta, metaKey):
                         trace_info[reportKey] = tr.meta[metaKey]
 
-                # Plot each trace individually for QC report
-                trace_plot = os.path.join(output_dir, 'full_seismic_{0}.png'.format(tr.id))
-                waveform = nf.waveform.WaveformPlotting(stream=tr, outfile=trace_plot)
-                waveform.plot_waveform(label_traces=False)
-                #tr.plot(outfile=trace_plot)
-                trace_info['traceLoc'] = trace_plot
+                # Detrend seismic data (RMS linear fit)
+                if detrend:
+                    tr.detrend('linear')
+                    demean_data_plot = os.path.join(output_dir, 'demean_{0}.png'.format(tr.id))
+                    data.plot(outfile=demean_data_plot)
 
-                # Plot spectrogram of full time period
-                spectrogram_plot = os.path.join(output_dir, 'spec_seismic_{0}.png'.format(tr.id))
-                #tr.spectrogram(per_lap=overlap, wlen=spec_win, dbscale=True, log=True, outfile=spectrogram_plot)
-                # Alternate spectrogram method (lower memory usage), actually plots for test data N channel
+                spectrogram_plot = os.path.join(output_dir, 'spec_{0}.png'.format(tr.id))
+                #data.spectrogram(per_lap=overlap, wlen=spec_win, outfile=spectrogram_plot)
+                # Alternate spectrogram method (lower memory usage)
                 npts = int(spec_win * tr.meta.sampling_rate)
                 nover = int(overlap * npts)
                 sfig, sax = plt.subplots(1, 1)
@@ -258,207 +298,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     apsd = p * (2 * np.pi * f) * (2 * np.pi * f)
                     aax.plot(f, 10 * np.log10(apsd), c='0.8', lw=0.5, marker=None)
                 aax.set_xscale('log')
-                aax.set_xlabel('Frequency (Hz)')
-                aax.set_ylabel('Amplitude (dB)')
-                plt.grid(True, ls=':')
-                psd_a_fig.savefig(psd_a_plot)
-                trace_info['psdLoc'] = psd_a_plot
-
-                report_params['seismic_channels'].append(trace_info)
-
-            if full:
-                # TODO: Decide if these operations are appropriate for the hydrophone data or not
-                # TODO: Calculate hourly PSDs
-                # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
-                # TODO: Linearity of PSD curves
-                g_log.warning("Full QC of seismic noise not yet implemented")
-
-            for data, description in zip([ocean, power, health], ['ocean', 'power', 'health']):
-                # TODO: Make vertical scales for each channel appropriate
-                # Analysis of auxiliary data
-                raw_data_plot = os.path.join(output_dir, 'raw_{0}_{1}.png'.format(description, network_id))
-                data.plot(outfile=raw_data_plot)
-
-                # Apply instrument sensitivity
-                sens_applied = False
-                for tr in data:
-                    if hasattr(tr.meta, 'response'):
-                        tr.remove_sensitivity()
-                        sens_applied = True
-                if sens_applied:
-                    # TODO: Replace with custom plotting routine
-                    full_data_plot = os.path.join(output_dir, 'full_{0}_{1}.png'.format(description, network_id))
-                    fig = data.plot(show=False, handle=True)
-                    for i in range(len(data.traces)):
-                        if hasattr(data.traces[i].meta, 'description'):
-                            ax = fig.axes[i]
-                            ax.set_ylabel("{0} ({1})".format(data.traces[i].meta.description, data.traces[i].meta.response.instrument_sensitivity.input_units))
-                    plt.grid(True, ls=':')
-                    fig.savefig(full_data_plot)
-                    plt.close(fig)
-
-                # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
-
-                # Summary statistics and individual channel plots
-                for tr in data:
-                    # Get channel info from project metadata JSON
-                    channel_info = None
-                    if project_meta is not None:
-                        try:
-                            channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_meta['channels']))[0]
-                        except (KeyError, IndexError):
-                            pass
-
-                    dmin, dmax = None, None
-                    if channel_info is not None:
-                        if 'hide' in channel_info:
-                            if channel_info['hide']:
-                                continue
-                        if 'max' in channel_info:
-                            dmax = float(channel_info['max'])
-                        if 'min' in channel_info:
-                            dmin = float(channel_info['min'])
-
-                    trace_info = {
-                        'seedID': tr.id,
-                        'channelName': tr.id,
-                    }
-                    if hasattr(tr.meta, 'description'):
-                        trace_info['channelName'] = tr.meta.description
-
-                    # Plot each trace individually for QC report
-                    trace_plot = os.path.join(output_dir, 'full_{0}_{1}.png'.format(description, tr.id))
-                    waveform = nf.waveform.WaveformPlotting(stream=tr, handle=True)
-                    tfig = waveform.plot_waveform(label_traces=False)
-                    #tfig = tr.plot(handle=True)
-                    plt.gca().set_ylim(dmin, dmax)
-                    tfig.savefig(trace_plot)
-                    trace_info['traceLoc'] = trace_plot
-
-                    if hasattr(tr.meta, 'response'):
-                        units = tr.meta.response.instrument_sensitivity.input_units
-                    else:
-                        units = ''
-                    print("{0} | {1} - {2} | {3} | Average {4:.3f} {5}".format(
-                        tr.id,
-                        tr.meta.starttime.strftime('%Y-%m-%d %H:%M:%S.%f'),
-                        tr.meta.endtime.strftime('%Y-%m-%d %H:%M:%S.%f'),
-                        trace_info['channelName'],
-                        np.mean(tr.data),
-                        units
-                    ))
-
-                    report_params[description + '_channels'].append(trace_info)
-                # print(data[0].stats)
-
-                if description == 'power':
-                    for tr in data:
-                        if tr.meta.channel == 'LE3':
-                            report_params['meanPower'] = '{:.3f}'.format(np.mean(tr.data))
-
-                # TODO: Analysis of state-of-health variables?
-                # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
-        else:
-            # Single channel per miniSEED file
-            channel_type = 'health'
-            # Assign to relevant group of channels (there should only be one channel in the Stream object)
-            if (re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', data[0].meta.channel)) or (re.match(r'[A-Z]D[HF]', data[0].meta.channel)):
-                # seismic data and hydrophone
-                channel_type = 'seismic'
-            elif data[0].meta.channel in ['LKO', 'MDO', 'MDU']:
-                # oceanographic data (external P/T, include APG if present)
-                # TODO: Would like this to be more general, but internal temperature is also labeled with "KO" source/subsource code by default
-                channel_type = 'ocean'
-            elif data[0].meta.channel in ['LE3', 'ME4']:
-                # battery voltage and power consumption
-                channel_type = 'power'
-
-            # Get channel info from project metadata JSON
-            channel_info = None
-            if project_meta is not None:
-                try:
-                    channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_meta['channels']))[0]
-                except (KeyError, IndexError):
-                    pass
-
-            dmin, dmax = None, None
-            if channel_info is not None:
-                if 'hide' in channel_info:
-                    if channel_info['hide']:
-                        continue
-                if 'max' in channel_info:
-                    dmax = float(channel_info['max'])
-                if 'min' in channel_info:
-                    dmin = float(channel_info['min'])
-
-            trace_info = {
-                'seedID': data[0].id,
-                'channelName': data[0].id,
-            }
-            if hasattr(data[0].meta, 'description'):
-                trace_info['channelName'] = data[0].meta.description
-
-            # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
-            if channel_type == 'seismic':
-                trace_info.update({
-                    'windowSecs': 3600,
-                    'overlapPercent': 75,
-                })
-                for metaKey, reportKey in zip(['azimuth', 'dip'], ['azimuth', 'dip']):
-                    if hasattr(data[0].meta, metaKey):
-                        trace_info[reportKey] = data[0].meta[metaKey]
-
-                for tr in data:
-                    if hasattr(tr.meta, 'response'):
-                        tr.remove_sensitivity()
-
-                full_data_plot = os.path.join(output_dir, 'full_seismic_{0}.png'.format(data[0].id))
-                waveform = nf.waveform.WaveformPlotting(stream=data, outfile=full_data_plot)
-                waveform.plot_waveform(label_traces=False)
-                #data.plot(outfile=full_data_plot)
-                trace_info['traceLoc'] = full_data_plot
-
-                # Detrend seismic data (RMS linear fit)
-                if detrend:
-                    data.detrend('linear')
-                    demean_data_plot = os.path.join(output_dir, 'demean_{0}.png'.format(data[0].id))
-                    data.plot(outfile=demean_data_plot)
-
-                spectrogram_plot = os.path.join(output_dir, 'spec_{0}.png'.format(data[0].id))
-                #data.spectrogram(per_lap=overlap, wlen=spec_win, outfile=spectrogram_plot)
-                # Alternate spectrogram method (lower memory usage)
-                npts = int(spec_win * data[0].meta.sampling_rate)
-                nover = int(overlap * npts)
-                sfig, sax = plt.subplots(1, 1)
-                plt.specgram(data[0].data, NFFT=npts, Fs=data[0].meta.sampling_rate, window=signal.get_window('hamming', npts, False), noverlap=nover, detrend='linear', scale='dB')
-                sax.set_yscale('log')
-                sax.set_ylim(ymin=1e-3, ymax=data[0].meta.sampling_rate / 2)
-                sax.set_ylabel('Frequency (Hz)')
-                sfig.savefig(spectrogram_plot)
-
-                trace_info['specLoc'] = spectrogram_plot
-
-                # Plot PSDs of data
-                psd_v_plot = os.path.join(output_dir, 'psd_seismic_vel_{0}.png'.format(data[0].id))
-                psd_a_plot = os.path.join(output_dir, 'psd_seismic_acc_{0}.png'.format(data[0].id))
-                freqs, psds = [], []
-                psd_v_fig, vax = plt.subplots(1, 1)
-                for sect in data[0].slide(win_len, win_len * (1 - overlap)):
-                    seg_len = pow(2, 17)
-                    psd, frq = plt.psd(sect.data, NFFT=seg_len, Fs=data[0].meta.sampling_rate, window=signal.get_window('hamming', seg_len, False), detrend='linear', color='0.7', linewidth=0.5)
-                    freqs.append(frq)
-                    psds.append(psd)
-                vax.set_xscale('log')
-                vax.set_xlabel('Frequency (Hz)')
-                vax.set_ylabel('Amplitude (dB)')
-                psd_v_fig.savefig(psd_v_plot)
-
-                # Convert PSDs to acceleration and plot
-                psd_a_fig, aax = plt.subplots(1, 1)
-                for f, p in zip(freqs, psds):
-                    apsd = p * (2 * np.pi * f) * (2 * np.pi * f)
-                    aax.plot(f, 10 * np.log10(apsd), c='0.8', lw=0.5, marker=None)
-                aax.set_xscale('log')
                 plt.grid(True, ls=':')
                 aax.set_xlabel('Frequency (Hz)')
                 aax.set_ylabel('Amplitude (dB)')
@@ -474,35 +313,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
             else:
                 # Analysis of auxiliary data
-                raw_data_plot = os.path.join(output_dir, 'raw_{0}.png'.format(data[0].id))
-                waveform = nf.waveform.WaveformPlotting(stream=data, outfile=raw_data_plot)
-                waveform.plot_waveform(label_traces=False)
-                #data.plot(outfile=raw_data_plot)
-
-                # Apply instrument sensitivity
-                sens_applied = False
-                for tr in data:
-                    if hasattr(tr.meta, 'response'):
-                        tr.remove_sensitivity()
-                        sens_applied = True
-                if sens_applied:
-                    # TODO: Replace with custom plotting routine
-                    full_data_plot = os.path.join(output_dir, 'full_{0}.png'.format(data[0].id))
-                    waveform = nf.waveform.WaveformPlotting(stream=data, handle=True)
-                    fig = waveform.plot_waveform(label_traces=False)
-                    #fig = data.plot(show=False, handle=True)
-                    for i in range(len(data.traces)):
-                        if hasattr(data.traces[i].meta, 'description'):
-                            ax = fig.axes[i]
-                            ax.set_ylabel("{0} ({1})".format(data.traces[i].meta.description, data.traces[i].meta.response.instrument_sensitivity.input_units))
-                            ax.set_ylim(dmin, dmax)
-                    plt.grid(True, ls=':')
-                    fig.savefig(full_data_plot)
-                    plt.close(fig)
-                    trace_info['traceLoc'] = full_data_plot
-                else:
-                    trace_info['traceLoc'] = raw_data_plot
-
                 # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
 
                 if channel_type == 'power':
@@ -510,26 +320,60 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         if tr.meta.channel == 'LE3':
                             report_params['meanPower'] = '{:.3f}'.format(np.mean(tr.data))
 
-                # Summary statistics
-                for tr in data:
-                    if hasattr(tr.meta, 'response'):
-                        units = tr.meta.response.instrument_sensitivity.input_units
-                    else:
-                        units = ''
-                    print("{0} | {1} - {2} | {3} | Average {4:.3f} {5}".format(
-                        tr.id,
-                        tr.meta.starttime.strftime('%Y-%m-%d %H:%M:%S.%f'),
-                        tr.meta.endtime.strftime('%Y-%m-%d %H:%M:%S.%f'),
-                        trace_info['channelName'],
-                        np.mean(tr.data),
-                        units
-                    ))
-                # print(data[0].stats)
-
                 # TODO: Analysis of state-of-health variables?
                 # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
 
+            # Summary statistics
+            if hasattr(tr.meta, 'response'):
+                units = tr.meta.response.instrument_sensitivity.input_units
+            else:
+                units = ''
+            print("{0} | {1} - {2} | {3} | Average {4:.3f} {5}".format(
+                tr.id,
+                tr.meta.starttime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                tr.meta.endtime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                trace_info['channelName'],
+                np.mean(tr.data),
+                units
+            ))
+
             report_params[channel_type + '_channels'].append(trace_info)
+
+        for data, description in zip([seismic, ocean, power, health], ['seismic', 'ocean', 'power', 'health']):
+            # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
+            raw_data_plot = os.path.join(output_dir, 'raw_{0}_{1}.png'.format(description, network_id))
+            data.plot(outfile=raw_data_plot)
+
+            # Apply instrument sensitivity
+            sens_applied = False
+            for tr in data:
+                if hasattr(tr.meta, 'response'):
+                    tr.remove_sensitivity()
+                    sens_applied = True
+            if sens_applied:
+                # TODO: Make vertical scales for each channel appropriate
+                # TODO: Replace with custom plotting routine
+                full_data_plot = os.path.join(output_dir, 'full_{0}_{1}.png'.format(description, network_id))
+                fig = data.plot(show=False, handle=True)
+                for i in range(len(data.traces)):
+                    if hasattr(data.traces[i].meta, 'description'):
+                        ax = fig.axes[i]
+                        ax.set_ylabel("{0} ({1})".format(data.traces[i].meta.description, data.traces[
+                            i].meta.response.instrument_sensitivity.input_units))
+                plt.grid(True, ls=':')
+                fig.savefig(full_data_plot)
+                plt.close(fig)
+
+            if detrend and (description == 'seismic'):
+                # detrend seismic data (RMS linear fit)
+                data.detrend('linear')
+                demean_data_plot = os.path.join(output_dir, 'demean_seismic_{0}.png'.format(network_id))
+                data.plot(outfile=demean_data_plot)
+
+    # Sort channel information by specified order
+    for ch_type in ['seismic', 'ocean', 'power', 'health']:
+        sorted_channels = sorted(report_params[ch_type + '_channels'], key=lambda d: d['order'])
+        report_params[ch_type + '_channels'] = sorted_channels
 
     # Save report to *.md and *.pdf formats
     report_md = os.path.join(output_dir, 'QC_report_{0}_auto.md'.format(obs_log['OBS ID'].values[0]))
