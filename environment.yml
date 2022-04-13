@@ -12,3 +12,4 @@ dependencies:
   - bitstring
   - pypandoc
   - jinja2
+  - ioos_qc
