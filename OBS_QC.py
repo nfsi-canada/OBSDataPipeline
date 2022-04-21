@@ -1,5 +1,6 @@
 import argparse
 from glob import glob
+from ioos_qc import utils as iq_utils
 import json
 import matplotlib.pyplot as plt
 import numpy as np
@@ -111,6 +112,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     labeled_files = pd.DataFrame(labels)
     g_log.info("Files contain data for {0} unique set(s) of channels".format(len(np.unique(labeled_files['channel'].values))))
 
+    all_gaps = []
+
     # Loop through data files (grouped by channel set)
     for label, files in labeled_files.groupby('channel'):
         g_log.info("Begin processing channel set {0}".format(label))
@@ -169,13 +172,24 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         data = data.slice(start, end, nearest_sample=False)
 
         # Perform QC
-        # TODO: Combine single and multi-channel cases to simplify code (no real reason to separate)
+        # TODO: Combine single and multi-channel cases to simplify code (no real reason to separate) -> TEST
         seismic = obspy.Stream()
         ocean = obspy.Stream()
         power = obspy.Stream()
         health = obspy.Stream()
 
+        # Gap test
+        gaps = data.get_gaps()
+        all_gaps.extend(gaps)
+        if len(gaps) > 0:
+            g_log.info('Found {0} gaps or overlaps in recorded data'.format(len(gaps)))
+            data.print_gaps()
+
         for tr in data:
+            # Timing check
+            if not iq_utils.check_timestamps(tr.times()):
+                g_log.warning("One or more timestamps are not in chronological order.")
+
             # Assign to relevant group of channels
             channel_type = 'health'
             if (re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', tr.meta.channel)) or (re.match(r'[A-Z]D[HF]', tr.meta.channel)):
@@ -376,6 +390,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         report_params[ch_type + '_channels'] = sorted_channels
 
     # Save report to *.md and *.pdf formats
+    # TODO: Add gap information to report (see obspy.core.stream.Stream.print_gaps)
     report_md = os.path.join(output_dir, 'QC_report_{0}_auto.md'.format(obs_log['OBS ID'].values[0]))
     qcReport = ReportGenerator(type='qc')
     md_out, report_buffer = qcReport.write_report(report_params, report_md)
