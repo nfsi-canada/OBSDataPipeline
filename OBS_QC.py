@@ -226,6 +226,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     pass
 
             dmin, dmax = None, None
+            qc_config = None
             if channel_info is not None:
                 if 'hide' in channel_info:
                     if channel_info['hide']:
@@ -236,34 +237,11 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     dmin = float(channel_info['min'])
                 if 'order' in channel_info:
                     trace_info['order'] = int(channel_info['order'])
+                if 'qc_config' in channel_info:
+                    qc_config = channel_info['qc_config']
 
-            # Plot raw data (counts as recorded)
-            raw_data_plot = os.path.join(output_dir, 'raw_{0}.png'.format(tr.id))
-            waveform = nf.waveform.WaveformPlotting(stream=tr, outfile=raw_data_plot)
-            waveform.plot_waveform(label_traces=False)
-            #data.plot(outfile=raw_data_plot)
-
-            # Apply instrument sensitivity
-            sens_applied = False
-            if hasattr(tr.meta, 'response'):
-                tr.remove_sensitivity()
-                sens_applied = True
-            if sens_applied:
-                # Plot data in real units
-                full_data_plot = os.path.join(output_dir, 'full_{0}.png'.format(tr.id))
-                waveform = nf.waveform.WaveformPlotting(stream=tr, handle=True)
-                fig = waveform.plot_waveform(label_traces=False)
-                #fig = tr.plot(show=False, handle=True)
-                if hasattr(tr.meta, 'description'):
-                    ax = plt.gca()
-                    ax.set_ylabel("{0} ({1})".format(tr.meta.description, tr.meta.response.instrument_sensitivity.input_units))
-                    ax.set_ylim(dmin, dmax)
-                plt.grid(True, ls=':')
-                fig.savefig(full_data_plot)
-                plt.close(fig)
-                trace_info['traceLoc'] = full_data_plot
-            else:
-                trace_info['traceLoc'] = raw_data_plot
+            # Time series plot
+            trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, [dmin, dmax], qc_config)
 
             # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
             if channel_type == 'seismic':
