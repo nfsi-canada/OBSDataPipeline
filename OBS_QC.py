@@ -1,6 +1,7 @@
 import argparse
 from glob import glob
 from ioos_qc import utils as iq_utils
+from ioos_qc import qartod
 import json
 import matplotlib.pyplot as plt
 import numpy as np
@@ -271,11 +272,20 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             else:
                 # Analysis of auxiliary data
                 # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
+                if qc_config is not None:
+                    if 'qartod' in qc_config:
+                        # TODO: Range checks
+                        if 'gross_range_test' in qc_config['qartod']:
+                            range_check = qartod.gross_range_test(tr.data, **qc_config['qartod']['gross_range_test'])
+
+                        # TODO: Check how often instrument centres (save flat-line test results for all 3 and compare later)
+                        if re.match(r'[A-Z]M[1-3ENZ]', tr.meta.channel) and ('flat_line_test' in qc_config['qartod']):
+                            # centring channels only, must have flat-line test criteria specified
+                            flatline = qartod.flat_line_test(tr.data, **qc_config['qartod']['flat_line_test'])
 
                 if channel_type == 'power':
-                    for tr in data:
-                        if tr.meta.channel == 'LE3':
-                            report_params['meanPower'] = '{:.3f}'.format(np.mean(tr.data))
+                    if tr.meta.channel == 'LE3':
+                        report_params['meanPower'] = '{:.3f}'.format(np.mean(tr.data))
 
                 # TODO: Analysis of state-of-health variables?
                 # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
