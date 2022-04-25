@@ -241,7 +241,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     qc_config = channel_info['qc_config']
 
             # Time series plot
-            trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, [dmin, dmax], qc_config)
+            trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, dmin, dmax, qc_config)
 
             # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
             if channel_type == 'seismic':
@@ -255,46 +255,11 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     demean_data_plot = os.path.join(output_dir, 'demean_{0}.png'.format(tr.id))
                     data.plot(outfile=demean_data_plot)
 
-                spectrogram_plot = os.path.join(output_dir, 'spec_{0}.png'.format(tr.id))
-                #data.spectrogram(per_lap=overlap, wlen=spec_win, outfile=spectrogram_plot)
-                # Alternate spectrogram method (lower memory usage)
-                npts = int(spec_win * tr.meta.sampling_rate)
-                nover = int(overlap * npts)
-                sfig, sax = plt.subplots(1, 1)
-                plt.specgram(tr.data, NFFT=npts, Fs=tr.meta.sampling_rate, window=signal.get_window('hamming', npts, False), noverlap=nover, detrend='linear', scale='dB')
-                sax.set_yscale('log')
-                sax.set_ylim(ymin=1e-3, ymax=tr.meta.sampling_rate / 2)
-                sax.set_ylabel('Frequency (Hz)')
-                sfig.savefig(spectrogram_plot)
-
-                trace_info['specLoc'] = spectrogram_plot
+                # Spectrogram
+                trace_info['specLoc'] = nf.plotting.spectrogram(tr, output_dir, spec_win, overlap)
 
                 # Plot PSDs of data
-                psd_v_plot = os.path.join(output_dir, 'psd_seismic_vel_{0}.png'.format(tr.id))
-                psd_a_plot = os.path.join(output_dir, 'psd_seismic_acc_{0}.png'.format(tr.id))
-                freqs, psds = [], []
-                psd_v_fig, vax = plt.subplots(1, 1)
-                for sect in tr.slide(win_len, win_len * (1 - overlap)):
-                    seg_len = pow(2, 17)
-                    psd, frq = plt.psd(sect.data, NFFT=seg_len, Fs=tr.meta.sampling_rate, window=signal.get_window('hamming', seg_len, False), detrend='linear', color='0.7', linewidth=0.5)
-                    freqs.append(frq)
-                    psds.append(psd)
-                vax.set_xscale('log')
-                vax.set_xlabel('Frequency (Hz)')
-                vax.set_ylabel('Amplitude (dB)')
-                psd_v_fig.savefig(psd_v_plot)
-
-                # Convert PSDs to acceleration and plot
-                psd_a_fig, aax = plt.subplots(1, 1)
-                for f, p in zip(freqs, psds):
-                    apsd = p * (2 * np.pi * f) * (2 * np.pi * f)
-                    aax.plot(f, 10 * np.log10(apsd), c='0.8', lw=0.5, marker=None)
-                aax.set_xscale('log')
-                plt.grid(True, ls=':')
-                aax.set_xlabel('Frequency (Hz)')
-                aax.set_ylabel('Amplitude (dB)')
-                psd_a_fig.savefig(psd_a_plot)
-                trace_info['psdLoc'] = psd_a_plot
+                trace_info['psdLoc'] = nf.plotting.psd_plot(tr, output_dir, win_len, overlap)
 
                 if full:
                     # TODO: Decide if the same operations are appropriate for the hydrophone data or not
