@@ -91,6 +91,28 @@ def trace_plot(trace, outdir, dmin, dmax, qc_config=None):
         return raw_data_plot
 
 
+def qartod_plot(trace, outdir, check='gross_range_check'):
+    """
+    Make time series plot of an obspy.core.trace.Trace object containing QC results from a QARTOD test (ioos_qc format).
+
+    :param trace: obspy.core.trace.Trace object
+    :param outdir: path to output directory
+
+    :return: path to plot PNG file
+    """
+    # Apply instrument sensitivity if provided
+    qc_plot = os.path.join(outdir, 'QC_{0}_{1}.png'.format(check, trace.id))
+    waveform = WaveformPlotting(stream=trace, handle=True)
+    fig = waveform.plot_waveform(label_traces=False)
+    ax = plt.gca()
+    ax.set_yticks([1, 2, 3, 4])
+    ax.set_yticklabels(['pass', 'undetermined', 'suspect', 'fail'])
+    plt.grid(True, ls=':')
+    fig.savefig(qc_plot)
+    plt.close(fig)
+    return qc_plot
+
+
 def spectrogram(trace, outdir, spec_win, overlap):
     """
     Plot spectrogram of seismic data (as obspy.core.trace.Trace object)

@@ -114,6 +114,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     g_log.info("Files contain data for {0} unique set(s) of channels".format(len(np.unique(labeled_files['channel'].values))))
 
     all_gaps = []
+    centring = pd.DataFrame()
 
     # Loop through data files (grouped by channel set)
     for label, files in labeled_files.groupby('channel'):
@@ -271,21 +272,30 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
             else:
                 # Analysis of auxiliary data
+                timestamps = pd.to_datetime(tr.times(type='timestamp'), unit='s').values
                 # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
                 if qc_config is not None:
                     if 'qartod' in qc_config:
-                        # TODO: Range checks
                         if 'gross_range_test' in qc_config['qartod']:
                             range_check = qartod.gross_range_test(tr.data, **qc_config['qartod']['gross_range_test'])
+                            if np.any(range_check > 1):
+                                g_log.info('Channel {0} has suspect values at {1} sample(s) and failing values at {2} sample(s)'.format(tr.id, np.sum(range_check==3), np.sum(range_check==4)))
+                            check_trace = obspy.Trace(range_check, header=tr.stats)
+                            trace_info['qcPlotLoc'] = nf.plotting.qartod_plot(check_trace, output_dir, 'gross_range_check')
 
                         # TODO: Check how often instrument centres (save flat-line test results for all 3 and compare later)
                         if re.match(r'[A-Z]M[1-3ENZ]', tr.meta.channel) and ('flat_line_test' in qc_config['qartod']):
                             # centring channels only, must have flat-line test criteria specified
                             flatline = qartod.flat_line_test(tr.data, **qc_config['qartod']['flat_line_test'])
+                            centring[tr.id] = pd.Series(flatline, index=timestamps)
 
                 if channel_type == 'power':
                     if tr.meta.channel == 'LE3':
                         report_params['meanPower'] = '{:.3f}'.format(np.mean(tr.data))
+
+                        # TODO: Get times of data writes (spikes 45 minutes apart)
+                        if (qc_config is not None) and ('qartod' in qc_config) and ('spike_test' in qc_config['qartod']):
+                            spikes = qartod.spike_test(tr.data, **qc_config['qartod']['spike_test'])
 
                 # TODO: Analysis of state-of-health variables?
                 # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
@@ -306,6 +316,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
             report_params[channel_type + '_channels'].append(trace_info)
 
+        # TODO: Decide whether to keep this section. Don't actually use these plots.
         for data, description in zip([seismic, ocean, power, health], ['seismic', 'ocean', 'power', 'health']):
             # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
             raw_data_plot = os.path.join(output_dir, 'raw_{0}_{1}.png'.format(description, network_id))
@@ -343,7 +354,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         report_params[ch_type + '_channels'] = sorted_channels
 
     # Save report to *.md and *.pdf formats
-    # TODO: Add gap information to report (see obspy.core.stream.Stream.print_gaps)
+    # TODO: Add gap information to report (all_gaps list should cover all traces)
     report_md = os.path.join(output_dir, 'QC_report_{0}_auto.md'.format(obs_log['OBS ID'].values[0]))
     qcReport = ReportGenerator(type='qc')
     md_out, report_buffer = qcReport.write_report(report_params, report_md)
