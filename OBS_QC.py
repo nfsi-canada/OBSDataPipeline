@@ -283,7 +283,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                             check_trace = obspy.Trace(range_check, header=tr.stats)
                             trace_info['qcPlotLoc'] = nf.plotting.qartod_plot(check_trace, output_dir, 'gross_range_check')
 
-                        # TODO: Check how often instrument centres (save flat-line test results for all 3 and compare later)
                         if re.match(r'[A-Z]M[1-3ENZ]', tr.meta.channel) and ('flat_line_test' in qc_config['qartod']):
                             # centring channels only, must have flat-line test criteria specified
                             flatline = qartod.flat_line_test(tr.data, **qc_config['qartod']['flat_line_test'])
@@ -352,6 +351,19 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     if len(centring.columns) > 0:
         centred = centring.eq(4).all(axis='columns')
 
+        # TODO: Compile text to summarize centring behaviour
+
+        centring_plot = os.path.join(output_dir, 'centring_{0}.png'.format(obs_log['OBS ID'].values[0]))
+        fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
+        centred.astype(float).plot(kind='line', ax=ax)
+        fig.savefig(centring_plot)
+        plt.close(fig)
+
+        report_params['centring'] = {
+            'plot': centring_plot,
+            'text': ''
+        }
+
     # Parse gap information for report
     if len(all_gaps) > 0:
         report_params['gapList'] = []
@@ -370,7 +382,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         report_params[ch_type + '_channels'] = sorted_channels
 
     # Save report to *.md and *.pdf formats
-    # TODO: Add gap information to report (all_gaps list should cover all traces)
     report_md = os.path.join(output_dir, 'QC_report_{0}_auto.md'.format(obs_log['OBS ID'].values[0]))
     qcReport = ReportGenerator(type='qc')
     md_out, report_buffer = qcReport.write_report(report_params, report_md)

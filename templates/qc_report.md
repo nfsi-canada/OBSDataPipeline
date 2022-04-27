@@ -70,6 +70,16 @@ No recording gaps or overlaps were observed in the recorded data.
 
 {% endif %}
 
+{% if centring %}
+{{ centring.text }}
+
+![Centring behaviour of OBS {{ obsId }} during deployment]({{ centring.plot }})
+
+{% else %}
+Unable to evaluate centring behaviour with available data.
+
+{% endif %}
+
 \newpage{}
 
 # Seismic Data
