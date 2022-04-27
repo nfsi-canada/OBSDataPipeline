@@ -54,6 +54,22 @@ Power spectral density curves are calculated using {{ psdWindowLength }} windows
 
 {{ introText }}
 
+# General QC
+
+{% if gapList %}
+The following gaps/overlaps were observed in the recorded data.
+
+| Channel | Start Time | End Time | Length (s) | Missing Samples |
+|:--------|:-----------|:---------|-----------:|----------------:|
+{% for gap in gapList %}
+| gap.id | gap.start | gap.end | gap.sec | gap.samp |
+{% endfor %}
+
+{% else %}
+No recording gaps or overlaps were observed in the recorded data.
+
+{% endif %}
+
 \newpage{}
 
 # Seismic Data
@@ -90,6 +106,10 @@ SEED ID: {{ ch.seedID }}
 
 ![Recorded data for channel {{ ch.seedID }}]({{ ch.traceLoc }})
 
+{% if ch.qcPlotLoc %}
+![Range check results for channel {{ ch.seedID }}]({{ ch.qcPlotLoc }})
+{% endif %}
+
 {% endfor %}
 
 \newpage{}
@@ -102,6 +122,10 @@ SEED ID: {{ ch.seedID }}
 
 ![Recorded data for channel {{ ch.seedID }}]({{ ch.traceLoc }})
 
+{% if ch.qcPlotLoc %}
+![Range check results for channel {{ ch.seedID }}]({{ ch.qcPlotLoc }})
+{% endif %}
+
 {% endfor %}
 
 \newpage{}
@@ -113,5 +137,9 @@ SEED ID: {{ ch.seedID }}
 SEED ID: {{ ch.seedID }}
 
 ![Recorded data for channel {{ ch.seedID }}]({{ ch.traceLoc }})
+
+{% if ch.qcPlotLoc %}
+![Range check results for channel {{ ch.seedID }}]({{ ch.qcPlotLoc }})
+{% endif %}
 
 {% endfor %}

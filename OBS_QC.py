@@ -336,8 +336,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 for i in range(len(data.traces)):
                     if hasattr(data.traces[i].meta, 'description'):
                         ax = fig.axes[i]
-                        ax.set_ylabel("{0} ({1})".format(data.traces[i].meta.description, data.traces[
-                            i].meta.response.instrument_sensitivity.input_units))
+                        ax.set_ylabel("{0} ({1})".format(data.traces[i].meta.description,
+                                                         data.traces[i].meta.response.instrument_sensitivity.input_units))
                 plt.grid(True, ls=':')
                 fig.savefig(full_data_plot)
                 plt.close(fig)
@@ -347,6 +347,22 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 data.detrend('linear')
                 demean_data_plot = os.path.join(output_dir, 'demean_seismic_{0}.png'.format(network_id))
                 data.plot(outfile=demean_data_plot)
+
+    # Check centring behaviour
+    if len(centring.columns) > 0:
+        centred = centring.eq(4).all(axis='columns')
+
+    # Parse gap information for report
+    if len(all_gaps) > 0:
+        report_params['gapList'] = []
+        for gap in all_gaps:
+            report_params['gapList'].append({
+                'id': '.'.join(gap[0:4]),
+                'start': gap[4].strftime('%Y-%m-%d %H:%M:%S.%f'),
+                'end': gap[5].strftime('%Y-%m-%d %H:%M:%S.%f'),
+                'sec': gap[6],
+                'samp': gap[7]
+            })
 
     # Sort channel information by specified order
     for ch_type in ['seismic', 'ocean', 'power', 'health']:
