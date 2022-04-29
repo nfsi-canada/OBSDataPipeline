@@ -349,9 +349,11 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     # Check centring behaviour
     if len(centring.columns) > 0:
-        centred = centring.eq(4).all(axis='columns')
-
+        is_centred = centring.eq(4).all(axis='columns')
+        centred = nf.get_true_periods(is_centred)
+        
         # TODO: Compile text to summarize centring behaviour
+        ctx = ''
 
         centring_plot = os.path.join(output_dir, 'centring_{0}.png'.format(obs_log['OBS ID'].values[0]))
         fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
@@ -361,7 +363,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
         report_params['centring'] = {
             'plot': centring_plot,
-            'text': ''
+            'text': ctx
         }
 
     # Parse gap information for report
