@@ -1,5 +1,5 @@
 % OBS Data Quality Report - {{ obsName }}
-% 
+% Project: {{ projectName }} | Station: {{ stationName }} | Location (lat/lon): {{ latString }}, {{ lonString }}
 % Prepared on: {{ today }}
 
 ---
@@ -46,7 +46,7 @@ Average power consumption (W): {{ meanPower }}
 
 Remaining battery SOC: {{ batteryLevel }}%
 
-Power spectral density curves are calculated using {{ psdWindowLength }} windows, with {{ psdOverlapPercent }}% overlap.
+Power spectral density curves are calculated using {{ psdWindowLength }} Hann windows, with {{ psdOverlapPercent }}% overlap.
 
 \newpage{}
 
@@ -59,7 +59,7 @@ Power spectral density curves are calculated using {{ psdWindowLength }} windows
 {% if gapList %}
 The following gaps/overlaps were observed in the recorded data.
 
-| Channel | Start Time | End Time | Length (s) | Missing Samples |
+| Channel | Start Time | End Time | Length (s) | Missing/Overlapped Samples |
 |:--------|:-----------|:---------|-----------:|----------------:|
 {% for gap in gapList %}
 | gap.id | gap.start | gap.end | gap.sec | gap.samp |

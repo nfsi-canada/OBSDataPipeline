@@ -129,7 +129,7 @@ def spectrogram(trace, outdir, spec_win, overlap):
     npts = int(spec_win * trace.meta.sampling_rate)
     nover = int(overlap * npts)
     sfig, sax = plt.subplots(1, 1)
-    plt.specgram(trace.data, NFFT=npts, Fs=trace.meta.sampling_rate, window=signal.get_window('hamming', npts, False),
+    plt.specgram(trace.data, NFFT=npts, Fs=trace.meta.sampling_rate, window=signal.get_window('hann', npts, False),
                  noverlap=nover, detrend='linear', scale='dB')
     sax.set_yscale('log')
     sax.set_ylim(ymin=1e-3, ymax=trace.meta.sampling_rate / 2)
@@ -157,7 +157,7 @@ def psd_plot(trace, outdir, win_len, overlap):
     for sect in trace.slide(win_len, win_len * (1 - overlap)):
         seg_len = pow(2, 17)
         psd, frq = plt.psd(sect.data, NFFT=seg_len, Fs=trace.meta.sampling_rate,
-                           window=signal.get_window('hamming', seg_len, False), detrend='linear', color='0.7',
+                           window=signal.get_window('hann', seg_len, False), detrend='linear', color='0.7',
                            linewidth=0.5)
         freqs.append(frq)
         psds.append(psd)
