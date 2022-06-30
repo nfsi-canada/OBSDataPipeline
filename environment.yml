@@ -12,4 +12,6 @@ dependencies:
   - bitstring
   - pypandoc
   - jinja2
-  - ioos_qc
+  - pip
+  - pip:
+    - git+https://github.com/kaelbos/ioos_qc@high_sample_rate

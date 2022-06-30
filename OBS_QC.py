@@ -285,7 +285,10 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                         if re.match(r'[A-Z]M[1-3ENZ]', tr.meta.channel) and ('flat_line_test' in qc_config['qartod']):
                             # centring channels only, must have flat-line test criteria specified
-                            flatline = qartod.flat_line_test(tr.data, **qc_config['qartod']['flat_line_test'])
+                            flt_params = qc_config['qartod']['flat_line_test'].copy()
+                            flatline = qartod.flat_line_test(tr.data, timestamps,
+                                                             int(flt_params.pop('suspect_threshold')),
+                                                             int(flt_params.pop('fail_threshold')))
                             centring[tr.id] = pd.Series(flatline, index=timestamps)
 
                 if channel_type == 'power':
