@@ -1,12 +1,21 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import obspy
 import os
 from scipy import signal
 
 from .waveform import WaveformPlotting
 
 
-def trace_plot(trace, outdir, dmin, dmax, qc_config=None):
+QARTOD_COLOURS = {
+    1: 'g',
+    2: 'b',
+    3: 'y',
+    4: 'r',
+    9: '0.5'
+}
+
+def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None):
     """
     Make time series plot(s) of an obspy.core.trace.Trace object, raw and corrected (if response information included).
 
@@ -26,23 +35,30 @@ def trace_plot(trace, outdir, dmin, dmax, qc_config=None):
             if 'gross_range_test' in qc_config['qartod']:
                 ranges = qc_config['qartod']['gross_range_test']
                 if 'fail_span' in ranges:
-                    if dmin < float(ranges['fail_span'][0]):
-                        low_fail = [dmin, float(ranges['fail_span'][0])]
-                    if dmax > float(ranges['fail_span'][1]):
-                        high_fail = [float(ranges['fail_span'][1]), dmax]
+                    low_fail = [-1e32, float(ranges['fail_span'][0])]
+                    high_fail = [float(ranges['fail_span'][1]), 1e32]
+                    if dmin is not None and dmin < float(ranges['fail_span'][0]):
+                        low_fail[0] = dmin
+                    if dmax is not None and dmax > float(ranges['fail_span'][1]):
+                        high_fail[1] = dmax
                 if 'suspect_span' in ranges:
-                    if dmin < float(ranges['suspect_span'][0]):
-                        if low_fail is not None:
-                            if low_fail[1] < float(ranges['suspect_span'][0]):
-                                low_sus = [low_fail[1], float(ranges['suspect_span'][0])]
+                    low_sus = [-1e32, float(ranges['suspect_span'][0])]
+                    high_sus = [float(ranges['suspect_span'][1]), 1e32]
+                    if low_fail is not None:
+                        if low_fail[1] < float(ranges['suspect_span'][0]):
+                            low_sus[0] = low_fail[1]
                         else:
-                            low_sus = [dmin, float(ranges['suspect_span'][0])]
-                    if dmax > float(ranges['suspect_span'][1]):
-                        if high_fail is not None:
-                            if high_fail[0] > float(ranges['suspect_span'][1]):
-                                high_sus = [float(ranges['suspect_span'][1]), high_fail[0]]
+                            low_sus = None  # Low end of fail range is equal or greater than low end of suspect range
+                    elif dmin is not None and dmin < float(ranges['suspect_span'][0]):
+                        low_sus[0] = dmin
+
+                    if high_fail is not None:
+                        if high_fail[0] > float(ranges['suspect_span'][1]):
+                            high_sus[1] = high_fail[0]
                         else:
-                            high_sus = [float(ranges['suspect_span'][1]), dmax]
+                            high_sus = None     # High end of fail range is equal or less than high end of suspect range
+                    elif dmax is not None and dmax > float(ranges['suspect_span'][1]):
+                        high_sus[1] = dmax
     if any([low_sus is not None, low_fail is not None, high_sus is not None, high_fail is not None]):
         qc_bars = True
 

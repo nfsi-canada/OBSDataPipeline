@@ -320,39 +320,42 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
         # TODO: Decide whether to keep this section. Don't actually use these plots.
         for data, description in zip([seismic, ocean, power, health], ['seismic', 'ocean', 'power', 'health']):
-            # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
-            raw_data_plot = os.path.join(output_dir, 'raw_{0}_{1}.png'.format(description, network_id))
-            data.plot(outfile=raw_data_plot)
+            # Check for empty Stream object
+            if len(data) > 0:
+                # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
+                raw_data_plot = os.path.join(output_dir, 'raw_{0}_{1}.png'.format(description, network_id))
+                data.plot(outfile=raw_data_plot)
 
-            # Apply instrument sensitivity
-            sens_applied = False
-            for tr in data:
-                if hasattr(tr.meta, 'response'):
-                    tr.remove_sensitivity()
-                    sens_applied = True
-            if sens_applied:
-                # TODO: Make vertical scales for each channel appropriate
-                # TODO: Replace with custom plotting routine
-                full_data_plot = os.path.join(output_dir, 'full_{0}_{1}.png'.format(description, network_id))
-                fig = data.plot(show=False, handle=True)
-                for i in range(len(data.traces)):
-                    if hasattr(data.traces[i].meta, 'description'):
-                        ax = fig.axes[i]
-                        ax.set_ylabel("{0} ({1})".format(data.traces[i].meta.description,
-                                                         data.traces[i].meta.response.instrument_sensitivity.input_units))
-                plt.grid(True, ls=':')
-                fig.savefig(full_data_plot)
-                plt.close(fig)
+                # Apply instrument sensitivity
+                sens_applied = False
+                for tr in data:
+                    if hasattr(tr.meta, 'response'):
+                        tr.remove_sensitivity()
+                        sens_applied = True
+                if sens_applied:
+                    # TODO: Make vertical scales for each channel appropriate
+                    # TODO: Replace with custom plotting routine
+                    full_data_plot = os.path.join(output_dir, 'full_{0}_{1}.png'.format(description, network_id))
+                    fig = data.plot(show=False, handle=True)
+                    for i in range(len(data.traces)):
+                        if hasattr(data.traces[i].meta, 'description'):
+                            ax = fig.axes[i]
+                            ax.set_ylabel("{0} ({1})".format(data.traces[i].meta.description,
+                                                             data.traces[i].meta.response.instrument_sensitivity.input_units))
+                    plt.grid(True, ls=':')
+                    fig.savefig(full_data_plot)
+                    plt.close(fig)
 
-            if detrend and (description == 'seismic'):
-                # detrend seismic data (RMS linear fit)
-                data.detrend('linear')
-                demean_data_plot = os.path.join(output_dir, 'demean_seismic_{0}.png'.format(network_id))
-                data.plot(outfile=demean_data_plot)
+                if detrend and (description == 'seismic'):
+                    # detrend seismic data (RMS linear fit)
+                    data.detrend('linear')
+                    demean_data_plot = os.path.join(output_dir, 'demean_seismic_{0}.png'.format(network_id))
+                    data.plot(outfile=demean_data_plot)
 
     # Check centring behaviour
     if len(centring.columns) > 0:
         is_centred = centring.eq(4).all(axis='columns')
+        # List of time periods where is_centred is True -> [start, end, npts]
         centred = nf.get_true_periods(is_centred)
         
         # TODO: Compile text to summarize centring behaviour
@@ -360,7 +363,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
         centring_plot = os.path.join(output_dir, 'centring_{0}.png'.format(obs_log['OBS ID'].values[0]))
         fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-        centred.astype(float).plot(kind='line', ax=ax)
+        is_centred.astype(float).plot(kind='line', ax=ax)
         fig.savefig(centring_plot)
         plt.close(fig)
 

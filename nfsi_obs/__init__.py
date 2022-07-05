@@ -55,4 +55,4 @@ def get_true_periods(data, times=None):
             start = times[i]
             npt = 1
 
-    return periods
+    return np.array(periods)
