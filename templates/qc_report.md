@@ -1,8 +1,10 @@
-% OBS Data Quality Report - {{ obsName }}
-% Project: {{ projectName }} | Station: {{ stationName }} | Location (lat/lon): {{ latString }}, {{ lonString }}
-% Prepared on: {{ today }}
-
 ---
+title: OBS Data Quality Report - {{ obsName }}
+subtitle: |
+          Project: {{ projectName }} \
+          Station: {{ stationName }} \
+          Location (lat/lon): {{ latString }}, {{ lonString }}
+author: 'Prepared on: {{ today }}'
 toc-depth: 2
 geometry:
 - margin=1in
