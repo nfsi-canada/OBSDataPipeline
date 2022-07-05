@@ -80,6 +80,7 @@ class WaveformPlotting(object):
         self.stream = self.stream.copy()
         # Type of the plot.
         self.type = kwargs.get('type', 'normal')
+        self.qartod = kwargs.get('qartod', False)
         # Start and end times of the plots.
         self.starttime = kwargs.get('starttime', None)
         self.endtime = kwargs.get('endtime', None)
@@ -143,7 +144,9 @@ class WaveformPlotting(object):
                 self.height = 600
             else:
                 # One plot for each trace.
-                if self.automerge:
+                if self.qartod:
+                    count = 1
+                elif self.automerge:
                     count = self.__get_mergable_ids()
                     count = len(count)
                 else:
@@ -196,6 +199,7 @@ class WaveformPlotting(object):
         self.title_size = kwargs.get('title_size', 10)
         self.linewidth = kwargs.get('linewidth', 1)
         self.linestyle = kwargs.get('linestyle', '-')
+        self.marker = kwargs.get('marker', None)
         self.subplots_adjust_left = kwargs.get('subplots_adjust_left', 0.12)
         self.subplots_adjust_right = kwargs.get('subplots_adjust_right', 0.88)
         self.subplots_adjust_top = kwargs.get('subplots_adjust_top', 0.95)
@@ -658,7 +662,13 @@ class WaveformPlotting(object):
             else:
                 # convert seconds of relative sample times to days and add start time of trace.
                 x_values = ((trace.times() / SECONDS_PER_DAY) + date2num(trace.stats.starttime.datetime))
-            ax.plot(x_values, trace.data, color=self.color, linewidth=self.linewidth, linestyle=self.linestyle)
+            if self.qartod:
+                # Colour QARTOD results by QC status
+                pt_cols = np.vectorize(self.color.get)(trace.data)
+                ax.scatter(x_values, trace.data, color=pt_cols, marker=self.marker)
+            else:
+                ax.plot(x_values, trace.data, color=self.color, linewidth=self.linewidth, linestyle=self.linestyle,
+                        marker=self.marker)
         # Write to self.ids
         trace = st[0]
         if trace.stats.get('preview'):

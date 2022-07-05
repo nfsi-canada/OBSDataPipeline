@@ -97,12 +97,13 @@ def qartod_plot(trace, outdir, check='gross_range_check'):
 
     :param trace: obspy.core.trace.Trace object
     :param outdir: path to output directory
+    :param check: string representing the type of QC check performed, used in output plot file name
 
     :return: path to plot PNG file
     """
-    # Apply instrument sensitivity if provided
+    # Plot test results
     qc_plot = os.path.join(outdir, 'QC_{0}_{1}.png'.format(check, trace.id))
-    waveform = WaveformPlotting(stream=trace, handle=True)
+    waveform = WaveformPlotting(stream=trace, handle=True, linestyle=None, color=QARTOD_COLOURS, marker='.', qartod=True)
     fig = waveform.plot_waveform(label_traces=False)
     ax = plt.gca()
     ax.set_yticks([1, 2, 3, 4])
