@@ -115,10 +115,20 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     all_gaps = []
     centring = pd.DataFrame()
+    power_stats = pd.DataFrame(columns=['Aquarius_ID', 'Deployment_ID', 'Start', 'End', 'Voltage_Min', 'Voltage_Max', 'Voltage_Mean', 'Voltage_gradient', 'Power_Mean'])
+    avg_power = np.array()
+    voltage_stats = np.array()
 
     # Loop through data files (grouped by channel set)
     for label, files in labeled_files.groupby('channel'):
         g_log.info("Begin processing channel set {0}".format(label))
+        g_log.info("{0} data files in list for this channel".format(len(files.index)))
+
+        # Ignore channels with lots of data files (long time periods of seismic data) for now
+        # TODO: Implement data file buffering for long time periods
+        if len(files.index) > 2:
+            g_log.warning("Too many data files to be handled by current code setup! Skipping channel")
+            continue
 
         # Read all files in list
         data = obspy.Stream()
