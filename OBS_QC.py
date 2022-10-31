@@ -534,6 +534,8 @@ if __name__ == '__main__':
     parser.add_argument('--metadata', dest="metadata_file",
                         help="Path to metadata file (dataless SEED or StationXML). If not specified, will search "
                              "data_dir for a suitable file.")
+    parser.add_argument('--extra_meta', dest="extra_meta",
+                        help='Optional JSON file with extra description and QC information')
     parser.add_argument('--function_check', dest="function_check", action="store_true",
                         help="Perform basic QC to check Aquarius functionality only. False by default to perform full "
                              "QC.")
@@ -619,7 +621,10 @@ if __name__ == '__main__':
         else:
             g_log.info("Reading project metadata from [data_dir]/project_info.json...")
         # Search data_dir for project JSON (should have channel descriptions)
-        project_json = os.path.join(data_dir, 'project_info.json')
+        if args.extra_meta:
+            project_json = args.extra_meta
+        else:
+            project_json = os.path.join(data_dir, 'project_info.json')
         if os.path.isfile(project_json):
             pj = open(project_json)
             project_meta = json.load(pj)
@@ -643,6 +648,8 @@ if __name__ == '__main__':
             report_kwargs['projectName'] = project_meta['project']
         else:
             report_kwargs['projectName'] = 'Test Recording'
+        if project_meta['common_intro']:
+            report_kwargs['intro_pt1'] = project_meta['common_intro']
         report_kwargs['stationName'] = base_meta['Station'].values[0]
         report_kwargs['obsName'] = base_meta['OBS Name'].values[0]
         report_kwargs['obsId'] = base_meta['OBS ID'].values[0]
@@ -657,7 +664,8 @@ if __name__ == '__main__':
         report_kwargs['clockDrift'] = base_meta['Clock Offset on Deck (ms)'].values[0]
         report_kwargs['batteryLevel'] = rec['Battery SOC (%)'].values[0]
         if station_meta is not None:
-            report_kwargs['introText'] = station_meta['qc_intro']
+            if 'qc_intro' in station_meta:
+                report_kwargs['introText'] = station_meta['qc_intro']
         report_kwargs['psdWindowSecs'] = int(config.get('seismic', 'window_length'))
         report_kwargs['psdOverlapPercent'] = int(config.get('seismic', 'overlap_percent'))
 

@@ -54,7 +54,13 @@ Power spectral density curves are calculated using {{ psdWindowLength }} Hann wi
 
 # Introduction
 
+{% if intro_pt1 %}
+{{ intro_pt1 }}
+{% endif %}
+
+{% if introText %}
 {{ introText }}
+{% endif %}
 
 # General QC
 
