@@ -128,6 +128,18 @@ SEED ID: {{ ch.seedID }}
 
 # Battery Condition
 
+{% if batteryStats %}
+Battery life statistics are calculated from the recorded power consumption and voltage channels. A 3-day rolling window is used, with offset of 1 day between consecutive windows (66% overlap).
+
+This instrument would be expected to enter low-power hibernate mode on or about {{ batteryStats.HibernateEstimate }}.
+
+![Average power consumption, calculated for a 3-day rolling window]({{ batteryStats.meanPowerPlot }})
+
+![Average voltage, calculated for a 3-day rolling window]({{ batteryStats.meanVoltPlot }})
+
+![Voltage gradient, calculated for a 3-day rolling window]({{ batteryStats.gradVoltPlot }})
+{% endif %}
+
 {% for ch in power_channels %}
 ## {{ ch.channelName }}
 SEED ID: {{ ch.seedID }}

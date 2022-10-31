@@ -17,6 +17,7 @@ import warnings
 from datetime import datetime, timedelta
 from obspy.io.stationxml.core import validate_stationxml
 from obspy.signal import PPSD
+from sklearn.linear_model import LinearRegression
 
 import nfsi_obs as nf
 from utilities import config_handler, logger, check_nan, ReportGenerator
@@ -113,11 +114,12 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     labeled_files = pd.DataFrame(labels)
     g_log.info("Files contain data for {0} unique set(s) of channels".format(len(np.unique(labeled_files['channel'].values))))
 
+    # Initialize arrays for saving stats
     all_gaps = []
     centring = pd.DataFrame()
-    power_stats = pd.DataFrame(columns=['Aquarius_ID', 'Deployment_ID', 'Start', 'End', 'Voltage_Min', 'Voltage_Max', 'Voltage_Mean', 'Voltage_gradient', 'Power_Mean'])
-    avg_power = np.array()
-    voltage_stats = np.array()
+    power_stats = pd.DataFrame()
+    avg_power = []
+    voltage_stats = []
 
     # Loop through data files (grouped by channel set)
     for label, files in labeled_files.groupby('channel'):
@@ -126,7 +128,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
         # Ignore channels with lots of data files (long time periods of seismic data) for now
         # TODO: Implement data file buffering for long time periods
-        if len(files.index) > 2:
+        if len(files.index) > 3:
             g_log.warning("Too many data files to be handled by current code setup! Skipping channel")
             continue
 
@@ -302,13 +304,41 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                             centring[tr.id] = pd.Series(flatline, index=timestamps)
 
                 if channel_type == 'power':
+                    # Voltage and power consumption channels
+                    trace_start = tr.meta.starttime
+                    trace_end = tr.meta.endtime
+                    first_window = obspy.UTCDateTime(trace_start.year, trace_start.month, trace_start.day)
+                    last_window = obspy.UTCDateTime(trace_end.year, trace_end.month, trace_end.day - 1)
+                    window_length = 3 * 24 * 60 * 60    # 3 days in seconds
+                    window_offset = 24 * 60 * 60        # 1 day in seconds
+                    num_windows = int(round((last_window - first_window) / window_offset))
+
                     if tr.meta.channel == 'LE3':
+                        # Power consumption
                         report_params['meanPower'] = '{:.3f}'.format(np.mean(tr.data))
+
+                        # 3-day rolling window of average power consumption
+                        window_start = first_window
+                        while window_start < last_window:
+                            window = tr.slice(window_start, window_start + window_length)
+                            avg_power.append([window_start.datetime, window.data.mean()])
+                            window_start += window_offset
 
                         # TODO: Get times of data writes (spikes 45 minutes apart)
                         if (qc_config is not None) and ('qartod' in qc_config) and ('spike_test' in qc_config['qartod']):
                             spikes = qartod.spike_test(tr.data, **qc_config['qartod']['spike_test'])
-
+                    if tr.meta.channel == 'ME4':
+                        # Battery voltage
+                        # 3-day rolling window for stats
+                        window_start = first_window
+                        while window_start < last_window:
+                            window = tr.slice(window_start, window_start + window_length)
+                            secs = np.array(window.times(type='relative')).reshape(-1, 1)
+                            reg = LinearRegression().fit(secs, window.data)
+                            gradient = reg.coef_[0] * 1000 * 60 * 60 * 24   # convert V/s to mV/day for voltage gradient
+                            r2 = reg.score(secs, window.data)   # R^2 coefficient of linear fit (should be very close to 1)
+                            voltage_stats.append([window_start.datetime, window.data.min(), window.max(), window.data.mean(), gradient, r2])
+                            window_start += window_offset
                 # TODO: Analysis of state-of-health variables?
                 # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
 
@@ -393,6 +423,71 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 'sec': gap[6],
                 'samp': gap[7]
             })
+
+    # Combine voltage/power statistics and make plots
+    if len(avg_power) > 0 or len(voltage_stats) > 0:
+        pwr = pd.DataFrame(avg_power, columns=['Start', 'Avg_Power'])
+        pwr.set_index('Start', drop=False)
+        vlt = pd.DataFrame(voltage_stats, columns=['Start', 'Min_Volts', 'Max_Volts', 'Avg_Volts', 'Gradient', 'R2_coef'])
+        vlt.set_index('Start', drop=True)
+
+        power_stats['Start'] = pwr['Start']
+        power_stats['End'] = power_stats['Start'] + timedelta(days=3)
+        power_stats['Voltage_Min'] = vlt['Min_Volts']
+        power_stats['Voltage_Max'] = vlt['Max_Volts']
+        power_stats['Voltage_Mean'] = vlt['Avg_Volts']
+        power_stats['Voltage_gradient'] = vlt['Gradient']
+        power_stats['Voltage_fit'] = vlt['R2_coef']
+        power_stats['Power_Mean'] = pwr['Avg_Power']
+        power_stats = power_stats.assign(Aquarius_ID=report_params['obsId'])
+        # TODO: Add deployment ID from Sensor Tracker integration (for combining stats with other deployments)
+        power_stats['Plot_Time'] = power_stats['Start'] + (power_stats['End'] - power_stats['Start']) / 2
+        power_stats.to_csv(os.path.join(output_dir, 'battery_stats_{0}.csv'.format(obs_log['OBS ID'].values[0])))
+
+        # Average power vs time
+        avgpow_plot = os.path.join(output_dir, 'power_mean_{0}.png'.format(obs_log['OBS ID'].values[0]))
+        fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
+        power_stats.plot(x='Plot_Time', y='Power_Mean', kind='line', ax=ax, xlabel='Date/Time', ylabel='Average Power Consumption (W)')
+        fig.tight_layout()
+        fig.savefig(avgpow_plot)
+        plt.close(fig)
+
+        # Average voltage vs time
+        avgvlt_plot = os.path.join(output_dir, 'voltage_mean_{0}.png'.format(obs_log['OBS ID'].values[0]))
+        fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
+        power_stats.plot(x='Plot_Time', y='Voltage_Mean', kind='line', ax=ax, xlabel='Date/Time', ylabel='Average Voltage (V)')
+        fig.tight_layout()
+        fig.savefig(avgvlt_plot)
+        plt.close(fig)
+
+        # Voltage gradient vs time
+        vltgrd_plot = os.path.join(output_dir, 'voltage_gradient_{0}.png'.format(obs_log['OBS ID'].values[0]))
+        fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
+        power_stats.plot(x='Plot_Time', y='Voltage_gradient', kind='line', ax=ax, xlabel='Date/Time', ylabel='Voltage Gradient (mV/day)')
+        fig.tight_layout()
+        fig.savefig(vltgrd_plot)
+        plt.close(fig)
+
+        report_params['batteryStats'] = {}
+        report_params['batteryStats']['meanPowerPlot'] = avgpow_plot
+        report_params['batteryStats']['meanVoltPlot'] = avgvlt_plot
+        report_params['batteryStats']['gradVoltPlot'] = vltgrd_plot
+
+        # TODO: Calculate expected hibernate date/time (6500mV)
+        hib_thres = 6500
+        latest_V = power_stats['Voltage_Min'].values[-1] * 1000
+        latest_win = pd.to_datetime(power_stats['End'].values[-1])
+        const_grad = timedelta(days=-power_stats['Voltage_gradient'].values[-1] * (latest_V - hib_thres)) + latest_win
+        const_acc = pd.NaT
+        lookup = pd.NaT
+        min_hib = pd.Series([const_grad, const_acc, lookup]).min()
+        report_params['batteryStats']['HibernateEstimate'] = min_hib.strftime('%Y-%m-%d')
+
+        # Save statistics to CSV for further analysis
+        csv_name = 'voltage_power_stats_{0}_{1}_{2}.csv'.format(report_params['obsId'],
+                                                                pd.to_datetime(power_stats['Start'].min()).strftime('%Y-%m-%d'),
+                                                                pd.to_datetime(power_stats['End'].max()).strftime('%Y-%m-%d'))
+        power_stats.to_csv(os.path.join(output_dir, csv_name))
 
     # Sort channel information by specified order
     for ch_type in ['seismic', 'ocean', 'power', 'health']:
