@@ -575,6 +575,7 @@ if __name__ == '__main__':
         else:
             data_log_file = os.path.join(data_dir, 'log.xlsx')
 
+        g_log.info('Reading project metadata from {0}...'.format(data_log_file))
         obs_log_info = nf.io.parse_obs_log(data_log_file, args.log_delim)
         # Find this OBS in the basic, deployment, and recovery metadata tables
         base_meta, dep, rec = None, None, None
@@ -619,6 +620,7 @@ if __name__ == '__main__':
         if channel_map is None:
             g_log.info("No channel map provided. Checking data directory for project_info.json...")
         else:
+            # TODO: This seems a bit weird... make these log statements more sensical
             g_log.info("Reading project metadata from [data_dir]/project_info.json...")
         # Search data_dir for project JSON (should have channel descriptions)
         if args.extra_meta:
