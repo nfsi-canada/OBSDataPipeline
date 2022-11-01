@@ -19,15 +19,17 @@ def parse_obs_log(log_file, delimiter=','):
                      'Recovery Date/Time (UTC)', 'Planned Latitude', 'Planned Longitude', 'Planned Depth (m)',
                      'Launch Latitude', 'Launch Longitude', 'Water Depth at Launch (m)',
                      'Distance Launch from Planned (km)', 'Surveyed Latitude', 'Surveyed Longitude',
-                     'Survey Horizontal Error (m)', 'Horizontal Drift during Fall (m)', 'Bearing Surveyed from Launch',
-                     'Surfacing Latitude', 'Surfacing Longitude', 'Horizontal Drift during Rise (m)',
-                     'Bearing Surfacing from Surveyed', 'Recovery Latitude', 'Recovery Longitude', 'Drift on Surface (m)']
+                     'Survey Depth Error (m)', 'Survey East Error (m)', 'Survey North Error (m)',
+                     'Horizontal Drift during Fall (m)', 'Bearing Surveyed from Launch', 'Surfacing Latitude',
+                     'Surfacing Longitude', 'Horizontal Drift during Rise (m)', 'Bearing Surfacing from Surveyed',
+                     'Recovery Latitude', 'Recovery Longitude', 'Drift on Surface (m)']
     deploy_cols = ['Station', 'Planned Latitude', 'Planned Longitude', 'Planned Depth (m)', 'Launch Latitude',
                    'Launch Longitude', 'Water Depth at Launch (m)', 'Distance Launch from Planned (km)',
                    'Launch Date/Time (UTC)', 'Date/Time on Seafloor (UTC)', 'Survey Start Date/Time (UTC)',
                    'Survey End Date/Time (UTC)', 'Programmed Release Date/Time (UTC)', 'OBS Name', 'OBS ID',
                    'Minimus Firmware', 'Femtomus Firmware', 'Acoustic Modem Address', 'Acoustic Modem UID',
-                   'Apollo S/N', 'XMB S/N', 'Radio beacon frequency (MHz)', 'Comments']
+                   'Apollo S/N', 'XMB S/N', 'Radio beacon frequency (MHz)', 'Battery SOC at Deployment',
+                   'Burn-wire Batch', 'Burn-wire Widget Test Voltage', 'Burn-wire Dunker Test Voltage', 'Comments']
     recover_cols = ['Station', 'Surveyed Latitude', 'Surveyed Longitude', 'Water Depth (m)', 'OBS Name', 'OBS ID',
                     'Acoustic Modem Address', 'Acoustic Modem UID', 'Date/Time Acoustic Contact Established (UTC)',
                     'Date/Time Released from Anchor (UTC)', 'Surfacing Date/Time (UTC)', 'On Deck Date/Time (UTC)',

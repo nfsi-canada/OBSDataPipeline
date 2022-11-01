@@ -1,0 +1,124 @@
+{
+	"project": "Intake Test Recording",
+	"common_intro": "Newly delivered Aquarius OBS undergo test recording to ensure they are fully functional after shipping.",
+	"stations": [
+	{
+		"name": "DAL01",
+		"OBS": "AQU-995F",
+		"qc_intro": "Intro text specific to this station."
+	},
+	{
+		"name": "DAL02",
+		"OBS": "AQU-0960",
+		"qc_intro": "Another station."
+	}
+	],
+	"channels": [
+	{
+		"channel_id": "XXX",
+		"description": "Example Channel with All Parameters",
+		"order": 999,
+		"hide": true,
+		"min": -9999,
+		"max": 9999,
+		"qc_config": {
+			"description": "Configuration passed to QARTOD tests. This description parameter should not be used for an actual project.",
+			"qartod": {}
+		}
+	},
+	{
+		"channel_id": "CH3",
+		"description": "Seismometer Z Channel",
+		"order": 1
+	},
+	{
+		"channel_id": "CH1",
+		"description": "Seismometer N Channel",
+		"order": 2
+	},
+	{
+		"channel_id": "CH2",
+		"description": "Seismometer E Channel",
+		"order": 3
+	},
+	{
+		"channel_id": "HDH",
+		"description": "Hydrophone",
+		"order": 4
+	},
+	{
+		"channel_id": "MM3",
+		"description": "Mass Position Z",
+		"order": 12
+	},
+	{
+		"channel_id": "MM1",
+		"description": "Mass Position N",
+		"order": 13
+	},
+	{
+		"channel_id": "MM2",
+		"description": "Mass Position E",
+		"order": 14
+	},
+	{
+		"channel_id": "MDI",
+		"description": "Internal Pressure",
+		"order": 9
+	},
+	{
+		"channel_id": "MII",
+		"description": "Internal Humidity",
+		"order": 11
+	},
+	{
+		"channel_id": "MDO",
+		"description": "External Pressure",
+		"order": 5
+	},
+	{
+		"channel_id": "MDU",
+		"description": "APG Pressure",
+		"hide": true
+	},
+	{
+		"channel_id": "LZ0",
+		"description": "Long-Term Average of Seismometer Z",
+		"min": 0,
+		"order": 15
+	},
+	{
+		"channel_id": "LZ1",
+		"description": "Short-Term Average of Seismometer Z",
+		"min": 0,
+		"order": 16
+	},
+	{
+		"channel_id": "LZ2",
+		"description": "STA/LTA Ratio of Seismometer Z",
+		"min": 0,
+		"order": 17
+	},
+	{
+		"channel_id": "LE3",
+		"description": "Power Consumption",
+		"max": 0,
+		"order": 7
+	},
+	{
+		"channel_id": "LKO",
+		"description": "External Temperature",
+		"order": 6
+	},
+	{
+		"channel_id": "MKI",
+		"description": "Internal Temperature",
+		"order": 10
+	},
+	{
+		"channel_id": "ME4",
+		"description": "Battery Voltage",
+		"order": 8
+	}
+	]
+}
