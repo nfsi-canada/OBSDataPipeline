@@ -18,8 +18,8 @@ def parse_obs_log(log_file, delimiter=','):
                      'Survey Start Date/Time (UTC)', 'Date/Time Released (UTC)', 'Surfaced Date/Time (UTC)',
                      'Recovery Date/Time (UTC)', 'Planned Latitude', 'Planned Longitude', 'Planned Depth (m)',
                      'Launch Latitude', 'Launch Longitude', 'Water Depth at Launch (m)',
-                     'Distance Launch from Planned (km)', 'Surveyed Latitude', 'Surveyed Longitude',
-                     'Survey Depth Error (m)', 'Survey East Error (m)', 'Survey North Error (m)',
+                     'Distance Launch from Planned (km)', 'Surveyed Latitude', 'Surveyed Longitude', 
+                     'Surveyed Depth (m)', 'Survey Depth Error (m)', 'Survey East Error (m)', 'Survey North Error (m)',
                      'Horizontal Drift during Fall (m)', 'Bearing Surveyed from Launch', 'Surfacing Latitude',
                      'Surfacing Longitude', 'Horizontal Drift during Rise (m)', 'Bearing Surfacing from Surveyed',
                      'Recovery Latitude', 'Recovery Longitude', 'Drift on Surface (m)']
