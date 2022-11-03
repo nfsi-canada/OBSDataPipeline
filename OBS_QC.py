@@ -237,14 +237,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
         for tr in data:
             tr_starttime = timeit.default_timer()
-            # Timing check
-            if not iq_utils.check_timestamps(tr.times()):
-                g_log.warning("One or more timestamps are not in chronological order.")
-            else:
-                g_log.info("All timestamps in chronological order.")
-
-            ts_time = timeit.default_timer()
-            g_log.info("Time spent for timing check: {0} seconds".format((ts_time - tr_starttime)))
 
             # Assign to relevant group of channels
             channel_type = 'health'
@@ -265,7 +257,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 health.append(tr)
 
             cg_time = timeit.default_timer()
-            g_log.info("Time spent assigning to channel group: {0} seconds".format((cg_time - ts_time)))
+            g_log.info("Time spent assigning to channel group: {0} seconds".format((cg_time - tr_starttime)))
 
             # Start gathering trace information for report
             trace_info = {
