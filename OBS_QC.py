@@ -372,7 +372,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         window_start = first_window
                         while window_start < last_window:
                             window = tr.slice(window_start, window_start + window_length)
-                            avg_power.append([window_start.datetime, window.data.mean()])
+                            if window.data.count() > 0:
+                                avg_power.append([window_start.datetime, window.data.mean()])
                             window_start += window_offset
 
                         # TODO: Get times of data writes (spikes 45 minutes apart)
@@ -384,11 +385,12 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         window_start = first_window
                         while window_start < last_window:
                             window = tr.slice(window_start, window_start + window_length)
-                            secs = np.array(window.times(type='relative')).reshape(-1, 1)
-                            reg = LinearRegression().fit(secs, window.data)
-                            gradient = reg.coef_[0] * 1000 * 60 * 60 * 24   # convert V/s to mV/day for voltage gradient
-                            r2 = reg.score(secs, window.data)   # R^2 coefficient of linear fit (should be very close to 1)
-                            voltage_stats.append([window_start.datetime, window.data.min(), window.max(), window.data.mean(), gradient, r2])
+                            if window.data.count() > 0:
+                                secs = np.array(window.times(type='relative')).reshape(-1, 1)
+                                reg = LinearRegression().fit(secs, window.data)
+                                gradient = reg.coef_[0] * 1000 * 60 * 60 * 24   # convert V/s to mV/day for voltage gradient
+                                r2 = reg.score(secs, window.data)   # R^2 coefficient of linear fit (should be very close to 1)
+                                voltage_stats.append([window_start.datetime, window.data.min(), window.max(), window.data.mean(), gradient, r2])
                             window_start += window_offset
                 # TODO: Analysis of state-of-health variables?
                 # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
