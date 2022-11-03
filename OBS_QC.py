@@ -29,10 +29,11 @@ if not os.path.isdir(resource_dir):
     os.makedirs(resource_dir)
 
 
-def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, project_meta=None, full=True, detrend=False, **kwargs):
+def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, project_meta=None, full=True, detrend=False, backup=True, **kwargs):
     """
     Extra keyword arguments are included as report parameters (must match variables in template file).
     """
+    proc_start = datetime.now()
     g_log.info("start")
 
     # Initialize report parameters dictionary with input keywords
@@ -50,6 +51,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     if 'psdOverlapPercent' in report_params:
         overlap = report_params['psdOverlapPercent'] / 100
     spec_win = int(config.get('seismic', 'spectrogram_window', fallback=60))
+
+    base_time = datetime.now()
+    g_log.info("Basic processing setup time: {0} seconds".format((base_time - proc_start).total_seconds()))
 
     # Read station metadata file
     station_info = None
@@ -84,23 +88,32 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         else:
             g_log.warning("No metadata file provided, and none found in data directory.")
 
+    meta_time = datetime.now()
+    g_log.info("Time spent reading station metadata file: {0} seconds".format((meta_time - base_time).total_seconds()))
+
     # Find data files and backup if necessary
     # TODO: Remove file backup here once it has been copied to pre-processing script (QC doesn't change miniSEED files)
     raw_files = glob(os.path.join(data_dir, '**/*.mseed'), recursive=True)
     g_log.info("Found {0} miniSEED file(s) in data directory and sub-folders".format(len(raw_files)))
     backup_exists = False
     if output_dir is None:
-        # Make a backup copy of as-recorded raw data if no separate output directory is specified (files will be modified in-place)
-        raw_dir = os.path.join(data_dir, 'raw_recorded')
-        if not os.path.exists(raw_dir):
-            g_log.info("Copying raw data to backup directory {0}".format(raw_dir))
-            os.makedirs(raw_dir)
-            for rf in raw_files:
-                shutil.copy2(rf, raw_dir)
+        if backup:
+            # Make a backup copy of as-recorded raw data if no separate output directory is specified (files will be modified in-place)
+            raw_dir = os.path.join(data_dir, 'raw_recorded')
+            if not os.path.exists(raw_dir):
+                g_log.info("Copying raw data to backup directory {0}".format(raw_dir))
+                os.makedirs(raw_dir)
+                for rf in raw_files:
+                    shutil.copy2(rf, raw_dir)
+            else:
+                backup_exists = True
+                g_log.info("Backup of raw data already exists: {0}".format(raw_dir))
         else:
-            backup_exists = True
-            g_log.info("Backup of raw data already exists: {0}".format(raw_dir))
+            g_log.info("Skipping backup of raw data")
         output_dir = data_dir
+
+    search_time = datetime.now()
+    g_log.info("Time spent searching for data files and backing up raw data: {0} seconds".format((search_time - meta_time).total_seconds()))
 
     # label files by channel name
     labels = []
@@ -114,6 +127,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     labeled_files = pd.DataFrame(labels)
     g_log.info("Files contain data for {0} unique set(s) of channels".format(len(np.unique(labeled_files['channel'].values))))
 
+    sort_time = datetime.now()
+    g_log.info("Time spent sorting and labeling data files: {0} seconds".format((sort_time - search_time).total_seconds()))
+
     # Initialize arrays for saving stats
     all_gaps = []
     centring = pd.DataFrame()
@@ -121,10 +137,14 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     avg_power = []
     voltage_stats = []
 
+    arr_time = datetime.now()
+    g_log.info("Time spent setting up arrays for stats: {0} seconds".format((arr_time - sort_time).total_seconds()))
+
     # Loop through data files (grouped by channel set)
     for label, files in labeled_files.groupby('channel'):
+        ch_start = datetime.now()
         g_log.info("Begin processing channel set {0}".format(label))
-        g_log.info("{0} data files in list for this channel".format(len(files.index)))
+        g_log.info("{0} data file(s) in list for this channel".format(len(files.index)))
 
         # Ignore channels with lots of data files (long time periods of seismic data) for now
         # TODO: Implement data file buffering for long time periods
@@ -196,13 +216,15 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         gaps = data.get_gaps()
         all_gaps.extend(gaps)
         if len(gaps) > 0:
-            g_log.info('Found {0} gaps or overlaps in recorded data'.format(len(gaps)))
+            g_log.info('Found {0} gap(s) or overlap(s) in recorded data'.format(len(gaps)))
             data.print_gaps()
 
         for tr in data:
             # Timing check
             if not iq_utils.check_timestamps(tr.times()):
                 g_log.warning("One or more timestamps are not in chronological order.")
+            else:
+                g_log.info("All timestamps in chronological order.")
 
             # Assign to relevant group of channels
             channel_type = 'health'
@@ -392,6 +414,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     demean_data_plot = os.path.join(output_dir, 'demean_seismic_{0}.png'.format(network_id))
                     data.plot(outfile=demean_data_plot)
 
+    loop_time = datetime.now()
+    g_log.info("Time spent processing data files: {0} seconds".format((loop_time - arr_time).total_seconds()))
+
     # Check centring behaviour
     if len(centring.columns) > 0:
         is_centred = centring.eq(4).all(axis='columns')
@@ -412,6 +437,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             'text': ctx
         }
 
+    centre_time = datetime.now()
+    g_log.info("Time spent checking centring behaviour: {0} seconds".format((centre_time - loop_time).total_seconds()))
+
     # Parse gap information for report
     if len(all_gaps) > 0:
         report_params['gapList'] = []
@@ -423,6 +451,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 'sec': gap[6],
                 'samp': gap[7]
             })
+
+    gap_time = datetime.now()
+    g_log.info("Time spent formatting gap information: {0} seconds".format((gap_time - centre_time).total_seconds()))
 
     # Combine voltage/power statistics and make plots
     if len(avg_power) > 0 or len(voltage_stats) > 0:
@@ -489,6 +520,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                                                 pd.to_datetime(power_stats['End'].max()).strftime('%Y-%m-%d'))
         power_stats.to_csv(os.path.join(output_dir, csv_name))
 
+    battery_time = datetime.now()
+    g_log.info("Time spent checking battery stats: {0} seconds".format((battery_time - gap_time).total_seconds()))
+
     # Sort channel information by specified order
     for ch_type in ['seismic', 'ocean', 'power', 'health']:
         sorted_channels = sorted(report_params[ch_type + '_channels'], key=lambda d: d['order'])
@@ -508,6 +542,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     report_pdf = os.path.join(output_dir, 'QC_report_{0}_auto.pdf'.format(obs_log['OBS ID'].values[0]))
     report_converted = pypandoc.convert_text(report_buffer, to='pdf', format='md', outputfile=report_pdf, extra_args=pandoc_args)
 
+    report_time = datetime.now()
+    g_log.info("Time spent creating report: {0} seconds".format((report_time - battery_time).total_seconds()))
+
     g_log.info("end")
 
 
@@ -516,6 +553,8 @@ if __name__ == '__main__':
                                                  'optional --channelmap argument is provided. Does not require clock '
                                                  'drift correction to have been applied.')
     parser.add_argument('--data_dir', dest="data_dir", help="Directory where OBS data is stored.")
+    parser.add_argument('--relative_paths', dest="relative_paths", action="store_true",
+                        help="If true, all other path arguments are specified relative to the data directory.")
     parser.add_argument('--datalog', dest="datalog",
                         help="Log file from deployment/recovery. Must include station identifiers and clock drift "
                              "measurements. If not specified, assumed to be a file called 'log.xlsx' in the data "
@@ -541,6 +580,8 @@ if __name__ == '__main__':
                              "QC.")
     parser.add_argument('--detrend_seismic', dest="detrend_seis", action="store_true",
                         help="Detrend seismic data (RMS linear fit). False by default.")
+    parser.add_argument('--skip_backup', dest="skip_backup", action="store_true",
+                        help="If true, will skip creating a backup copy of the raw data files.")
     # TODO: When using ST, project name will come from there instead
     parser.add_argument('--projectname', dest="project_name", help="Project name to be displayed in reports")
     parser.add_argument('--config', dest='config_path', help="Path to config file (if not using default).")
@@ -568,10 +609,16 @@ if __name__ == '__main__':
 
         output_dir = None
         if args.outdir is not None:
-            output_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.outdir)))
+            if args.relative_paths:
+                output_dir = os.path.join(data_dir, args.outdir)
+            else:
+                output_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.outdir)))
 
         if args.datalog:
-            data_log_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.datalog)))
+            if args.relative_paths:
+                data_log_file = os.path.join(data_dir, args.datalog)
+            else:
+                data_log_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.datalog)))
         else:
             data_log_file = os.path.join(data_dir, 'log.xlsx')
 
@@ -603,14 +650,23 @@ if __name__ == '__main__':
 
         channel_map = None
         if args.channel_map:
-            channel_map = nf.io.read_channel_map(args.channel_map)
+            if args.relative_paths:
+                channel_map = nf.io.read_channel_map(os.path.join(data_dir, args.channel_map))
+            else:
+                channel_map = nf.io.read_channel_map(args.channel_map)
 
         metadata_file = None
         if args.metadata_file:
-            metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.metadata_file)))
+            if args.relative_paths:
+                metadata_file = os.path.join(data_dir, args.metadata_file)
+            else:
+                metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.metadata_file)))
 
         if args.config_path:
-            config = config_handler.get_config(os.path.abspath(os.path.expanduser(os.path.expandvars(args.config_path))))
+            if args.relative_paths:
+                config = config_handler.get_config(os.path.join(data_dir, args.config_path))
+            else:
+                config = config_handler.get_config(os.path.abspath(os.path.expanduser(os.path.expandvars(args.config_path))))
         else:
             config = config_handler.get_config()
 
@@ -624,7 +680,10 @@ if __name__ == '__main__':
             g_log.info("Reading project metadata from [data_dir]/project_info.json...")
         # Search data_dir for project JSON (should have channel descriptions)
         if args.extra_meta:
-            project_json = args.extra_meta
+            if args.relative_paths:
+                project_json = os.path.join(data_dir, args.extra_meta)
+            else:
+                project_json = os.path.abspath(os.path.expanduser(os.path.expandvars(args.extra_meta)))
         else:
             project_json = os.path.join(data_dir, 'project_info.json')
         if os.path.isfile(project_json):
@@ -671,12 +730,18 @@ if __name__ == '__main__':
         report_kwargs['psdWindowSecs'] = int(config.get('seismic', 'window_length'))
         report_kwargs['psdOverlapPercent'] = int(config.get('seismic', 'overlap_percent'))
 
+        setup_time = datetime.now() - start_time
+        g_log.info("Time spent parsing arguments and preparing to process data: {0} seconds".format(setup_time.total_seconds()))
+
         # Process data files to apply clock drift correction and update metadata
-        process(data_dir, base_meta, args.network_id, config, output_dir, metadata_file, channel_map, project_meta, ~args.function_check, args.detrend_seis, **report_kwargs)
+        process(data_dir, base_meta, args.network_id, config, output_dir, metadata_file, channel_map, project_meta, not args.function_check, args.detrend_seis, not args.skip_backup, **report_kwargs)
+
+        proc_time = datetime.now() - setup_time
+        g_log.info("Time spent processing data: {0} seconds".format(proc_time.total_seconds()))
 
         g_log.info("Processing complete!")
         end_time = datetime.now()
-        run_time = end_time - start_time
+        run_time = datetime.now() - start_time
         g_log.info("Total run time: {0} seconds".format(run_time.total_seconds()))
 
         logger.close_logs()
