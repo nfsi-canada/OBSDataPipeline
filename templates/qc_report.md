@@ -70,7 +70,7 @@ The following gaps/overlaps were observed in the recorded data.
 | Channel | Start Time | End Time | Length (s) | Missing/Overlapped Samples |
 |:--------|:-----------|:---------|-----------:|----------------:|
 {% for gap in gapList %}
-| gap.id | gap.start | gap.end | gap.sec | gap.samp |
+| {{ gap.id }} | {{ gap.start }} | {{ gap.end }} | {{ gap.sec }} | {{ gap.samp }} |
 {% endfor %}
 
 {% else %}

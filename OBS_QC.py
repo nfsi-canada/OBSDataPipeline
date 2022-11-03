@@ -378,10 +378,12 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         while window_start < last_window:
                             window = tr.slice(window_start, window_start + window_length)
                             if window.data.count() > 0:
-                                secs = np.array(window.times(type='relative')).reshape(-1, 1)
-                                reg = LinearRegression().fit(secs, window.data)
+                                secs = np.array(window.times(type='relative'))
+                                secs_valid = secs[window.data.mask == False].reshape(-1, 1)
+                                valid_data = window.data[window.data.mask == False]
+                                reg = LinearRegression().fit(secs_valid, valid_data)
                                 gradient = reg.coef_[0] * 1000 * 60 * 60 * 24   # convert V/s to mV/day for voltage gradient
-                                r2 = reg.score(secs, window.data)   # R^2 coefficient of linear fit (should be very close to 1)
+                                r2 = reg.score(secs_valid, valid_data)   # R^2 coefficient of linear fit (should be very close to 1)
                                 voltage_stats.append([window_start.datetime, window.data.min(), window.max(), window.data.mean(), gradient, r2])
                             window_start += window_offset
                 # TODO: Analysis of state-of-health variables?
@@ -537,7 +539,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         hib_thres = 6500
         latest_V = power_stats['Voltage_Min'].values[-1] * 1000
         latest_win = pd.to_datetime(power_stats['End'].values[-1])
-        const_grad = timedelta(days=-power_stats['Voltage_gradient'].values[-1] * (latest_V - hib_thres)) + latest_win
+        days_to_hibernate = -(latest_V - hib_thres) / power_stats['Voltage_gradient'].values[-1]
+        const_grad = timedelta(days=days_to_hibernate) + latest_win
         const_acc = pd.NaT
         lookup = pd.NaT
         min_hib = pd.Series([const_grad, const_acc, lookup]).min()
