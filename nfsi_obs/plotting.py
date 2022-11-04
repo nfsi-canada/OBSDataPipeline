@@ -62,6 +62,7 @@ def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None):
     if any([low_sus is not None, low_fail is not None, high_sus is not None, high_fail is not None]):
         qc_bars = True
 
+    # TODO: Combine this with full data plot below, so "raw" plot only gets made if no instrument response present
     # Plot raw data (counts as recorded)
     raw_data_plot = os.path.join(outdir, 'raw_{0}.png'.format(trace.id))
     if qc_bars and not hasattr(trace.meta, 'response'):

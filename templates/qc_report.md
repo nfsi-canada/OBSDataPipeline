@@ -67,8 +67,8 @@ Power spectral density curves are calculated using {{ psdWindowLength }} Hann wi
 {% if gapList %}
 The following gaps/overlaps were observed in the recorded data.
 
-| Channel | Start Time | End Time | Length (s) | Missing/Overlapped Samples |
-|:--------|:-----------|:---------|-----------:|----------------:|
+| Channel | Start Time | End Time | Length (s) | Samples |
+|:--------|:-----------|:---------|-----------:|--------:|
 {% for gap in gapList %}
 | {{ gap.id }} | {{ gap.start }} | {{ gap.end }} | {{ gap.sec }} | {{ gap.samp }} |
 {% endfor %}

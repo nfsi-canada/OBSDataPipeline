@@ -19,6 +19,7 @@ from obspy.io.stationxml.core import validate_stationxml
 from obspy.signal import PPSD
 from sklearn.linear_model import LinearRegression
 import timeit
+from obspy.io.mseed.util import get_start_and_end_time
 
 import nfsi_obs as nf
 from utilities import config_handler, logger, check_nan, ReportGenerator
@@ -141,15 +142,30 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     arr_time = timeit.default_timer()
     g_log.info("Time spent setting up arrays for stats: {0} seconds".format((arr_time - sort_time)))
 
-    # Loop through data files (grouped by channel set)
+    # Loop through data files (grouped by channel set name)
     for label, files in labeled_files.groupby('channel'):
         ch_start = timeit.default_timer()
         g_log.info("Begin processing channel set {0}".format(label))
-        g_log.info("{0} data file(s) in list for this channel".format(len(files.index)))
+        g_log.info("{0} data file(s) in list".format(len(files.index)))
 
         # Ignore channels with lots of data files (long time periods of seismic data) for now
         # TODO: Implement data file buffering for long time periods
         if len(files.index) > 3:
+            filetimes = []
+            for rf in files['path'].values:
+                times = get_start_and_end_time(rf)
+                filetimes.append(times)
+            filetimes = np.array(filetimes)
+            data_start = min(filetimes[:, 0])
+            data_end = max(filetimes[:, 1])
+            g_log.info("Data time span: {0} - {1}".format(data_start.datetime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                                                          data_end.datetime.strftime('%Y-%m-%d %H:%M:%S.%f')))
+
+            # TODO: Modify PSD and spectrogram plotting routines to separate calculation from actual plot
+            # TODO: Calculate PSD/Spectrogram info for buffered data, plot out by month
+            # TODO: Decide between plotting by calendar month vs time since start of data (constant period per plot)
+            # TODO: Test how many files to read at once (optimize for runtime and memory usage)
+
             g_log.warning("Too many data files to be handled by current code setup! Skipping channel")
             continue
 
@@ -504,7 +520,12 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         power_stats = power_stats.assign(Aquarius_ID=report_params['obsId'])
         # TODO: Add deployment ID from Sensor Tracker integration (for combining stats with other deployments)
         power_stats['Plot_Time'] = power_stats['Start'] + (power_stats['End'] - power_stats['Start']) / 2
-        power_stats.to_csv(os.path.join(output_dir, 'battery_stats_{0}.csv'.format(obs_log['OBS ID'].values[0])))
+
+        # Save statistics to CSV for further analysis
+        csv_name = 'voltage_power_stats_{0}_{1}_{2}.csv'.format(report_params['obsId'],
+                                                                pd.to_datetime(power_stats['Start'].min()).strftime('%Y-%m-%d'),
+                                                                pd.to_datetime(power_stats['End'].max()).strftime('%Y-%m-%d'))
+        power_stats.to_csv(os.path.join(output_dir, csv_name))
 
         # Average power vs time
         avgpow_plot = os.path.join(output_dir, 'power_mean_{0}.png'.format(obs_log['OBS ID'].values[0]))
@@ -545,12 +566,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         lookup = pd.NaT
         min_hib = pd.Series([const_grad, const_acc, lookup]).min()
         report_params['batteryStats']['HibernateEstimate'] = min_hib.strftime('%Y-%m-%d')
-
-        # Save statistics to CSV for further analysis
-        csv_name = 'voltage_power_stats_{0}_{1}_{2}.csv'.format(report_params['obsId'],
-                                                                pd.to_datetime(power_stats['Start'].min()).strftime('%Y-%m-%d'),
-                                                                pd.to_datetime(power_stats['End'].max()).strftime('%Y-%m-%d'))
-        power_stats.to_csv(os.path.join(output_dir, csv_name))
 
     battery_time = timeit.default_timer()
     g_log.info("Time spent checking battery stats: {0} seconds".format((battery_time - gap_time)))
@@ -770,7 +785,7 @@ if __name__ == '__main__':
         process(data_dir, base_meta, args.network_id, config, output_dir, metadata_file, channel_map, project_meta, not args.function_check, args.detrend_seis, not args.skip_backup, **report_kwargs)
 
         proc_time = timeit.default_timer()
-        g_log.info("Time spent processing data: {0} seconds".format(setup_time - proc_time))
+        g_log.info("Time spent processing data: {0} seconds".format(proc_time - setup_time))
 
         g_log.info("Processing complete!")
         end_time = datetime.now()
