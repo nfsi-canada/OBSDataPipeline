@@ -198,17 +198,18 @@ def psd_plot(trace, outdir, win_len, overlap):
     return psd_a_plot
 
 
-def buffer_seismic_data(files, outdir, g_log, win_len, overlap, plot_length=30, ch_id=None):
+def buffer_seismic_data(files, outdir, g_log, win_len, overlap, plot_length=None, ch_id=None):
     """
-    Plot PSDs of seismic data stored in raw data files. File paths in *files* should be listed in chronological order.
-    Files must be readable by obspy.read()
+    Analyze seismic data stored in raw data files and create PSD and spectrogram plots. File paths in *files* should be
+    listed in chronological order. Files must be readable by obspy.read()
 
     :param files: list of paths for raw data files
     :param outdir: path to output directory
     :param g_log: Logging object, specifying general log used by the calling script
-    :param win_len: window length for each PSD curve
-    :param overlap: window overlap (0-1)
-    :param plot_length: length of time period to plot in each output PNG in days, default 30
+    :param win_len: window length for each PSD curve in seconds
+    :param overlap: percentage window overlap (0-1)
+    :param plot_length: optional length of time period to plot in each output PNG in days, otherwise defaults to
+    plotting by calendar month
     :param ch_id: optional channel identifier to specify which channel to plot in multi-channel data files
 
     :return: path(s) to plot PNG file(s)
@@ -219,7 +220,9 @@ def buffer_seismic_data(files, outdir, g_log, win_len, overlap, plot_length=30, 
     i = 0
     latest_data = None
     last_start = None
-    month_end = obspy.UTCDateTime(1970, 1, 1)
+    first_window_start = None
+    plot_end = obspy.UTCDateTime(1970, 1, 1)
+    make_plot = False   # only create a plot when necessary
     while i < len(files):
         # Read data into buffer, keep copy of last file read
         buffer = obspy.Stream()
@@ -255,17 +258,44 @@ def buffer_seismic_data(files, outdir, g_log, win_len, overlap, plot_length=30, 
         if len(buffer) > 1:
             g_log.warn('Multiple channels present in data files, analyzing first one only: {0}'.format(buffer[0].id))
         this_channel = buffer[0]    # Only look at first channel in files
-        if this_channel.stats.starttime > month_end:
-            # Set end of current month
-            yr = this_channel.stats.starttime.year
-            mn = this_channel.stats.starttime.month + 1
-            if mn > 12:
-                yr += 1
-                mn -= 12
-            month_end = obspy.UTCDateTime(yr, mn, 1)
+
+        if last_start is not None:
+            if first_window_start is None:
+                # Windows start from midnight UTC on the first day of data collection
+                start_of_day = obspy.UTCDateTime(this_channel.stats.starttime.year, this_channel.stats.starttime.julday)
+                pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / win_len)
+                first_window_start = start_of_day + win_len * pre_windows
+
+            # Get end time of last window that needs to be covered by this buffer section (last data file will be included in next section)
+            buffered_time = last_start - first_window_start
+            buffer_windows = np.ceil(buffered_time / win_len)
+            last_window_end = first_window_start + win_len * buffer_windows
+            # Assume that if win_len is greater than the data file length, it is the last data file (or last before a recording gap)
+
+        if this_channel.stats.starttime > plot_end:
+            # Set end of current plot time window (should only need to do this the first time, then will be updated by plotting code)
+            if plot_length is None:
+                # default behaviour plots a single calendar month in each image
+                yr = this_channel.stats.starttime.year
+                mn = this_channel.stats.starttime.month + 1
+                if mn > 12:
+                    yr += 1
+                    mn -= 12
+                plot_end = obspy.UTCDateTime(yr, mn, 1)
+            else:
+                # time window in days specified by plot_length
+                plot_start = obspy.UTCDateTime(this_channel.stats.starttime.year, this_channel.stats.starttime.julday)
+                plot_end = plot_start + (plot_length * 24 * 60 * 60)
+
+        if this_channel.stats.endtime > plot_end:
+            # data in buffer spans a plot breakpoint => make plots this pass
+            make_plot = True
 
         # TODO: Calculate PSD in velocity
         # TODO: Convert PSD to acceleration
+        # TODO: Calculate spectrogram
+
+        # TODO: Make plots (if make_plot is True), then reset temp arrays of results and update plot_end for next window
 
     return plot_files
 
