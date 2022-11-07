@@ -232,7 +232,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         g_log.info("Time spent cutting to on-seafloor: {0} seconds".format((sf_time - metadata_time)))
 
         # Perform QC
-        # TODO: Combine single and multi-channel cases to simplify code (no real reason to separate) -> TEST
+        # TODO: Combine single and multi-channel cases to simplify code (no real reason to separate) -> TEST multi-channel
         seismic = obspy.Stream()
         ocean = obspy.Stream()
         power = obspy.Stream()

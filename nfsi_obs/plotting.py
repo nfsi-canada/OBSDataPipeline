@@ -196,3 +196,95 @@ def psd_plot(trace, outdir, win_len, overlap):
     psd_a_fig.savefig(psd_a_plot)
 
     return psd_a_plot
+
+
+def buffer_seismic_data(files, outdir, g_log, win_len, overlap, plot_length=30, ch_id=None):
+    """
+    Plot PSDs of seismic data stored in raw data files. File paths in *files* should be listed in chronological order.
+    Files must be readable by obspy.read()
+
+    :param files: list of paths for raw data files
+    :param outdir: path to output directory
+    :param g_log: Logging object, specifying general log used by the calling script
+    :param win_len: window length for each PSD curve
+    :param overlap: window overlap (0-1)
+    :param plot_length: length of time period to plot in each output PNG in days, default 30
+    :param ch_id: optional channel identifier to specify which channel to plot in multi-channel data files
+
+    :return: path(s) to plot PNG file(s)
+    """
+    buffer_length = 2   # number of files to keep in memory at a given time, will optimize later
+    plot_files = []
+
+    i = 0
+    latest_data = None
+    last_start = None
+    month_end = obspy.UTCDateTime(1970, 1, 1)
+    while i < len(files):
+        # Read data into buffer, keep copy of last file read
+        buffer = obspy.Stream()
+        if latest_data is None:
+            for x in range(buffer_length):
+                latest_data = obspy.read(files[i])
+                for tr in latest_data:
+                    if ch_id is not None:
+                        if tr.id != ch_id:
+                            continue    # ignore all other channels if *ch_id* is specified
+                    buffer.append(tr)   # have to add one trace at a time to existing Stream object
+                    if tr.stats.starttime > last_start:
+                        last_start = tr.stats.starttime
+                i += 1
+        else:
+            for tr in latest_data:
+                if ch_id is not None:
+                    if tr.id != ch_id:
+                        continue  # ignore all other channels if *ch_id* is specified
+                buffer.append(tr)  # have to add one trace at a time to existing Stream object
+            for x in range(buffer_length - 1):
+                latest_data = obspy.read(files[i])
+                for tr in latest_data:
+                    if ch_id is not None:
+                        if tr.id != ch_id:
+                            continue    # ignore all other channels if *ch_id* is specified
+                    buffer.append(tr)   # have to add one trace at a time to existing Stream object
+                    if tr.stats.starttime > last_start:
+                        last_start = tr.stats.starttime
+                i += 1
+
+        buffer.merge()
+        if len(buffer) > 1:
+            g_log.warn('Multiple channels present in data files, analyzing first one only: {0}'.format(buffer[0].id))
+        this_channel = buffer[0]    # Only look at first channel in files
+        if this_channel.stats.starttime > month_end:
+            # Set end of current month
+            yr = this_channel.stats.starttime.year
+            mn = this_channel.stats.starttime.month + 1
+            if mn > 12:
+                yr += 1
+                mn -= 12
+            month_end = obspy.UTCDateTime(yr, mn, 1)
+
+        # TODO: Calculate PSD in velocity
+        # TODO: Convert PSD to acceleration
+
+    return plot_files
+
+
+def buffered_spectrogram(files, outdir, spec_win, overlap, plot_length=30, ch_id=None):
+    """
+    Plot spectrogram(s) of seismic data stored in raw data files. File paths in *files* should be listed in
+    chronological order. Files must be readable by obspy.read()
+
+    :param files: list of paths for raw data files
+    :param outdir: path to output directory
+    :param spec_win: spectrogram window in seconds
+    :param overlap: window overlap (0-1)
+    :param plot_length: length of time period to plot in each output PNG in days, default 30
+    :param ch_id: optional channel identifier to specify which channel to plot in multi-channel data files
+
+    :return: path(s) to plot PNG file(s)
+    """
+    buffer_length = 2   # number of files to keep in memory at a given time, will optimize later
+    plot_files = []
+
+    return plot_files
