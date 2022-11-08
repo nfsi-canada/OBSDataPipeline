@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from matplotlib import mlab
 import numpy as np
 import obspy
 import os
@@ -157,14 +158,15 @@ def spectrogram(trace, outdir, spec_win, overlap):
     return spectrogram_plot
 
 
-def psd_plot(trace, outdir, win_len, overlap):
+def psd_plot(trace, outdir, win_len, overlap, sub_overlap):
     """
     Plot PSDs of seismic data (as obspy.core.trace.Trace object)
 
     :param trace: obspy.core.trace.Trace object
     :param outdir: path to output directory
     :param win_len: window length for each PSD curve
-    :param overlap: window overlap (0-1)
+    :param overlap: fractional window overlap (0-1)
+    :param sub_overlap: fractional overlap for sub-windows used in PSD calculation (Welch's average periodogram method)
 
     :return: path to plot PNG file
     """
@@ -175,6 +177,7 @@ def psd_plot(trace, outdir, win_len, overlap):
     for sect in trace.slide(win_len, win_len * (1 - overlap)):
         seg_len = pow(2, 17)
         psd, frq = plt.psd(sect.data, NFFT=seg_len, Fs=trace.meta.sampling_rate,
+                           noverlap=sub_overlap*trace.meta.sampling_rate,
                            window=signal.get_window('hann', seg_len, False), detrend='linear', color='0.7',
                            linewidth=0.5)
         freqs.append(frq)
@@ -198,7 +201,7 @@ def psd_plot(trace, outdir, win_len, overlap):
     return psd_a_plot
 
 
-def buffer_seismic_data(files, outdir, g_log, win_len, overlap, plot_length=None, ch_id=None):
+def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_over, plot_length=None, ch_id=None):
     """
     Analyze seismic data stored in raw data files and create PSD and spectrogram plots. File paths in *files* should be
     listed in chronological order. Files must be readable by obspy.read()
@@ -206,8 +209,10 @@ def buffer_seismic_data(files, outdir, g_log, win_len, overlap, plot_length=None
     :param files: list of paths for raw data files
     :param outdir: path to output directory
     :param g_log: Logging object, specifying general log used by the calling script
-    :param win_len: window length for each PSD curve in seconds
-    :param overlap: percentage window overlap (0-1)
+    :param psd_win: window length for each PSD curve in seconds
+    :param spec_win: window length for spectrogram in seconds
+    :param overlap: fractional window overlap (0-1), used for both PSD and spectrogram
+    :param psd_over: fractional overlap for sub-windows used in PSD calculation (Welch's average periodogram method)
     :param plot_length: optional length of time period to plot in each output PNG in days, otherwise defaults to
     plotting by calendar month
     :param ch_id: optional channel identifier to specify which channel to plot in multi-channel data files
@@ -215,14 +220,21 @@ def buffer_seismic_data(files, outdir, g_log, win_len, overlap, plot_length=None
     :return: path(s) to plot PNG file(s)
     """
     buffer_length = 2   # number of files to keep in memory at a given time, will optimize later
+    seg_len = pow(2, 17)    # segment length used for PSD (Welch's average periodogram method in matplotlib.mlab.psd)
     plot_files = []
 
     i = 0
     latest_data = None
     last_start = None
-    first_window_start = None
+    first_psd_start = None
+    last_psd_end = None
+    first_spec_start = None     # technically allow PSD and spectrogram to have different window lengths at the moment..
+    last_spec_end = None
     plot_end = obspy.UTCDateTime(1970, 1, 1)
     make_plot = False   # only create a plot when necessary
+    spec_array = None
+    spec_times = None
+    psd_array, vpsd_array, psd_freqs = [], [], []
     while i < len(files):
         # Read data into buffer, keep copy of last file read
         buffer = obspy.Stream()
@@ -260,17 +272,37 @@ def buffer_seismic_data(files, outdir, g_log, win_len, overlap, plot_length=None
         this_channel = buffer[0]    # Only look at first channel in files
 
         if last_start is not None:
-            if first_window_start is None:
-                # Windows start from midnight UTC on the first day of data collection
-                start_of_day = obspy.UTCDateTime(this_channel.stats.starttime.year, this_channel.stats.starttime.julday)
-                pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / win_len)
-                first_window_start = start_of_day + win_len * pre_windows
+            # Windows start from midnight UTC on the first day of data collection
+            start_of_day = obspy.UTCDateTime(this_channel.stats.starttime.year, this_channel.stats.starttime.julday)
+            if first_psd_start is None:
+                pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / psd_win)
+                first_psd_start = start_of_day + psd_win * pre_windows
+            if first_spec_start is None:
+                pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / spec_win)
+                first_spec_start = start_of_day + spec_win * pre_windows
 
-            # Get end time of last window that needs to be covered by this buffer section (last data file will be included in next section)
-            buffered_time = last_start - first_window_start
-            buffer_windows = np.ceil(buffered_time / win_len)
-            last_window_end = first_window_start + win_len * buffer_windows
-            # Assume that if win_len is greater than the data file length, it is the last data file (or last before a recording gap)
+            # If "last_end" timestamps are set from previous loop iteration, use those as "first_start" timestamps
+            # otherwise set initial "last_end" timestamps
+            if last_psd_end is None:
+                last_psd_end = first_psd_start
+            else:
+                first_psd_start = last_psd_end
+
+            if last_spec_end is None:
+                last_spec_end = first_spec_start
+            else:
+                first_spec_start = last_spec_end
+            """
+            # Get end time of last windows that need to be covered by this buffer section (last data file will be included in next section)
+            buffered_psd_time = last_start - first_psd_start
+            buffer_windows = np.floor(buffered_psd_time / (psd_win * (1 - overlap)))
+            last_psd_end = first_psd_start + (psd_win * buffer_windows * (1 - overlap)) + psd_win
+
+            buffered_spec_time = last_start - first_spec_start
+            buffer_windows = np.floor(buffered_spec_time / (spec_win * (1 - overlap)))
+            last_spec_end = first_spec_start + (spec_win * buffer_windows * (1 - overlap)) * spec_win
+            # Assume that if window length is greater than the data file length, it is the last data file (or last before a recording gap)
+            """
 
         if this_channel.stats.starttime > plot_end:
             # Set end of current plot time window (should only need to do this the first time, then will be updated by plotting code)
@@ -278,6 +310,7 @@ def buffer_seismic_data(files, outdir, g_log, win_len, overlap, plot_length=None
                 # default behaviour plots a single calendar month in each image
                 yr = this_channel.stats.starttime.year
                 mn = this_channel.stats.starttime.month + 1
+                plot_start = obspy.UTCDateTime(yr, mn - 1, 1)
                 if mn > 12:
                     yr += 1
                     mn -= 12
@@ -291,11 +324,42 @@ def buffer_seismic_data(files, outdir, g_log, win_len, overlap, plot_length=None
             # data in buffer spans a plot breakpoint => make plots this pass
             make_plot = True
 
-        # TODO: Calculate PSD in velocity
-        # TODO: Convert PSD to acceleration
+        # Calculate PSDs in velocity
+        psd_start = first_psd_start
+        vpsds, freqs = [], []
+        while psd_start < last_start:
+            data = this_channel.slice(psd_start, psd_start + psd_win)
+            psd, frq = mlab.psd(data.data, NFFT=seg_len, Fs=this_channel.meta.sampling_rate,
+                                noverlap=psd_over*this_channel.meta.sampling_rate,
+                                window=signal.get_window('hann', seg_len, False), detrend='linear')
+            freqs.append(frq)
+            vpsds.append(psd)
+            last_psd_end = psd_start + psd_win
+            psd_start = psd_start + psd_win * (1 - overlap)
+
+        # Convert PSDs to acceleration and save to running lists
+        for f, p in zip(freqs, vpsds):
+            apsd = p * (2 * np.pi * f) * (2 * np.pi * f)
+            psd_array.append(apsd)
+            vpsd_array.append(p)
+            psd_freqs.append(f)
+
         # TODO: Calculate spectrogram
 
-        # TODO: Make plots (if make_plot is True), then reset temp arrays of results and update plot_end for next window
+        if make_plot:
+            # TODO: Make plots, then reset temp arrays of results
+            # TODO: Decide about trace plot, maybe downsample to 5Hz before plotting?
+
+            # Update plot_end for next time window
+            plot_start = plot_end
+            if plot_length is None:
+                next_mn = plot_start.month + 1
+                if next_mn > 12:
+                    plot_end = obspy.UTCDateTime(plot_start.year + 1, next_mn - 12, 1)
+                else:
+                    plot_end = obspy.UTCDateTime(plot_start.year, next_mn, 1)
+            else:
+                plot_end = plot_start + (plot_length * 24 * 60 * 60)
 
     return plot_files
 
