@@ -16,6 +16,25 @@ QARTOD_COLOURS = {
     9: '0.5'
 }
 
+
+def month_start_end(dttm):
+    """
+    Return start and end of current month for input date/time.
+
+    :param dttm: obspy.UTCDateTime object
+    :return: start and end of current month, obspy.UTCDateTime
+    """
+    yr = dttm.year
+    mn = dttm.month + 1
+    start = obspy.UTCDateTime(yr, mn - 1, 1)
+    if mn > 12:
+        yr += 1
+        mn -= 12
+    end = obspy.UTCDateTime(yr, mn, 1)
+
+    return start, end
+
+
 def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None):
     """
     Make time series plot(s) of an obspy.core.trace.Trace object, raw and corrected (if response information included).
@@ -230,7 +249,7 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
     last_psd_end = None
     first_spec_start = None     # technically allow PSD and spectrogram to have different window lengths at the moment..
     last_spec_end = None
-    plot_end = obspy.UTCDateTime(1970, 1, 1)
+    plot_end = None
     plot_start = obspy.UTCDateTime(1970, 1, 1)
     make_plot = False   # only create a plot when necessary
     spec_array = None
@@ -244,16 +263,29 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
         # Read next data file if nothing saved from previous loop iteration, add first file to buffer
         if latest_data is None:
             latest_data = obspy.read(files[i])
+        if plot_end is None:
+            # Set start and end of current plot time window if not already set
+            if plot_length is None:
+                # default behaviour plots a single calendar month in each image
+                plot_start, plot_end = month_start_end(latest_data[0].stats.starttime)
+            else:
+                # time window in days specified by plot_length
+                plot_start = obspy.UTCDateTime(latest_data[0].stats.starttime.year, latest_data[0].stats.starttime.julday)
+                plot_end = plot_start + (plot_length * 24 * 60 * 60)
+
         for tr in latest_data:
             if ch_id is not None:
                 if tr.id != ch_id:
                     continue  # ignore all other channels if *ch_id* is specified
             buffer.append(tr)  # have to add one trace at a time to existing Stream object
+            if tr.stats.starttime > last_start:
+                last_start = tr.stats.starttime
         i += 1
         files_in_buffer += 1
+        buffer.merge()
 
         # Fill remaining space in buffer with new files, keeping a copy of the last one read as "latest_data"
-        while files_in_buffer < buffer_length:
+        while (files_in_buffer < buffer_length) and (buffer[0].endtime < plot_end):
             latest_data = obspy.read(files[i])
             for tr in latest_data:
                 if ch_id is not None:
@@ -264,8 +296,8 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
                     last_start = tr.stats.starttime
             i += 1
             files_in_buffer += 1
+            buffer.merge()
 
-        buffer.merge()
         if len(buffer) > 1:
             g_log.warn('Multiple channels present in data files, analyzing first one only: {0}'.format(buffer[0].id))
         this_channel = buffer[0]    # Only look at first channel in files
@@ -291,29 +323,12 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
                 last_spec_end = first_spec_start
             else:
                 first_spec_start = last_spec_end
-            """
-            # Get end time of last windows that need to be covered by this buffer section (last data file will be included in next section)
-            buffered_psd_time = last_start - first_psd_start
-            buffer_windows = np.floor(buffered_psd_time / (psd_win * (1 - overlap)))
-            last_psd_end = first_psd_start + (psd_win * buffer_windows * (1 - overlap)) + psd_win
-
-            buffered_spec_time = last_start - first_spec_start
-            buffer_windows = np.floor(buffered_spec_time / (spec_win * (1 - overlap)))
-            last_spec_end = first_spec_start + (spec_win * buffer_windows * (1 - overlap)) * spec_win
-            # Assume that if window length is greater than the data file length, it is the last data file (or last before a recording gap)
-            """
 
         if this_channel.stats.starttime > plot_end:
-            # Set end of current plot time window (should only need to do this the first time, then will be updated by plotting code)
+            # Update plot time window if all data is out of range
             if plot_length is None:
                 # default behaviour plots a single calendar month in each image
-                yr = this_channel.stats.starttime.year
-                mn = this_channel.stats.starttime.month + 1
-                plot_start = obspy.UTCDateTime(yr, mn - 1, 1)
-                if mn > 12:
-                    yr += 1
-                    mn -= 12
-                plot_end = obspy.UTCDateTime(yr, mn, 1)
+                plot_start, plot_end = month_start_end(this_channel.stats.starttime)
             else:
                 # time window in days specified by plot_length
                 plot_start = obspy.UTCDateTime(this_channel.stats.starttime.year, this_channel.stats.starttime.julday)
@@ -326,7 +341,7 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
         # Calculate PSDs in velocity
         psd_start = first_psd_start
         vpsds, freqs = [], []
-        while psd_start < last_start:
+        while psd_start < min(this_channel.stats.endtime - psd_win, plot_end):
             data = this_channel.slice(psd_start, psd_start + psd_win)
             psd, frq = mlab.psd(data.data, NFFT=seg_len, Fs=this_channel.meta.sampling_rate,
                                 noverlap=psd_over*this_channel.meta.sampling_rate,
@@ -351,12 +366,12 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
 
             # PSD plots
             psd_v_plot = os.path.join(outdir,
-                                      'psd_seismic_vel_{0}_{1}_to_{2}'.format(this_channel.id,
-                                                                              plot_start.datetime.strftime('%Y-%m-%d'),
-                                                                              (plot_end-1).datetime.strftime('%Y-%m-%d')))
+                                      'psd_vel_{0}_{1}_to_{2}.png'.format(this_channel.id,
+                                                                          plot_start.datetime.strftime('%Y-%m-%d'),
+                                                                          (plot_end-1).datetime.strftime('%Y-%m-%d')))
             psd_v_fig, vax = plt.subplots(1, 1)
             for f, v in zip(psd_freqs, vpsd_array):
-                vax.plot(f, 10 * np.log10(v), c='0.8', lw=0.5, marker=None)
+                vax.plot(f, 10. * np.log10(v), c='0.8', lw=0.5, marker=None)
             vax.set_xscale('log')
             vax.set_xlabel('Frequency (Hz)')
             vax.set_ylabel('Power Spectral Density (dB)')
@@ -364,12 +379,12 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
             psd_v_plots.append(psd_v_plot)
 
             psd_a_plot = os.path.join(outdir,
-                                      'psd_seismic_acc_{0}_{1}_to_{2}'.format(this_channel.id,
-                                                                              plot_start.datetime.strftime('%Y-%m-%d'),
-                                                                              (plot_end-1).datetime.strftime('%Y-%m-%d')))
+                                      'psd_acc_{0}_{1}_to_{2}.png'.format(this_channel.id,
+                                                                          plot_start.datetime.strftime('%Y-%m-%d'),
+                                                                          (plot_end-1).datetime.strftime('%Y-%m-%d')))
             psd_a_fig, aax = plt.subplots(1, 1)
             for f, a in zip(psd_freqs, psd_array):
-                aax.plot(f, 10 * np.log10(a), c='0.8', lw=0.5, marker=None)
+                aax.plot(f, 10. * np.log10(a), c='0.8', lw=0.5, marker=None)
             aax.set_xscale('log')
             plt.grid(True, ls=':')
             aax.set_xlabel('Frequency (Hz)')
