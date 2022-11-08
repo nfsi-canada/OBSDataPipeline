@@ -221,7 +221,7 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
     """
     buffer_length = 2   # number of files to keep in memory at a given time, will optimize later
     seg_len = pow(2, 17)    # segment length used for PSD (Welch's average periodogram method in matplotlib.mlab.psd)
-    plot_files = []
+    psd_a_plots, psd_v_plots, spec_plots = [], [], []
 
     i = 0
     latest_data = None
@@ -231,6 +231,7 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
     first_spec_start = None     # technically allow PSD and spectrogram to have different window lengths at the moment..
     last_spec_end = None
     plot_end = obspy.UTCDateTime(1970, 1, 1)
+    plot_start = obspy.UTCDateTime(1970, 1, 1)
     make_plot = False   # only create a plot when necessary
     spec_array = None
     spec_times = None
@@ -350,6 +351,39 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
             # TODO: Make plots, then reset temp arrays of results
             # TODO: Decide about trace plot, maybe downsample to 5Hz before plotting?
 
+            # PSD plots
+            psd_v_plot = os.path.join(outdir,
+                                      'psd_seismic_vel_{0}_{1}_to_{2}'.format(this_channel.id,
+                                                                              plot_start.datetime.strftime('%Y-%m-%d'),
+                                                                              (plot_end-1).datetime.strftime('%Y-%m-%d')))
+            psd_v_fig, vax = plt.subplots(1, 1)
+            for f, v in zip(psd_freqs, vpsd_array):
+                vax.plot(f, 10 * np.log10(v), c='0.8', lw=0.5, marker=None)
+            vax.set_xscale('log')
+            vax.set_xlabel('Frequency (Hz)')
+            vax.set_ylabel('Power Spectral Density (dB)')
+            psd_v_fig.savefig(psd_v_plot)
+            psd_v_plots.append(psd_v_plot)
+
+            psd_a_plot = os.path.join(outdir,
+                                      'psd_seismic_acc_{0}_{1}_to_{2}'.format(this_channel.id,
+                                                                              plot_start.datetime.strftime('%Y-%m-%d'),
+                                                                              (plot_end-1).datetime.strftime('%Y-%m-%d')))
+            psd_a_fig, aax = plt.subplots(1, 1)
+            for f, a in zip(psd_freqs, psd_array):
+                aax.plot(f, 10 * np.log10(a), c='0.8', lw=0.5, marker=None)
+            aax.set_xscale('log')
+            plt.grid(True, ls=':')
+            aax.set_xlabel('Frequency (Hz)')
+            aax.set_ylabel('Power Spectral Density (dB)')
+            psd_a_fig.savefig(psd_a_plot)
+            psd_a_plots.append(psd_a_plot)
+
+            # TODO: Spectrogram plot
+
+            # TODO: Reset temp arrays
+            psd_array, vpsd_array, psd_freqs = [], [], []
+
             # Update plot_end for next time window
             plot_start = plot_end
             if plot_length is None:
@@ -361,7 +395,7 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
             else:
                 plot_end = plot_start + (plot_length * 24 * 60 * 60)
 
-    return plot_files
+    return psd_a_plots, psd_v_plots, spec_plots
 
 
 def buffered_spectrogram(files, outdir, spec_win, overlap, plot_length=30, ch_id=None):
