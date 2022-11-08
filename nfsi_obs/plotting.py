@@ -359,6 +359,16 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
             psd_freqs.append(f)
 
         # TODO: Calculate spectrogram
+        npts = int(spec_win * this_channel.stats.sampling_rate)
+        nover = int(overlap * npts)
+        spec, sfrq, t = mlab.specgram(this_channel.data, NFFT=npts, Fs=this_channel.stats.sampling_rate,
+                                     window=signal.get_window('hann', npts, False), noverlap=nover, detrend='linear')
+        if spec_array is None:
+            spec_array = spec
+            spec_times = t
+        else:
+            spec_array = np.concatenate(spec_array, spec, axis=1)
+            spec_times = np.concatenate(spec_times, t, axis=None)
 
         if make_plot:
             # TODO: Make plots, then reset temp arrays of results
@@ -392,10 +402,33 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
             psd_a_fig.savefig(psd_a_plot)
             psd_a_plots.append(psd_a_plot)
 
-            # TODO: Spectrogram plot
+            # Spectrogram plot
+            spectrogram_plot = os.path.join(outdir,
+                                            'spec_{0}_{1}_to_{2}.png'.format(this_channel.id,
+                                                                             plot_start.datetime.strftime('%Y-%m-%d'),
+                                                                             plot_end.datetime.strftime('%Y-%m-%d')))
+            spec_fig, sax = plt.subplots(1, 1)
+            Z = 10. * np.log10(spec_array)
+            Z = np.flipud(Z)
+
+            pad_xextent = (npts - nover) / this_channel.stats.sampling_rate / 2
+            xextent = np.min(spec_times) - pad_xextent, np.max(spec_times) + pad_xextent
+            # TODO: change x-limits to plot_start/end?
+            xmin, xmax = xextent
+            extent = xmin, xmax, sfrq[0], sfrq[-1]
+
+            im = sax.imshow(Z, cmap=None, extent=extent, vmin=None, vmax=None, origin='upper')
+            sax.axis('auto')
+            sax._sci(im)
+            sax.set_yscale('log')
+            sax.set_ylim(ymin=1e-3, ymax=this_channel.stats.sampling_rate/2)
+            sax.set_ylabel('Frequency (Hz)')
+            # TODO: Add appropriate x-ticks for time span
+            spec_fig.savefig(spectrogram_plot)
 
             # TODO: Reset temp arrays
             psd_array, vpsd_array, psd_freqs = [], [], []
+            spec_array, spec_times = None, None
 
             # Update plot_end for next time window
             plot_start = plot_end
