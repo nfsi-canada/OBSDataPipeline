@@ -239,33 +239,31 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
     while i < len(files):
         # Read data into buffer, keep copy of last file read
         buffer = obspy.Stream()
+        files_in_buffer = 0
+
+        # Read next data file if nothing saved from previous loop iteration, add first file to buffer
         if latest_data is None:
-            for x in range(buffer_length):
-                latest_data = obspy.read(files[i])
-                for tr in latest_data:
-                    if ch_id is not None:
-                        if tr.id != ch_id:
-                            continue    # ignore all other channels if *ch_id* is specified
-                    buffer.append(tr)   # have to add one trace at a time to existing Stream object
-                    if tr.stats.starttime > last_start:
-                        last_start = tr.stats.starttime
-                i += 1
-        else:
+            latest_data = obspy.read(files[i])
+        for tr in latest_data:
+            if ch_id is not None:
+                if tr.id != ch_id:
+                    continue  # ignore all other channels if *ch_id* is specified
+            buffer.append(tr)  # have to add one trace at a time to existing Stream object
+        i += 1
+        files_in_buffer += 1
+
+        # Fill remaining space in buffer with new files, keeping a copy of the last one read as "latest_data"
+        while files_in_buffer < buffer_length:
+            latest_data = obspy.read(files[i])
             for tr in latest_data:
                 if ch_id is not None:
                     if tr.id != ch_id:
-                        continue  # ignore all other channels if *ch_id* is specified
-                buffer.append(tr)  # have to add one trace at a time to existing Stream object
-            for x in range(buffer_length - 1):
-                latest_data = obspy.read(files[i])
-                for tr in latest_data:
-                    if ch_id is not None:
-                        if tr.id != ch_id:
-                            continue    # ignore all other channels if *ch_id* is specified
-                    buffer.append(tr)   # have to add one trace at a time to existing Stream object
-                    if tr.stats.starttime > last_start:
-                        last_start = tr.stats.starttime
-                i += 1
+                        continue    # ignore all other channels if *ch_id* is specified
+                buffer.append(tr)   # have to add one trace at a time to existing Stream object
+                if tr.stats.starttime > last_start:
+                    last_start = tr.stats.starttime
+            i += 1
+            files_in_buffer += 1
 
         buffer.merge()
         if len(buffer) > 1:
