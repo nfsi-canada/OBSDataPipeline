@@ -527,6 +527,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             sax.set_ylabel('Frequency (Hz)')
             # TODO: Add appropriate x-ticks for time span
             spec_fig.savefig(spectrogram_plot)
+            spec_plots.append(spectrogram_plot)
 
             # TODO: Reset temp arrays
             psd_array, vpsd_array, psd_freqs = [], [], []
@@ -543,4 +544,6 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             else:
                 plot_end = plot_start + (plot_length * 24 * 60 * 60)
 
+    report_info['psdLoc'] = psd_a_plots
+    report_info['specLoc'] = spec_plots
     return report_info
