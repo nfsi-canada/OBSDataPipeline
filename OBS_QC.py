@@ -57,6 +57,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     base_time = timeit.default_timer()
     g_log.info("Basic processing setup time: {0} seconds".format((base_time - proc_start)))
 
+    # Start/end of time on seafloor (if provided)
+    sf_start, sf_end = None, None
+    if not pd.isnull(obs_log['Date/Time on Seafloor (UTC)'].values[0]):
+        sf_start = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time on Seafloor (UTC)'].values[0]))
+    if not pd.isnull(obs_log['Date/Time Released (UTC)'].values[0]):
+        sf_end = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time Released (UTC)'].values[0]))
+
     # Read station metadata file
     station_info = None
     if metadata is not None:
@@ -188,13 +195,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         g_log.info("Time spent applying metadata: {0} seconds".format((metadata_time - read_time)))
 
         # Cut data to time on seafloor (if start/end times provided)
-        start, end = None, None
-        if not pd.isnull(obs_log['Date/Time on Seafloor (UTC)'].values[0]):
-            start = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time on Seafloor (UTC)'].values[0]))
-        if not pd.isnull(obs_log['Date/Time Released (UTC)'].values[0]):
-            end = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time Released (UTC)'].values[0]))
-
-        data = data.slice(start, end, nearest_sample=False)
+        if (sf_start is not None) or (sf_end is not None):
+            data = data.slice(sf_start, sf_end, nearest_sample=False)
 
         sf_time = timeit.default_timer()
         g_log.info("Time spent cutting to on-seafloor: {0} seconds".format((sf_time - metadata_time)))
