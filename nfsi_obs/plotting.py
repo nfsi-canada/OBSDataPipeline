@@ -313,15 +313,10 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
                 first_spec_start = start_of_day + pre_windows * spec_win * (1 - overlap)
 
             # If "last_end" timestamps are set from previous loop iteration, use those as "first_start" timestamps
-            # otherwise set initial "last_end" timestamps
-            if next_psd_start is None:
-                next_psd_start = first_psd_start
-            else:
+            if next_psd_start is not None:
                 first_psd_start = next_psd_start
 
-            if next_spec_start is None:
-                next_spec_start = first_spec_start
-            else:
+            if next_spec_start is not None:
                 first_spec_start = next_spec_start
 
         if this_channel.stats.starttime > plot_end:
@@ -358,7 +353,7 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
             vpsd_array.append(p)
             psd_freqs.append(f)
 
-        # TODO: Calculate spectrogram
+        # Calculate spectrogram
         npts = int(spec_win * this_channel.stats.sampling_rate)
         nover = int(overlap * npts)
         analysis_end = min(this_channel.stats.endtime, plot_end)
@@ -367,12 +362,13 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
         spec_data = this_channel.slice(first_spec_start, last_spec_start + spec_win)
         spec, sfrq, t = mlab.specgram(spec_data.data, NFFT=npts, Fs=this_channel.stats.sampling_rate,
                                      window=signal.get_window('hann', npts, False), noverlap=nover, detrend='linear')
+        st = spec_data.stats.starttime + t
         if spec_array is None:
-            spec_array = spec
-            spec_times = t
+            spec_array = np.array(spec)
+            spec_times = np.array(st)
         else:
-            spec_array = np.concatenate(spec_array, spec, axis=1)
-            spec_times = np.concatenate(spec_times, t, axis=None)
+            spec_array = np.concatenate((spec_array, spec), axis=1)
+            spec_times = np.concatenate((spec_times, st), axis=None)
         next_spec_start = last_spec_start + spec_win * (1 - overlap)    # start time for next iteration of buffer loop
 
         if make_plot:
@@ -447,23 +443,3 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
                 plot_end = plot_start + (plot_length * 24 * 60 * 60)
 
     return psd_a_plots, psd_v_plots, spec_plots
-
-
-def buffered_spectrogram(files, outdir, spec_win, overlap, plot_length=30, ch_id=None):
-    """
-    Plot spectrogram(s) of seismic data stored in raw data files. File paths in *files* should be listed in
-    chronological order. Files must be readable by obspy.read()
-
-    :param files: list of paths for raw data files
-    :param outdir: path to output directory
-    :param spec_win: spectrogram window in seconds
-    :param overlap: window overlap (0-1)
-    :param plot_length: length of time period to plot in each output PNG in days, default 30
-    :param ch_id: optional channel identifier to specify which channel to plot in multi-channel data files
-
-    :return: path(s) to plot PNG file(s)
-    """
-    buffer_length = 2   # number of files to keep in memory at a given time, will optimize later
-    plot_files = []
-
-    return plot_files
