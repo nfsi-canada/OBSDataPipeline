@@ -6,6 +6,7 @@ import os
 from scipy import signal
 
 from .waveform import WaveformPlotting
+from .metadata import get_channel_type, update_metadata
 
 
 QARTOD_COLOURS = {
@@ -258,7 +259,8 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap):
     return psd_a_plot
 
 
-def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_over, plot_length=None, ch_id=None):
+def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, channel_map=None, project_meta=None,
+                        psd_win=3600, spec_win=3600, overlap=0.5, psd_over=0.75, plot_length=None, ch_id=None):
     """
     Analyze seismic data stored in raw data files and create PSD and spectrogram plots. File paths in *files* should be
     listed in chronological order. Files must be readable by obspy.read()
@@ -266,18 +268,27 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
     :param files: list of paths for raw data files
     :param outdir: path to output directory
     :param g_log: Logging object, specifying general log used by the calling script
-    :param psd_win: window length for each PSD curve in seconds
-    :param spec_win: window length for spectrogram in seconds
-    :param overlap: fractional window overlap (0-1), used for both PSD and spectrogram
-    :param psd_over: fractional overlap for sub-windows used in PSD calculation (Welch's average periodogram method)
+    :param net_id: 2-character FDSN network code, default 'XX' for test data
+    :param station_info
+    :param channel_map
+    :param project_meta
+    :param psd_win: window length for each PSD curve in seconds, default 3600 (1 hour)
+    :param spec_win: window length for spectrogram in seconds, default 3600 (1 hour)
+    :param overlap: fractional window overlap (0-1), used for both PSD and spectrogram, default 50%
+    :param psd_over: fractional overlap for sub-windows used in PSD calculation (Welch's average periodogram method), default 75%
     :param plot_length: optional length of time period to plot in each output PNG in days, otherwise defaults to
     plotting by calendar month
     :param ch_id: optional channel identifier to specify which channel to plot in multi-channel data files
 
     :return: path(s) to plot PNG file(s)
     """
+    if ch_id is not None:
+        input_type = get_channel_type(ch_id.split('.')[-1])
+        if input_type != 'seismic':
+            g_log.warn('Data buffering not yet implemented for non-seismic channel {0} of type {1}'.format(ch_id, input_type))
+            return
+
     buffer_length = 2   # number of files to keep in memory at a given time, will optimize later
-    seg_len = pow(2, 17)    # segment length used for PSD (Welch's average periodogram method in matplotlib.mlab.psd)
     psd_a_plots, psd_v_plots, spec_plots = [], [], []
 
     i = 0
@@ -336,9 +347,20 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
             files_in_buffer += 1
             buffer.merge()
 
+        # Update metadata from other sources
+        buffer = update_metadata(buffer, net_id, g_log, station_info, channel_map, project_meta)
+
         if len(buffer) > 1:
             g_log.warn('Multiple channels present in data files, analyzing first one only: {0}'.format(buffer[0].id))
         this_channel = buffer[0]    # Only look at first channel in files
+
+        # Check that this is a seismic channel
+        channel_type = get_channel_type(this_channel.stats.channel)
+        if channel_type != 'seismic':
+            g_log.warn('Data buffering only implemented for seismic channels. Channel {0} is type {1}.'.format(this_channel.id, channel_type))
+            return
+
+        # TODO: Apply channel sensitivity
 
         if last_start is not None:
             # Windows start from midnight UTC on the first day of data collection
@@ -399,7 +421,6 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
         next_spec_start = last_spec_start + spec_win * (1 - overlap)    # start time for next iteration of buffer loop
 
         if make_plot:
-            # TODO: Make plots, then reset temp arrays of results
             # TODO: Decide about trace plot, maybe downsample to 5Hz before plotting?
 
             # PSD plots

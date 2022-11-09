@@ -53,7 +53,12 @@ def update_metadata(data, network_id, log, station_info=None, channel_map=None, 
     """
     Update metadata for each trace in obspy.Stream object from other sources.
 
-    :param data: input time series data as obspy.Stream object
+    :param data: input time series data as obspy.core.stream.Stream object
+    :param network_id: 2-character FDSN network code
+    :param log: Logging object used by calling script
+    :param station_info
+    :param channel_map
+    :param project_meta
 
     :return: updated Stream object
     """
@@ -90,3 +95,20 @@ def update_metadata(data, network_id, log, station_info=None, channel_map=None, 
                 log.warning("No matching information found in project metadata for channel {0}".format(tr.id))
 
     return data
+
+
+def get_channel_type(ch_code):
+    # Assign to appropriate group of channels
+    channel_type = 'health'
+    if (re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', ch_code)) or (re.match(r'[A-Z]D[HF]', ch_code)):
+        # seismic data and hydrophone
+        channel_type = 'seismic'
+    elif ch_code in ['LKO', 'MDO', 'MDU']:
+        # oceanographic data (external P/T, include APG if present)
+        # TODO: Would like this to be more general, but internal temperature is also labeled with "KO" source/subsource code by default
+        channel_type = 'ocean'
+    elif ch_code in ['LE3', 'ME4']:
+        # battery voltage and power consumption
+        channel_type = 'power'
+
+    return channel_type

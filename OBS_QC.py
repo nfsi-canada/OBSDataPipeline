@@ -226,19 +226,15 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             tr_starttime = timeit.default_timer()
 
             # Assign to relevant group of channels
-            channel_type = 'health'
-            if (re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', tr.meta.channel)) or (re.match(r'[A-Z]D[HF]', tr.meta.channel)):
+            channel_type = nf.metadata.get_channel_type(tr.meta.channel)
+            if channel_type == 'seismic':
                 # seismic data and hydrophone
-                channel_type = 'seismic'
                 seismic.append(tr)
-            elif tr.meta.channel in ['LKO', 'MDO', 'MDU']:
+            elif channel_type == 'ocean':
                 # oceanographic data (external P/T, include APG if present)
-                # TODO: Would like this to be more general, but internal temperature is also labeled with "KO" source/subsource code by default
-                channel_type = 'ocean'
                 ocean.append(tr)
-            elif tr.meta.channel in ['LE3', 'ME4']:
+            elif channel_type == 'power':
                 # battery voltage and power consumption
-                channel_type = 'power'
                 power.append(tr)
             else:
                 health.append(tr)
