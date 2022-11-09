@@ -196,6 +196,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
         # Cut data to time on seafloor (if start/end times provided)
         if (sf_start is not None) or (sf_end is not None):
+            # This shouldn't change `data` if there is no data to cut out
             data = data.slice(sf_start, sf_end, nearest_sample=False)
 
         sf_time = timeit.default_timer()

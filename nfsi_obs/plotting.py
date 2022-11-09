@@ -177,6 +177,47 @@ def spectrogram(trace, outdir, spec_win, overlap):
     return spectrogram_plot
 
 
+def calc_psds(trace, win_len, overlap, sub_overlap, buffered=False):
+    """
+    Calculate PSDs of seismic data (as obspy.core.trace.Trace object)
+
+    :param trace: input seismic data, measured as ground velocity
+    :type trace: obspy.core.trace.Trace
+    :param int win_len: window length for each PSD curve in seconds
+    :param float overlap: fractional window overlap (0-1)
+    :param float sub_overlap: fractional overlap for sub-windows used in PSD calculation (Welch's average periodogram method)
+    :param bool buffered: whether the input data is being processed as part of a buffer or not
+
+    :returns: Calculated PSD curves in acceleration and velocity, corresponding frequencies, start of next window (if buffered is True)
+    """
+    seg_len = pow(2, 17)
+    freqs, vel_psds = [], []
+    next_win_start = None
+    if buffered:
+        next_win_start = trace.stats.starttime
+
+    # Calculate PSDs in velocity
+    for sect in trace.slide(win_len, win_len * (1 - overlap), nearest_sample=False):
+        psd, frq = mlab.psd(sect.data, NFFT=seg_len, Fs=trace.meta.sampling_rate,
+                            noverlap=sub_overlap*trace.meta.sampling_rate,
+                            window=signal.get_window('hann', seg_len, False), detrend='linear')
+        freqs.append(frq)
+        vel_psds.append(psd)
+        if buffered:
+            next_win_start = next_win_start + win_len * (1 - overlap)
+
+    # Convert PSDs to acceleration
+    acc_psds = []
+    for f, p in zip(freqs, vel_psds):
+        apsd = p * (2 * np.pi * f) * (2 * np.pi * f)
+        acc_psds.append(apsd)
+
+    if buffered:
+        return acc_psds, vel_psds, freqs, next_win_start
+    else:
+        return acc_psds, vel_psds, freqs
+
+
 def psd_plot(trace, outdir, win_len, overlap, sub_overlap):
     """
     Plot PSDs of seismic data (as obspy.core.trace.Trace object)
@@ -191,30 +232,27 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap):
     """
     psd_v_plot = os.path.join(outdir, 'psd_seismic_vel_{0}.png'.format(trace.id))
     psd_a_plot = os.path.join(outdir, 'psd_seismic_acc_{0}.png'.format(trace.id))
-    freqs, psds = [], []
+
+    # Calculate all PSDs
+    apsds, vpsds, freqs = calc_psds(trace, win_len, overlap, sub_overlap)
+
+    # Plot velocity PSDs
     psd_v_fig, vax = plt.subplots(1, 1)
-    for sect in trace.slide(win_len, win_len * (1 - overlap)):
-        seg_len = pow(2, 17)
-        psd, frq = plt.psd(sect.data, NFFT=seg_len, Fs=trace.meta.sampling_rate,
-                           noverlap=sub_overlap*trace.meta.sampling_rate,
-                           window=signal.get_window('hann', seg_len, False), detrend='linear', color='0.7',
-                           linewidth=0.5)
-        freqs.append(frq)
-        psds.append(psd)
+    for f, v in zip(freqs, vpsds):
+        vax.plot(f, 10 * np.log10(v), c='0.7', lw=0.5, marker=None)
     vax.set_xscale('log')
     vax.set_xlabel('Frequency (Hz)')
-    vax.set_ylabel('Amplitude (dB)')
+    vax.set_ylabel('Power Spectral Density (dB)')
     psd_v_fig.savefig(psd_v_plot)
 
-    # Convert PSDs to acceleration and plot
+    # Plot acceleration PSDs
     psd_a_fig, aax = plt.subplots(1, 1)
-    for f, p in zip(freqs, psds):
-        apsd = p * (2 * np.pi * f) * (2 * np.pi * f)
-        aax.plot(f, 10 * np.log10(apsd), c='0.8', lw=0.5, marker=None)
+    for f, a in zip(freqs, apsds):
+        aax.plot(f, 10 * np.log10(a), c='0.8', lw=0.5, marker=None)
     aax.set_xscale('log')
     plt.grid(True, ls=':')
     aax.set_xlabel('Frequency (Hz)')
-    aax.set_ylabel('Amplitude (dB)')
+    aax.set_ylabel('Power Spectral Density (dB)')
     psd_a_fig.savefig(psd_a_plot)
 
     return psd_a_plot
@@ -333,25 +371,14 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
             # data in buffer spans a plot breakpoint, or last file read => make plots this pass
             make_plot = True
 
-        # Calculate PSDs in velocity
+        # Calculate PSDs and save to running lists
         psd_start = first_psd_start
-        vpsds, freqs = [], []
-        while psd_start < min(this_channel.stats.endtime - psd_win, plot_end):
-            data = this_channel.slice(psd_start, psd_start + psd_win)
-            psd, frq = mlab.psd(data.data, NFFT=seg_len, Fs=this_channel.meta.sampling_rate,
-                                noverlap=psd_over*this_channel.meta.sampling_rate,
-                                window=signal.get_window('hann', seg_len, False), detrend='linear')
-            freqs.append(frq)
-            vpsds.append(psd)
-            psd_start = psd_start + psd_win * (1 - overlap)
-        next_psd_start = psd_start  # set start time for next iteration of buffer loop
+        new_data = this_channel.slice(psd_start, None, nearest_sample=False)
+        apsds, vpsds, freqs, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, buffered=True)
 
-        # Convert PSDs to acceleration and save to running lists
-        for f, p in zip(freqs, vpsds):
-            apsd = p * (2 * np.pi * f) * (2 * np.pi * f)
-            psd_array.append(apsd)
-            vpsd_array.append(p)
-            psd_freqs.append(f)
+        psd_array = np.concatenate((psd_array, apsds), axis=0)
+        vpsd_array = np.concatenate((vpsd_array, vpsds), axis=0)
+        psd_freqs = np.concatenate((psd_freqs, freqs), axis=0)
 
         # Calculate spectrogram
         npts = int(spec_win * this_channel.stats.sampling_rate)
