@@ -163,7 +163,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
             # TODO: Modify PSD and spectrogram plotting routines to separate calculation from actual plot
             # TODO: Calculate PSD/Spectrogram info for buffered data, plot out by month
-            # TODO: Decide between plotting by calendar month vs time since start of data (constant period per plot)
             # TODO: Test how many files to read at once (optimize for runtime and memory usage)
 
             g_log.warning("Too many data files to be handled by current code setup! Skipping channel")
@@ -181,38 +180,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         g_log.info("Time spent reading data file(s): {0} seconds".format((read_time - ch_start)))
 
         # Populate metadata from other files as necessary
-        for tr in data:
-            # Get response info from metadata
-            if station_info is not None:
-                try:
-                    tr.attach_response(station_info)
-                except ValueError:
-                    warnings.warn("No matching response information found")
-
-                # Get orientations of seismic channels
-                if re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', tr.meta.channel):
-                    orient = station_info.get_orientation(tr.id)
-                    for key in ['azimuth', 'dip']:
-                        tr.stats[key] = orient[key]
-
-            # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
-            if channel_map is not None:
-                ch_info = channel_map.loc[tr.id]
-                for code in ['Network', 'Station', 'Location', 'Channel', 'Description']:
-                    if ch_info[code] is not None and ~check_nan(ch_info[code]):
-                        tr.meta[code.lower()] = ch_info[code]
-            if tr.meta.network != network_id:
-                raise AssertionError('Channel {0} is not in network {1}'.format(tr.id, network_id))
-
-            # Get channel info from project metadata JSON
-            if project_meta is not None:
-                try:
-                    channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_meta['channels']))[0]
-                    if 'description' in channel_info:
-                        tr.meta.description = channel_info['description']
-                except (KeyError, IndexError):
-                    g_log.warning("No matching information found in project metadata for channel {0}".format(tr.id))
-
+        data = nf.metadata.update_metadata(data, network_id, g_log, station_info, channel_map, project_meta)
         data.merge()
         print(data)
 
