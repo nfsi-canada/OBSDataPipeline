@@ -260,7 +260,7 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap):
 
 
 def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, channel_map=None, project_meta=None,
-                        psd_win=3600, spec_win=3600, overlap=0.5, psd_over=0.75, plot_length=None, ch_id=None):
+                        psd_win=3600, spec_win=3600, overlap=0.5, psd_over=0.75, plot_length=None, ch_id=None, start=None, end=None, detrend=False):
     """
     Analyze seismic data stored in raw data files and create PSD and spectrogram plots. File paths in *files* should be
     listed in chronological order. Files must be readable by obspy.read()
@@ -279,9 +279,13 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     :param plot_length: optional length of time period to plot in each output PNG in days, otherwise defaults to
     plotting by calendar month
     :param ch_id: optional channel identifier to specify which channel to plot in multi-channel data files
+    :param start: start time for data to be analyzed (e.g. when OBS reaches seafloor)
+    :param end: end time for data to be analyzed (e.g. when OBS releases from anchor)
+    :param detrend: if True, remove trend from trace data (RMS linear fit)
 
     :return: path(s) to plot PNG file(s)
     """
+    channel_info = None
     if ch_id is not None:
         input_type = get_channel_type(ch_id.split('.')[-1])
         if input_type != 'seismic':
@@ -290,6 +294,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
     buffer_length = 2   # number of files to keep in memory at a given time, will optimize later
     psd_a_plots, psd_v_plots, spec_plots = [], [], []
+    all_gaps = []
+    report_info = {'order': 100}
 
     i = 0
     latest_data = None
@@ -309,11 +315,18 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         buffer = obspy.Stream()
         files_in_buffer = 0
 
-        # Read next data file if nothing saved from previous loop iteration, add first file to buffer
+        # Read next data file if nothing saved from previous loop iteration
         if latest_data is None:
             latest_data = obspy.read(files[i])
+        # Trim data to window of interest
+        latest_data.trim(start, end, nearest_sample=False)
+        # Check for empty stream (no data in file, or no data within window of interest)
+        if len(latest_data) < 1:
+            latest_data = None
+            continue
+
+        # Set start and end of current plot time window if not already set (should only need for first loop iteration)
         if plot_end is None:
-            # Set start and end of current plot time window if not already set
             if plot_length is None:
                 # default behaviour plots a single calendar month in each image
                 plot_start, plot_end = month_start_end(latest_data[0].stats.starttime)
@@ -322,6 +335,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 plot_start = obspy.UTCDateTime(latest_data[0].stats.starttime.year, latest_data[0].stats.starttime.julday)
                 plot_end = plot_start + (plot_length * 24 * 60 * 60)
 
+        # Add trace data from first data file to buffer
         for tr in latest_data:
             if ch_id is not None:
                 if tr.id != ch_id:
@@ -336,16 +350,18 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         # Fill remaining space in buffer with new files, keeping a copy of the last one read as "latest_data"
         while (files_in_buffer < buffer_length) and (buffer[0].endtime < plot_end) and (i < len(files)):
             latest_data = obspy.read(files[i])
-            for tr in latest_data:
-                if ch_id is not None:
-                    if tr.id != ch_id:
-                        continue    # ignore all other channels if *ch_id* is specified
-                buffer.append(tr)   # have to add one trace at a time to existing Stream object
-                if tr.stats.starttime > last_start:
-                    last_start = tr.stats.starttime
-            i += 1
-            files_in_buffer += 1
-            buffer.merge()
+            latest_data.trim(start, end, nearest_sample=False)  # trim to time window of interest
+            if len(latest_data) > 0:
+                for tr in latest_data:
+                    if ch_id is not None:
+                        if tr.id != ch_id:
+                            continue    # ignore all other channels if *ch_id* is specified
+                    buffer.append(tr)   # have to add one trace at a time to existing Stream object
+                    if tr.stats.starttime > last_start:
+                        last_start = tr.stats.starttime
+                i += 1
+                files_in_buffer += 1
+                buffer.merge()
 
         # Update metadata from other sources
         buffer = update_metadata(buffer, net_id, g_log, station_info, channel_map, project_meta)
@@ -353,14 +369,51 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         if len(buffer) > 1:
             g_log.warn('Multiple channels present in data files, analyzing first one only: {0}'.format(buffer[0].id))
         this_channel = buffer[0]    # Only look at first channel in files
+        if ch_id is None:
+            ch_id = this_channel.id
+
+        report_info['seedID'] = ch_id
+        report_info['channelName'] = ch_id
+        for metaKey, reportKey in zip(['description', 'azimuth', 'dip'], ['channelName', 'azimuth', 'dip']):
+            if hasattr(this_channel.meta, metaKey):
+                report_info[reportKey] = this_channel.meta[metaKey]
 
         # Check that this is a seismic channel
         channel_type = get_channel_type(this_channel.stats.channel)
         if channel_type != 'seismic':
             g_log.warn('Data buffering only implemented for seismic channels. Channel {0} is type {1}.'.format(this_channel.id, channel_type))
-            return
+            return report_info
 
-        # TODO: Apply channel sensitivity
+        if channel_info is None:
+            if project_meta is not None:
+                try:
+                    channel_info = list(filter(lambda ch: ch['channel_id'] == ch_id.split('.')[-1], project_meta['channels']))[0]
+                except (KeyError, IndexError):
+                    pass
+
+        if channel_info is not None:
+            if 'hide' in channel_info:
+                if channel_info['hide']:
+                    g_log.info('Channel {0} hidden from report. Skipping analysis.'.format(ch_id))
+                    return report_info
+            if 'order' in channel_info:
+                report_info['order'] = int(channel_info['order'])
+            if 'qc_config' in channel_info:
+                g_log.warn('QARTOD QC checks not yet implemented for buffered data, config ignored')
+
+        # Gap test
+        # TODO: Would be nice if this could account for overlap between consecutive buffer sections to not duplicate gap info...
+        gaps = this_channel.split().get_gaps()
+        if len(gaps) > 0:
+            all_gaps.extend(gaps)
+            g_log.info('Found {0} gap(s) or overlap(s) in recorded data'.format(len(gaps)))
+            this_channel.split().print_gaps()
+
+        # Apply channel sensitivity and remove linear trend, if applicable
+        if hasattr(this_channel.meta, 'response'):
+            this_channel.remove_sensitivity()
+        if detrend:
+            this_channel.detrend('linear')
 
         if last_start is not None:
             # Windows start from midnight UTC on the first day of data collection
@@ -490,4 +543,4 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             else:
                 plot_end = plot_start + (plot_length * 24 * 60 * 60)
 
-    return psd_a_plots, psd_v_plots, spec_plots
+    return report_info

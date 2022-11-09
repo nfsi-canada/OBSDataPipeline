@@ -186,21 +186,21 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         read_time = timeit.default_timer()
         g_log.info("Time spent reading data file(s): {0} seconds".format((read_time - ch_start)))
 
+        # Cut data to time on seafloor (if start/end times provided)
+        if (sf_start is not None) or (sf_end is not None):
+            # This shouldn't change `data` if there is no data to cut out
+            data.trim(sf_start, sf_end, nearest_sample=False)
+
+        sf_time = timeit.default_timer()
+        g_log.info("Time spent cutting to on-seafloor: {0} seconds".format((sf_time - read_time)))
+
         # Populate metadata from other files as necessary
         data = nf.metadata.update_metadata(data, network_id, g_log, station_info, channel_map, project_meta)
         data.merge()
         print(data)
 
         metadata_time = timeit.default_timer()
-        g_log.info("Time spent applying metadata: {0} seconds".format((metadata_time - read_time)))
-
-        # Cut data to time on seafloor (if start/end times provided)
-        if (sf_start is not None) or (sf_end is not None):
-            # This shouldn't change `data` if there is no data to cut out
-            data = data.slice(sf_start, sf_end, nearest_sample=False)
-
-        sf_time = timeit.default_timer()
-        g_log.info("Time spent cutting to on-seafloor: {0} seconds".format((sf_time - metadata_time)))
+        g_log.info("Time spent applying metadata: {0} seconds".format((metadata_time - sf_time)))
 
         # Perform QC
         # TODO: Combine single and multi-channel cases to simplify code (no real reason to separate) -> TEST multi-channel
