@@ -285,17 +285,18 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
     :return: path(s) to plot PNG file(s)
     """
+    report_info = {'order': 100}
     channel_info = None
     if ch_id is not None:
         input_type = get_channel_type(ch_id.split('.')[-1])
+        report_info['channelType'] = input_type
         if input_type != 'seismic':
             g_log.warn('Data buffering not yet implemented for non-seismic channel {0} of type {1}'.format(ch_id, input_type))
-            return
+            return report_info
 
     buffer_length = 2   # number of files to keep in memory at a given time, will optimize later
     psd_a_plots, psd_v_plots, spec_plots = [], [], []
     all_gaps = []
-    report_info = {'order': 100}
 
     i = 0
     latest_data = None
@@ -380,6 +381,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
         # Check that this is a seismic channel
         channel_type = get_channel_type(this_channel.stats.channel)
+        report_info['channelType'] = channel_type
         if channel_type != 'seismic':
             g_log.warn('Data buffering only implemented for seismic channels. Channel {0} is type {1}.'.format(this_channel.id, channel_type))
             return report_info
