@@ -246,9 +246,9 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
     latest_data = None
     last_start = None
     first_psd_start = None
-    last_psd_end = None
+    next_psd_start = None
     first_spec_start = None     # technically allow PSD and spectrogram to have different window lengths at the moment..
-    last_spec_end = None
+    next_spec_start = None
     plot_end = None
     plot_start = obspy.UTCDateTime(1970, 1, 1)
     make_plot = False   # only create a plot when necessary
@@ -285,7 +285,7 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
         buffer.merge()
 
         # Fill remaining space in buffer with new files, keeping a copy of the last one read as "latest_data"
-        while (files_in_buffer < buffer_length) and (buffer[0].endtime < plot_end):
+        while (files_in_buffer < buffer_length) and (buffer[0].endtime < plot_end) and (i < len(files)):
             latest_data = obspy.read(files[i])
             for tr in latest_data:
                 if ch_id is not None:
@@ -306,23 +306,23 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
             # Windows start from midnight UTC on the first day of data collection
             start_of_day = obspy.UTCDateTime(this_channel.stats.starttime.year, this_channel.stats.starttime.julday)
             if first_psd_start is None:
-                pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / psd_win)
-                first_psd_start = start_of_day + psd_win * pre_windows
+                pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / (psd_win * (1 - overlap)))
+                first_psd_start = start_of_day + pre_windows * psd_win * (1 - overlap)
             if first_spec_start is None:
-                pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / spec_win)
-                first_spec_start = start_of_day + spec_win * pre_windows
+                pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / (spec_win * (1 - overlap)))
+                first_spec_start = start_of_day + pre_windows * spec_win * (1 - overlap)
 
             # If "last_end" timestamps are set from previous loop iteration, use those as "first_start" timestamps
             # otherwise set initial "last_end" timestamps
-            if last_psd_end is None:
-                last_psd_end = first_psd_start
+            if next_psd_start is None:
+                next_psd_start = first_psd_start
             else:
-                first_psd_start = last_psd_end
+                first_psd_start = next_psd_start
 
-            if last_spec_end is None:
-                last_spec_end = first_spec_start
+            if next_spec_start is None:
+                next_spec_start = first_spec_start
             else:
-                first_spec_start = last_spec_end
+                first_spec_start = next_spec_start
 
         if this_channel.stats.starttime > plot_end:
             # Update plot time window if all data is out of range
@@ -334,8 +334,8 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
                 plot_start = obspy.UTCDateTime(this_channel.stats.starttime.year, this_channel.stats.starttime.julday)
                 plot_end = plot_start + (plot_length * 24 * 60 * 60)
 
-        if this_channel.stats.endtime > plot_end:
-            # data in buffer spans a plot breakpoint => make plots this pass
+        if (this_channel.stats.endtime > plot_end) or (i == len(files)):
+            # data in buffer spans a plot breakpoint, or last file read => make plots this pass
             make_plot = True
 
         # Calculate PSDs in velocity
@@ -348,8 +348,8 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
                                 window=signal.get_window('hann', seg_len, False), detrend='linear')
             freqs.append(frq)
             vpsds.append(psd)
-            last_psd_end = psd_start + psd_win
             psd_start = psd_start + psd_win * (1 - overlap)
+        next_psd_start = psd_start  # set start time for next iteration of buffer loop
 
         # Convert PSDs to acceleration and save to running lists
         for f, p in zip(freqs, vpsds):
@@ -361,7 +361,11 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
         # TODO: Calculate spectrogram
         npts = int(spec_win * this_channel.stats.sampling_rate)
         nover = int(overlap * npts)
-        spec, sfrq, t = mlab.specgram(this_channel.data, NFFT=npts, Fs=this_channel.stats.sampling_rate,
+        analysis_end = min(this_channel.stats.endtime, plot_end)
+        num_win = np.floor((analysis_end - first_spec_start - spec_win) / (spec_win * (1 - overlap)))
+        last_spec_start = first_spec_start + num_win * spec_win * (1 - overlap)
+        spec_data = this_channel.slice(first_spec_start, last_spec_start + spec_win)
+        spec, sfrq, t = mlab.specgram(spec_data.data, NFFT=npts, Fs=this_channel.stats.sampling_rate,
                                      window=signal.get_window('hann', npts, False), noverlap=nover, detrend='linear')
         if spec_array is None:
             spec_array = spec
@@ -369,6 +373,7 @@ def buffer_seismic_data(files, outdir, g_log, psd_win, spec_win, overlap, psd_ov
         else:
             spec_array = np.concatenate(spec_array, spec, axis=1)
             spec_times = np.concatenate(spec_times, t, axis=None)
+        next_spec_start = last_spec_start + spec_win * (1 - overlap)    # start time for next iteration of buffer loop
 
         if make_plot:
             # TODO: Make plots, then reset temp arrays of results
