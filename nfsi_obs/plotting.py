@@ -310,7 +310,12 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     make_plot = False   # only create a plot when necessary
     spec_array = None
     spec_times = None
-    psd_array, vpsd_array, psd_freqs = [], [], []
+    psd_temp_results = {
+        'psd_array': None,
+        'vpsd_array': None,
+        'psd_freqs': None
+    }
+    #psd_array, vpsd_array, psd_freqs = [], [], []
     while i < len(files):
         # Read data into buffer, keep copy of last file read
         buffer = obspy.Stream()
@@ -333,7 +338,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 plot_start, plot_end = month_start_end(latest_data[0].stats.starttime)
             else:
                 # time window in days specified by plot_length
-                plot_start = obspy.UTCDateTime(latest_data[0].stats.starttime.year, latest_data[0].stats.starttime.julday)
+                plot_start = obspy.UTCDateTime(latest_data[0].stats.starttime.year, latest_data[0].stats.starttime.month, latest_data[0].stats.starttime.day)
                 plot_end = plot_start + (plot_length * 24 * 60 * 60)
 
         # Add trace data from first data file to buffer
@@ -342,14 +347,18 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 if tr.id != ch_id:
                     continue  # ignore all other channels if *ch_id* is specified
             buffer.append(tr)  # have to add one trace at a time to existing Stream object
-            if tr.stats.starttime > last_start:
+            if (tr.stats.starttime > last_start) or (last_start is None):
                 last_start = tr.stats.starttime
         i += 1
         files_in_buffer += 1
         buffer.merge()
 
+        mid_plot = True
+        if buffer.count() > 0:
+            mid_plot = (buffer[0].stats.endtime < plot_end)
+
         # Fill remaining space in buffer with new files, keeping a copy of the last one read as "latest_data"
-        while (files_in_buffer < buffer_length) and (buffer[0].endtime < plot_end) and (i < len(files)):
+        while (files_in_buffer < buffer_length) and mid_plot and (i < len(files)):
             latest_data = obspy.read(files[i])
             latest_data.trim(start, end, nearest_sample=False)  # trim to time window of interest
             if len(latest_data) > 0:
@@ -358,11 +367,16 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                         if tr.id != ch_id:
                             continue    # ignore all other channels if *ch_id* is specified
                     buffer.append(tr)   # have to add one trace at a time to existing Stream object
-                    if tr.stats.starttime > last_start:
+                    if (tr.stats.starttime > last_start) or (last_start is None):
                         last_start = tr.stats.starttime
                 i += 1
                 files_in_buffer += 1
                 buffer.merge()
+            if buffer.count() > 0:
+                mid_plot = (buffer[0].stats.endtime < plot_end)     # Complains if there are no traces in the buffer (e.g. no matching channel IDs from latest data)
+
+        if ch_id is None:
+            ch_id = buffer[0].id    # channel ID before correction (use to ensure same channel analyzed throughout)
 
         # Update metadata from other sources
         buffer = update_metadata(buffer, net_id, g_log, station_info, channel_map, project_meta)
@@ -370,11 +384,9 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         if len(buffer) > 1:
             g_log.warn('Multiple channels present in data files, analyzing first one only: {0}'.format(buffer[0].id))
         this_channel = buffer[0]    # Only look at first channel in files
-        if ch_id is None:
-            ch_id = this_channel.id
 
-        report_info['seedID'] = ch_id
-        report_info['channelName'] = ch_id
+        report_info['seedID'] = this_channel.id
+        report_info['channelName'] = this_channel.id
         for metaKey, reportKey in zip(['description', 'azimuth', 'dip'], ['channelName', 'azimuth', 'dip']):
             if hasattr(this_channel.meta, metaKey):
                 report_info[reportKey] = this_channel.meta[metaKey]
@@ -389,14 +401,14 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         if channel_info is None:
             if project_meta is not None:
                 try:
-                    channel_info = list(filter(lambda ch: ch['channel_id'] == ch_id.split('.')[-1], project_meta['channels']))[0]
+                    channel_info = list(filter(lambda ch: ch['channel_id'] == this_channel.id.split('.')[-1], project_meta['channels']))[0]
                 except (KeyError, IndexError):
                     pass
 
         if channel_info is not None:
             if 'hide' in channel_info:
                 if channel_info['hide']:
-                    g_log.info('Channel {0} hidden from report. Skipping analysis.'.format(ch_id))
+                    g_log.info('Channel {0} hidden from report. Skipping analysis.'.format(this_channel.id))
                     return report_info
             if 'order' in channel_info:
                 report_info['order'] = int(channel_info['order'])
@@ -419,7 +431,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
         if last_start is not None:
             # Windows start from midnight UTC on the first day of data collection
-            start_of_day = obspy.UTCDateTime(this_channel.stats.starttime.year, this_channel.stats.starttime.julday)
+            start_of_day = obspy.UTCDateTime(this_channel.stats.starttime.year, this_channel.stats.starttime.month, this_channel.stats.starttime.day)
             if first_psd_start is None:
                 pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / (psd_win * (1 - overlap)))
                 first_psd_start = start_of_day + pre_windows * psd_win * (1 - overlap)
@@ -441,7 +453,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 plot_start, plot_end = month_start_end(this_channel.stats.starttime)
             else:
                 # time window in days specified by plot_length
-                plot_start = obspy.UTCDateTime(this_channel.stats.starttime.year, this_channel.stats.starttime.julday)
+                plot_start = obspy.UTCDateTime(this_channel.stats.starttime.year, this_channel.stats.starttime.month, this_channel.stats.starttime.day)
                 plot_end = plot_start + (plot_length * 24 * 60 * 60)
 
         if (this_channel.stats.endtime > plot_end) or (i == len(files)):
@@ -453,9 +465,14 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         new_data = this_channel.slice(psd_start, None, nearest_sample=False)
         apsds, vpsds, freqs, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, buffered=True)
 
-        psd_array = np.concatenate((psd_array, apsds), axis=0)
-        vpsd_array = np.concatenate((vpsd_array, vpsds), axis=0)
-        psd_freqs = np.concatenate((psd_freqs, freqs), axis=0)
+        for running, current in zip(['psd_array', 'vpsd_array', 'psd_freqs'], [apsds, vpsds, freqs]):
+            if psd_temp_results[running] is None:
+                psd_temp_results[running] = current
+            else:
+                psd_temp_results[running] = np.concatenate((psd_temp_results[running], current), axis=0)
+        #psd_array = np.concatenate((psd_array, apsds), axis=0)
+        #vpsd_array = np.concatenate((vpsd_array, vpsds), axis=0)
+        #psd_freqs = np.concatenate((psd_freqs, freqs), axis=0)
 
         # Calculate spectrogram
         npts = int(spec_win * this_channel.stats.sampling_rate)
@@ -465,8 +482,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         last_spec_start = first_spec_start + num_win * spec_win * (1 - overlap)
         spec_data = this_channel.slice(first_spec_start, last_spec_start + spec_win)
         spec, sfrq, t = mlab.specgram(spec_data.data, NFFT=npts, Fs=this_channel.stats.sampling_rate,
-                                     window=signal.get_window('hann', npts, False), noverlap=nover, detrend='linear')
-        st = spec_data.stats.starttime + t
+                                      window=signal.get_window('hann', npts, False), noverlap=nover, detrend='linear')
+        st = np.array([spec_data.stats.starttime + tm for tm in t])
         if spec_array is None:
             spec_array = np.array(spec)
             spec_times = np.array(st)
@@ -483,8 +500,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                                       'psd_vel_{0}_{1}_to_{2}.png'.format(this_channel.id,
                                                                           plot_start.datetime.strftime('%Y-%m-%d'),
                                                                           (plot_end-1).datetime.strftime('%Y-%m-%d')))
-            psd_v_fig, vax = plt.subplots(1, 1)
-            for f, v in zip(psd_freqs, vpsd_array):
+            psd_v_fig, vax = plt.subplots(1, 1, num=1, clear=True)
+            for f, v in zip(psd_temp_results['psd_freqs'], psd_temp_results['vpsd_array']):
                 vax.plot(f, 10. * np.log10(v), c='0.8', lw=0.5, marker=None)
             vax.set_xscale('log')
             vax.set_xlabel('Frequency (Hz)')
@@ -496,8 +513,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                                       'psd_acc_{0}_{1}_to_{2}.png'.format(this_channel.id,
                                                                           plot_start.datetime.strftime('%Y-%m-%d'),
                                                                           (plot_end-1).datetime.strftime('%Y-%m-%d')))
-            psd_a_fig, aax = plt.subplots(1, 1)
-            for f, a in zip(psd_freqs, psd_array):
+            psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True)
+            for f, a in zip(psd_temp_results['psd_freqs'], psd_temp_results['psd_array']):
                 aax.plot(f, 10. * np.log10(a), c='0.8', lw=0.5, marker=None)
             aax.set_xscale('log')
             plt.grid(True, ls=':')
@@ -506,14 +523,22 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             psd_a_fig.savefig(psd_a_plot)
             psd_a_plots.append(psd_a_plot)
 
+            # Reset temp arrays for PSDs
+            #psd_array, vpsd_array, psd_freqs = [], [], []
+            psd_temp_results = {
+                'psd_array': None,
+                'vpsd_array': None,
+                'psd_freqs': None
+            }
+
             # Spectrogram plot
             spectrogram_plot = os.path.join(outdir,
                                             'spec_{0}_{1}_to_{2}.png'.format(this_channel.id,
                                                                              plot_start.datetime.strftime('%Y-%m-%d'),
                                                                              plot_end.datetime.strftime('%Y-%m-%d')))
-            spec_fig, sax = plt.subplots(1, 1)
-            Z = 10. * np.log10(spec_array)
-            Z = np.flipud(Z)
+            spec_fig, sax = plt.subplots(1, 1, num=1, clear=True)
+            spec_array = 10. * np.log10(spec_array)
+            spec_array = np.flipud(spec_array)
 
             pad_xextent = (npts - nover) / this_channel.stats.sampling_rate / 2
             xextent = np.min(spec_times) - pad_xextent, np.max(spec_times) + pad_xextent
@@ -531,8 +556,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             spec_fig.savefig(spectrogram_plot)
             spec_plots.append(spectrogram_plot)
 
-            # TODO: Reset temp arrays
-            psd_array, vpsd_array, psd_freqs = [], [], []
+            # Reset temp arrays for spectrogram
             spec_array, spec_times = None, None
 
             # Update plot_end for next time window

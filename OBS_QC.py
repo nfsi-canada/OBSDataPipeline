@@ -55,7 +55,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     spec_win = int(config.get('seismic', 'spectrogram_window', fallback=60))
 
     base_time = timeit.default_timer()
-    g_log.info("Basic processing setup time: {0} seconds".format((base_time - proc_start)))
+    g_log.debug("Basic processing setup time: {0} seconds".format((base_time - proc_start)))
 
     # Start/end of time on seafloor (if provided)
     sf_start, sf_end = None, None
@@ -98,7 +98,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             g_log.warning("No metadata file provided, and none found in data directory.")
 
     meta_time = timeit.default_timer()
-    g_log.info("Time spent reading station metadata file: {0} seconds".format((meta_time - base_time)))
+    g_log.debug("Time spent reading station metadata file: {0} seconds".format((meta_time - base_time)))
 
     # Find data files and backup if necessary
     # TODO: Remove file backup here once it has been copied to pre-processing script (QC doesn't change miniSEED files)
@@ -122,7 +122,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         output_dir = data_dir
 
     search_time = timeit.default_timer()
-    g_log.info("Time spent searching for data files and backing up raw data: {0} seconds".format((search_time - meta_time)))
+    g_log.debug("Time spent searching for data files and backing up raw data: {0} seconds".format((search_time - meta_time)))
 
     # label files by channel name
     labels = []
@@ -137,7 +137,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     g_log.info("Files contain data for {0} unique set(s) of channels".format(len(np.unique(labeled_files['channel'].values))))
 
     sort_time = timeit.default_timer()
-    g_log.info("Time spent sorting and labeling data files: {0} seconds".format((sort_time - search_time)))
+    g_log.debug("Time spent sorting and labeling data files: {0} seconds".format((sort_time - search_time)))
 
     # Initialize arrays for saving stats
     all_gaps = []
@@ -147,7 +147,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     voltage_stats = []
 
     arr_time = timeit.default_timer()
-    g_log.info("Time spent setting up arrays for stats: {0} seconds".format((arr_time - sort_time)))
+    g_log.debug("Time spent setting up arrays for stats: {0} seconds".format((arr_time - sort_time)))
 
     # Loop through data files (grouped by channel set name)
     for label, files in labeled_files.groupby('channel'):
@@ -166,7 +166,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             data_start = min(filetimes[:, 0])
             data_end = max(filetimes[:, 1])
 
-            trace_info = nf.plotting.buffer_seismic_data(files['path'].values, output_dir, g_log, network_id, station_info, channel_map, project_meta)
+            trace_info = nf.plotting.buffer_seismic_data(files['path'].values, output_dir, g_log, network_id,
+                                                         station_info, channel_map, project_meta, win_len, spec_win,
+                                                         overlap)
             channel_type = trace_info['channelType']
 
             g_log.info('{0} | {1} - {2} | {3}'.format(trace_info['seedID'],
@@ -183,7 +185,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             data.merge()
 
             read_time = timeit.default_timer()
-            g_log.info("Time spent reading data file(s): {0} seconds".format((read_time - ch_start)))
+            g_log.debug("Time spent reading data file(s): {0} seconds".format((read_time - ch_start)))
 
             # Cut data to time on seafloor (if start/end times provided)
             if (sf_start is not None) or (sf_end is not None):
@@ -191,7 +193,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 data.trim(sf_start, sf_end, nearest_sample=False)
 
             sf_time = timeit.default_timer()
-            g_log.info("Time spent cutting to on-seafloor: {0} seconds".format((sf_time - read_time)))
+            g_log.debug("Time spent cutting to on-seafloor: {0} seconds".format((sf_time - read_time)))
 
             # Populate metadata from other files as necessary
             data = nf.metadata.update_metadata(data, network_id, g_log, station_info, channel_map, project_meta)
@@ -199,7 +201,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             print(data)
 
             metadata_time = timeit.default_timer()
-            g_log.info("Time spent applying metadata: {0} seconds".format((metadata_time - sf_time)))
+            g_log.debug("Time spent applying metadata: {0} seconds".format((metadata_time - sf_time)))
 
             # Perform QC
             # TODO: Combine single and multi-channel cases to simplify code (no real reason to separate) -> TEST multi-channel
@@ -209,7 +211,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             health = obspy.Stream()
 
             str_time = timeit.default_timer()
-            g_log.info("Time spent creating empty streams: {0} seconds".format((str_time - sf_time)))
+            g_log.debug("Time spent creating empty streams: {0} seconds".format((str_time - sf_time)))
 
             # Gap test
             gaps = data.get_gaps()
@@ -219,7 +221,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 data.print_gaps()
 
             gt_time = timeit.default_timer()
-            g_log.info("Time spent for gap test: {0} seconds".format((gt_time - str_time)))
+            g_log.debug("Time spent for gap test: {0} seconds".format((gt_time - str_time)))
 
             for tr in data:
                 tr_starttime = timeit.default_timer()
@@ -239,7 +241,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     health.append(tr)
 
                 cg_time = timeit.default_timer()
-                g_log.info("Time spent assigning to channel group: {0} seconds".format((cg_time - tr_starttime)))
+                g_log.debug("Time spent assigning to channel group: {0} seconds".format((cg_time - tr_starttime)))
 
                 # Start gathering trace information for report
                 trace_info = {
@@ -274,13 +276,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         qc_config = channel_info['qc_config']
 
                 more_meta_time = timeit.default_timer()
-                g_log.info("Time spent with other metadata admin: {0} seconds".format((more_meta_time - cg_time)))
+                g_log.debug("Time spent with other metadata admin: {0} seconds".format((more_meta_time - cg_time)))
 
                 # Time series plot
                 trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, dmin, dmax, qc_config)
 
                 plt_time = timeit.default_timer()
-                g_log.info("Time spent plotting trace: {0} seconds".format((plt_time - more_meta_time)))
+                g_log.debug("Time spent plotting trace: {0} seconds".format((plt_time - more_meta_time)))
 
                 # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
                 if channel_type == 'seismic':
@@ -372,7 +374,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
 
                 tran_time = timeit.default_timer()
-                g_log.info("Time spent performing trace-specific analysis: {0} seconds".format((tran_time - plt_time)))
+                g_log.debug("Time spent performing trace-specific analysis: {0} seconds".format((tran_time - plt_time)))
 
                 # Summary statistics
                 if hasattr(tr.meta, 'response'):
@@ -391,7 +393,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             report_params[channel_type + '_channels'].append(trace_info)
 
     loop_time = timeit.default_timer()
-    g_log.info("Time spent processing data files: {0} seconds".format((loop_time - arr_time)))
+    g_log.debug("Time spent processing data files: {0} seconds".format((loop_time - arr_time)))
 
     # Check centring behaviour
     if len(centring.columns) > 0:
@@ -414,7 +416,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         }
 
     centre_time = timeit.default_timer()
-    g_log.info("Time spent checking centring behaviour: {0} seconds".format((centre_time - loop_time)))
+    g_log.debug("Time spent checking centring behaviour: {0} seconds".format((centre_time - loop_time)))
 
     # Parse gap information for report
     if len(all_gaps) > 0:
@@ -429,7 +431,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             })
 
     gap_time = timeit.default_timer()
-    g_log.info("Time spent formatting gap information: {0} seconds".format((gap_time - centre_time)))
+    g_log.debug("Time spent formatting gap information: {0} seconds".format((gap_time - centre_time)))
 
     # Combine voltage/power statistics and make plots
     if len(avg_power) > 0 or len(voltage_stats) > 0:
@@ -497,7 +499,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         report_params['batteryStats']['HibernateEstimate'] = min_hib.strftime('%Y-%m-%d')
 
     battery_time = timeit.default_timer()
-    g_log.info("Time spent checking battery stats: {0} seconds".format((battery_time - gap_time)))
+    g_log.debug("Time spent checking battery stats: {0} seconds".format((battery_time - gap_time)))
 
     # Sort channel information by specified order
     for ch_type in ['seismic', 'ocean', 'power', 'health']:
@@ -519,7 +521,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     report_converted = pypandoc.convert_text(report_buffer, to='pdf', format='md', outputfile=report_pdf, extra_args=pandoc_args)
 
     report_time = timeit.default_timer()
-    g_log.info("Time spent creating report: {0} seconds".format((report_time - battery_time)))
+    g_log.debug("Time spent creating report: {0} seconds".format((report_time - battery_time)))
 
     g_log.info("end")
 
