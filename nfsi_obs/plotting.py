@@ -167,7 +167,7 @@ def spectrogram(trace, outdir, spec_win, overlap):
     # Alternate spectrogram method (lower memory usage than through obspy)
     npts = int(spec_win * trace.meta.sampling_rate)
     nover = int(overlap * npts)
-    sfig, sax = plt.subplots(1, 1)
+    sfig, sax = plt.subplots(1, 1, num=1, clear=True)
     plt.specgram(trace.data, NFFT=npts, Fs=trace.meta.sampling_rate, window=signal.get_window('hann', npts, False),
                  noverlap=nover, detrend='linear', scale='dB')
     sax.set_yscale('log')
@@ -238,7 +238,7 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap):
     apsds, vpsds, freqs = calc_psds(trace, win_len, overlap, sub_overlap)
 
     # Plot velocity PSDs
-    psd_v_fig, vax = plt.subplots(1, 1)
+    psd_v_fig, vax = plt.subplots(1, 1, num=1, clear=True)
     for f, v in zip(freqs, vpsds):
         vax.plot(f, 10 * np.log10(v), c='0.7', lw=0.5, marker=None)
     vax.set_xscale('log')
@@ -247,7 +247,7 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap):
     psd_v_fig.savefig(psd_v_plot)
 
     # Plot acceleration PSDs
-    psd_a_fig, aax = plt.subplots(1, 1)
+    psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True)
     for f, a in zip(freqs, apsds):
         aax.plot(f, 10 * np.log10(a), c='0.8', lw=0.5, marker=None)
     aax.set_xscale('log')
@@ -546,7 +546,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             xmin, xmax = xextent
             extent = xmin, xmax, sfrq[0], sfrq[-1]
 
-            im = sax.imshow(Z, cmap=None, extent=extent, vmin=None, vmax=None, origin='upper')
+            im = sax.imshow(spec_array, cmap=None, extent=extent, vmin=None, vmax=None, origin='upper')
             sax.axis('auto')
             sax._sci(im)
             sax.set_yscale('log')
