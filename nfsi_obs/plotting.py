@@ -517,12 +517,13 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                                       'psd_vel_{0}_{1}_to_{2}.png'.format(this_channel.id,
                                                                           plot_start.datetime.strftime('%Y-%m-%d'),
                                                                           (plot_end-1).datetime.strftime('%Y-%m-%d')))
-            psd_v_fig, vax = plt.subplots(1, 1, num=1, clear=True)
+            psd_v_fig, vax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 5))
             for f, v in zip(psd_temp_results['psd_freqs'], psd_temp_results['vpsd_array']):
                 vax.plot(f, 10. * np.log10(v), c='0.8', lw=0.5, marker=None)
             vax.set_xscale('log')
             vax.set_xlabel('Frequency (Hz)')
             vax.set_ylabel('Power Spectral Density (dB)')
+            plt.tight_layout()
             psd_v_fig.savefig(psd_v_plot)
             psd_v_plots.append(psd_v_plot)
 
@@ -530,18 +531,19 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                                       'psd_acc_{0}_{1}_to_{2}.png'.format(this_channel.id,
                                                                           plot_start.datetime.strftime('%Y-%m-%d'),
                                                                           (plot_end-1).datetime.strftime('%Y-%m-%d')))
-            psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True)
+            psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 5))
             for f, a in zip(psd_temp_results['psd_freqs'], psd_temp_results['psd_array']):
                 aax.plot(f, 10. * np.log10(a), c='0.8', lw=0.5, marker=None)
             aax.set_xscale('log')
             plt.grid(True, ls=':')
             aax.set_xlabel('Frequency (Hz)')
             aax.set_ylabel('Power Spectral Density (dB)')
+            plt.tight_layout()
             psd_a_fig.savefig(psd_a_plot)
             psd_a_plots.append({
                 'image': psd_a_plot,
-                'start': plot_start,
-                'end': plot_end - 1
+                'start': plot_start.strftime('%Y-%m-%d'),
+                'end': (plot_end - 1).strftime('%Y-%m-%d')
             })
 
             # Spectrogram plot from PSDs
@@ -549,8 +551,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                                             'spec_psd_{0}_{1}_to_{2}.png'.format(this_channel.id,
                                                                              plot_start.datetime.strftime('%Y-%m-%d'),
                                                                              (plot_end-1).datetime.strftime('%Y-%m-%d')))
-            spec_fig, sax = plt.subplots(1, 1, num=1, clear=True)
-            spec_psds = 10. * np.log10(np.transpose(psd_temp_results['psd_array']))
+            spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 5))
+            spec_psds = 10. * np.log10(np.transpose(psd_temp_results['vpsd_array']))
             spec_psds = np.flipud(spec_psds)
 
             tm_x_ticks, tm_x_ticklabels = [plot_start.timestamp], [plot_start.strftime('%Y-%m-%d')]
@@ -564,7 +566,6 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
             pad_xextent = (npts - nover) / this_channel.stats.sampling_rate / 2
             xextent = np.min(psd_temp_results['psd_times']) - pad_xextent, np.max(psd_temp_results['psd_times']) + pad_xextent
-            # TODO: change x-limits to plot_start/end?
             xmin, xmax = xextent
             extent = xmin, xmax, sfrq[0], sfrq[-1]
 
@@ -574,7 +575,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             sax.set_yscale('log')
             sax.set_ylim(ymin=8e-3, ymax=this_channel.stats.sampling_rate/2)
             sax.set_ylabel('Frequency (Hz)')
-            # Set appropriate x-ticks for time span
+            # Set appropriate x-ticks for time span (also changes x-lim)
             sax.set_xticks(tm_x_ticks, tm_x_ticklabels, horizontalalignment='right')
             sax.tick_params(axis='x', rotation=40)
             plt.tight_layout()
@@ -594,13 +595,12 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                                             'spec_{0}_{1}_to_{2}.png'.format(this_channel.id,
                                                                              plot_start.datetime.strftime('%Y-%m-%d'),
                                                                              (plot_end-1).datetime.strftime('%Y-%m-%d')))
-            spec_fig, sax = plt.subplots(1, 1, num=1, clear=True)
+            spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 5))
             spec_array = 10. * np.log10(spec_array)
             spec_array = np.flipud(spec_array)
 
             pad_xextent = (npts - nover) / this_channel.stats.sampling_rate / 2
             xextent = np.min(spec_times) - pad_xextent, np.max(spec_times) + pad_xextent
-            # TODO: change x-limits to plot_start/end?
             xmin, xmax = xextent
             extent = xmin, xmax, sfrq[0], sfrq[-1]
 
@@ -610,15 +610,15 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             sax.set_yscale('log')
             sax.set_ylim(ymin=8e-3, ymax=this_channel.stats.sampling_rate/2)
             sax.set_ylabel('Frequency (Hz)')
-            # Set appropriate x-ticks for time span
+            # Set appropriate x-ticks for time span (also changes x-lim)
             sax.set_xticks(tm_x_ticks, tm_x_ticklabels, horizontalalignment='right')
             sax.tick_params(axis='x', rotation=40)
             plt.tight_layout()
             spec_fig.savefig(spectrogram_plot)
             spec_plots.append({
                 'image': spectrogram_plot,
-                'start': plot_start,
-                'end': plot_end - 1
+                'start': plot_start.strftime('%Y-%m-%d'),
+                'end': (plot_end - 1).strftime('%Y-%m-%d')
             })
 
             # Reset temp arrays for spectrogram
