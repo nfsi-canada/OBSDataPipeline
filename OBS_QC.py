@@ -171,6 +171,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                                          overlap, plot_length=7)
             channel_type = trace_info['channelType']
 
+            report_params[channel_type + '_channels'].append(trace_info)
+
             g_log.info('{0} | {1} - {2} | {3}'.format(trace_info['seedID'],
                                                       data_start.datetime.strftime('%Y-%m-%d %H:%M:%S.%f'),
                                                       data_end.datetime.strftime('%Y-%m-%d %H:%M:%S.%f'),
@@ -519,6 +521,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     report_pdf = os.path.join(output_dir, 'QC_report_{0}_auto.pdf'.format(obs_log['OBS ID'].values[0]))
     report_converted = pypandoc.convert_text(report_buffer, to='pdf', format='md', outputfile=report_pdf, extra_args=pandoc_args)
+    g_log.info("Report saved as {0}".format(report_pdf))
 
     report_time = timeit.default_timer()
     g_log.debug("Time spent creating report: {0} seconds".format((report_time - battery_time)))
@@ -721,7 +724,14 @@ if __name__ == '__main__':
         g_log.info("Processing complete!")
         end_time = datetime.now()
         run_time = timeit.default_timer() - t0
-        g_log.info("Total run time: {0} seconds".format(run_time))
+        if run_time < 60:
+            g_log.info("Total run time: {0} seconds".format(run_time))
+        elif run_time < 3600:
+            g_log.info("Total run time: {0} seconds ({1} minutes)".format(run_time, run_time/60))
+        elif run_time < 3600*24:
+            g_log.info("Total run time: {0} seconds ({1} hours)".format(run_time, run_time/3600))
+        else:
+            g_log.info("Total run time: {0} seconds ({1} days)".format(run_time, run_time/3600/24))
 
         logger.close_logs()
     except Exception as e:

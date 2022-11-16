@@ -100,17 +100,29 @@ SEED ID: {{ ch.seedID }}
 Orientation: {{ ch.azimuth }} / {{ ch.dip }}
 {% endif %}
 
+{% if ch.traceLoc %}
 ### Full trace
 
 ![Recorded data for channel {{ ch.seedID }}]({{ ch.traceLoc }})
+{% endif %}
 
+{% if ch.specLoc %}
 ### Spectrogram
 
-![Spectrogram of channel {{ ch.seedID }}]({{ ch.specLoc }})
+{% for spec in ch.specLoc %}
+![Spectrogram of channel {{ ch.seedID }} for {{ spec.start }} to {{ spec.end }}]({{ spec.image }})
 
+{% endfor %}
+{% endif %}
+
+{% if ch.psdLoc %}
 ### Power Spectral Density
 
-![Power spectral density curves for channel {{ ch.seedID }}]({{ ch.psdLoc }})
+{% for psd in ch.psdLoc %}
+![Power spectral density curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
+
+{% endfor %}
+{% endif %}
 
 {% endfor %}
 

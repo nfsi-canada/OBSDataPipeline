@@ -533,16 +533,29 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             aax.set_xlabel('Frequency (Hz)')
             aax.set_ylabel('Power Spectral Density (dB)')
             psd_a_fig.savefig(psd_a_plot)
-            psd_a_plots.append(psd_a_plot)
+            psd_a_plots.append({
+                'image': psd_a_plot,
+                'start': plot_start,
+                'end': plot_end - 1
+            })
 
             # Spectrogram plot from PSDs
             spec_psd_plot = os.path.join(outdir,
                                             'spec_psd_{0}_{1}_to_{2}.png'.format(this_channel.id,
                                                                              plot_start.datetime.strftime('%Y-%m-%d'),
-                                                                             plot_end.datetime.strftime('%Y-%m-%d')))
+                                                                             (plot_end-1).datetime.strftime('%Y-%m-%d')))
             spec_fig, sax = plt.subplots(1, 1, num=1, clear=True)
             spec_psds = 10. * np.log10(np.transpose(psd_temp_results['psd_array']))
             spec_psds = np.flipud(spec_psds)
+
+            tm_x_ticks, tm_x_ticklabels = [plot_start.timestamp], [plot_start.strftime('%Y-%m-%d')]
+            dt = plot_start + 24 * 60 * 60
+            while dt < plot_end:
+                tm_x_ticks.append(dt.timestamp)
+                tm_x_ticklabels.append(dt.strftime('%Y-%m-%d'))
+                dt += 24 * 60 * 60
+            tm_x_ticks.append(plot_end.timestamp)
+            tm_x_ticklabels.append(plot_end.strftime('%Y-%m-%d'))
 
             pad_xextent = (npts - nover) / this_channel.stats.sampling_rate / 2
             xextent = np.min(psd_temp_results['psd_times']) - pad_xextent, np.max(psd_temp_results['psd_times']) + pad_xextent
@@ -556,7 +569,10 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             sax.set_yscale('log')
             sax.set_ylim(ymin=8e-3, ymax=this_channel.stats.sampling_rate/2)
             sax.set_ylabel('Frequency (Hz)')
-            # TODO: Add appropriate x-ticks for time span
+            # TODO: Set appropriate x-ticks for time span
+            sax.set_xticks(tm_x_ticks, tm_x_ticklabels, horizontalalignment='right')
+            sax.tick_params(axis='x', rotation=40)
+            #plt.tight_layout()
             spec_fig.savefig(spec_psd_plot)
 
             # Reset temp arrays for PSDs
@@ -572,7 +588,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             spectrogram_plot = os.path.join(outdir,
                                             'spec_{0}_{1}_to_{2}.png'.format(this_channel.id,
                                                                              plot_start.datetime.strftime('%Y-%m-%d'),
-                                                                             plot_end.datetime.strftime('%Y-%m-%d')))
+                                                                             (plot_end-1).datetime.strftime('%Y-%m-%d')))
             spec_fig, sax = plt.subplots(1, 1, num=1, clear=True)
             spec_array = 10. * np.log10(spec_array)
             spec_array = np.flipud(spec_array)
@@ -590,12 +606,20 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             sax.set_ylim(ymin=8e-3, ymax=this_channel.stats.sampling_rate/2)
             sax.set_ylabel('Frequency (Hz)')
             # TODO: Add appropriate x-ticks for time span
+            sax.set_xticks(tm_x_ticks, tm_x_ticklabels, horizontalalignment='right')
+            sax.tick_params(axis='x', rotation=40)
+            #plt.tight_layout()
             spec_fig.savefig(spectrogram_plot)
-            spec_plots.append(spectrogram_plot)
+            spec_plots.append({
+                'image': spectrogram_plot,
+                'start': plot_start,
+                'end': plot_end - 1
+            })
 
             # Reset temp arrays for spectrogram
             spec_array, spec_times = None, None
 
+            make_plot = False
             # Update plot_end for next time window
             plot_start = plot_end
             if plot_length is None:
