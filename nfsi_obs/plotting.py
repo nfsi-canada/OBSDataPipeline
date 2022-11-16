@@ -7,6 +7,7 @@ from scipy import signal
 
 from .waveform import WaveformPlotting
 from .metadata import get_channel_type, update_metadata
+from .extenders import cut_trace
 
 
 QARTOD_COLOURS = {
@@ -199,10 +200,11 @@ def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False
         next_win_start = trace.stats.starttime
 
     # Calculate PSDs in velocity
+    hit_end = False
     for sect in trace.slide(win_len, win_len * (1 - overlap), nearest_sample=False):
         if endtime is not None:
             if sect.stats.starttime > endtime:
-                next_win_start = next_win_start - win_len * (1 - overlap)
+                hit_end = True
                 continue    # skip windows which start after `endtime` and reset next start to include last window in next section of buffer
         psd, frq = mlab.psd(sect.data, NFFT=seg_len, Fs=trace.meta.sampling_rate,
                             noverlap=sub_overlap*trace.meta.sampling_rate,
@@ -213,6 +215,9 @@ def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False
         times.append(midpoint.timestamp)
         if buffered:
             next_win_start = next_win_start + win_len * (1 - overlap)
+
+    if hit_end:
+        next_win_start = next_win_start - win_len * (1 - overlap)
 
     # Convert PSDs to acceleration
     acc_psds = []
@@ -470,7 +475,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
         # Calculate PSDs and save to running lists
         psd_start = first_psd_start
-        new_data = this_channel.slice(psd_start, None, nearest_sample=False)
+        new_data = cut_trace(this_channel, psd_start, None, nearest_sample=True, pad=True)
         apsds, vpsds, freqs, times, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True)
 
         for running, current in zip(['psd_array', 'vpsd_array', 'psd_freqs'], [apsds, vpsds, freqs]):
@@ -569,10 +574,10 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             sax.set_yscale('log')
             sax.set_ylim(ymin=8e-3, ymax=this_channel.stats.sampling_rate/2)
             sax.set_ylabel('Frequency (Hz)')
-            # TODO: Set appropriate x-ticks for time span
+            # Set appropriate x-ticks for time span
             sax.set_xticks(tm_x_ticks, tm_x_ticklabels, horizontalalignment='right')
             sax.tick_params(axis='x', rotation=40)
-            #plt.tight_layout()
+            plt.tight_layout()
             spec_fig.savefig(spec_psd_plot)
 
             # Reset temp arrays for PSDs
@@ -605,10 +610,10 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             sax.set_yscale('log')
             sax.set_ylim(ymin=8e-3, ymax=this_channel.stats.sampling_rate/2)
             sax.set_ylabel('Frequency (Hz)')
-            # TODO: Add appropriate x-ticks for time span
+            # Set appropriate x-ticks for time span
             sax.set_xticks(tm_x_ticks, tm_x_ticklabels, horizontalalignment='right')
             sax.tick_params(axis='x', rotation=40)
-            #plt.tight_layout()
+            plt.tight_layout()
             spec_fig.savefig(spectrogram_plot)
             spec_plots.append({
                 'image': spectrogram_plot,
