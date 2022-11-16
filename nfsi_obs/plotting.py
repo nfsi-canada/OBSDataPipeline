@@ -37,6 +37,37 @@ def month_start_end(dttm):
     return start, end
 
 
+def round_obspy_date(dttm):
+    """ Get date of obspy.UTCDateTime object """
+    return obspy.UTCDateTime(dttm.year, dttm.month, dttm.day)
+
+
+def date_ticks(start, end, max_ticks=10):
+    """
+    Return list of tick locations and labels at appropriate spacing (integer days) between start and end times
+
+    :param start: start date/time, obspy.UTCDateTime
+    :param end: end date/time, obspy.UTCDateTime
+    :param max_ticks: maximum number of ticks, default 10
+    :return:
+    """
+    round_start = round_obspy_date(start)
+    round_end = round_obspy_date(end + 24 * 60 * 60)
+
+    span = round_end - round_start
+    max_interval = span / (max_ticks - 1)   # time between ticks in seconds
+    day_interval = np.ceil(max_interval / 60 / 60 / 24)    # time between ticks in days
+
+    tm_ticks, tm_ticklabels = [round_start.timestamp], [round_start.strftime('%Y-%m-%d')]
+    dt = round_start + day_interval * 24 * 60 * 60
+    while dt <= round_end:
+        tm_ticks.append(dt.timestamp)
+        tm_ticklabels.append(dt.strftime('%Y-%m-%d'))
+        dt += day_interval * 24 * 60 * 60
+
+    return tm_ticks, tm_ticklabels
+
+
 def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None):
     """
     Make time series plot(s) of an obspy.core.trace.Trace object, raw and corrected (if response information included).
@@ -352,7 +383,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 plot_start, plot_end = month_start_end(latest_data[0].stats.starttime)
             else:
                 # time window in days specified by plot_length
-                plot_start = obspy.UTCDateTime(latest_data[0].stats.starttime.year, latest_data[0].stats.starttime.month, latest_data[0].stats.starttime.day)
+                plot_start = round_obspy_date(latest_data[0].stats.starttime)
                 plot_end = plot_start + (plot_length * 24 * 60 * 60)
 
         # Add trace data from first data file to buffer
@@ -444,7 +475,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
         if last_start is not None:
             # Windows start from midnight UTC on the first day of data collection
-            start_of_day = obspy.UTCDateTime(this_channel.stats.starttime.year, this_channel.stats.starttime.month, this_channel.stats.starttime.day)
+            start_of_day = round_obspy_date(this_channel.stats.starttime)
             if first_psd_start is None:
                 pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / (psd_win * (1 - overlap)))
                 first_psd_start = start_of_day + pre_windows * psd_win * (1 - overlap)
@@ -466,7 +497,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 plot_start, plot_end = month_start_end(this_channel.stats.starttime)
             else:
                 # time window in days specified by plot_length
-                plot_start = obspy.UTCDateTime(this_channel.stats.starttime.year, this_channel.stats.starttime.month, this_channel.stats.starttime.day)
+                plot_start = round_obspy_date(this_channel.stats.starttime)
                 plot_end = plot_start + (plot_length * 24 * 60 * 60)
 
         if (this_channel.stats.endtime > plot_end) or (i == len(files)):
@@ -548,21 +579,14 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
             # Spectrogram plot from PSDs
             spec_psd_plot = os.path.join(outdir,
-                                            'spec_psd_{0}_{1}_to_{2}.png'.format(this_channel.id,
-                                                                             plot_start.datetime.strftime('%Y-%m-%d'),
-                                                                             (plot_end-1).datetime.strftime('%Y-%m-%d')))
+                                         'spec_psd_{0}_{1}_to_{2}.png'.format(this_channel.id,
+                                                                              plot_start.datetime.strftime('%Y-%m-%d'),
+                                                                              (plot_end-1).datetime.strftime('%Y-%m-%d')))
             spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 5))
             spec_psds = 10. * np.log10(np.transpose(psd_temp_results['vpsd_array']))
             spec_psds = np.flipud(spec_psds)
 
-            tm_x_ticks, tm_x_ticklabels = [plot_start.timestamp], [plot_start.strftime('%Y-%m-%d')]
-            dt = plot_start + 24 * 60 * 60
-            while dt < plot_end:
-                tm_x_ticks.append(dt.timestamp)
-                tm_x_ticklabels.append(dt.strftime('%Y-%m-%d'))
-                dt += 24 * 60 * 60
-            tm_x_ticks.append(plot_end.timestamp)
-            tm_x_ticklabels.append(plot_end.strftime('%Y-%m-%d'))
+            tm_x_ticks, tm_x_ticklabels = date_ticks(plot_start, plot_end)
 
             pad_xextent = (npts - nover) / this_channel.stats.sampling_rate / 2
             xextent = np.min(psd_temp_results['psd_times']) - pad_xextent, np.max(psd_temp_results['psd_times']) + pad_xextent
