@@ -168,7 +168,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
             trace_info = nf.plotting.buffer_seismic_data(files['path'].values, output_dir, g_log, network_id,
                                                          station_info, channel_map, project_meta, win_len, spec_win,
-                                                         overlap)
+                                                         overlap, plot_length=7)
             channel_type = trace_info['channelType']
 
             g_log.info('{0} | {1} - {2} | {3}'.format(trace_info['seedID'],

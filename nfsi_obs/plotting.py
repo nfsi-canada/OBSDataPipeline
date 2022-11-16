@@ -178,7 +178,7 @@ def spectrogram(trace, outdir, spec_win, overlap):
     return spectrogram_plot
 
 
-def calc_psds(trace, win_len, overlap, sub_overlap, buffered=False):
+def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False):
     """
     Calculate PSDs of seismic data (as obspy.core.trace.Trace object)
 
@@ -187,23 +187,30 @@ def calc_psds(trace, win_len, overlap, sub_overlap, buffered=False):
     :param int win_len: window length for each PSD curve in seconds
     :param float overlap: fractional window overlap (0-1)
     :param float sub_overlap: fractional overlap for sub-windows used in PSD calculation (Welch's average periodogram method)
+    :param endtime: end time for calculation window (will analyze windows which include `endtime`), obspy.UTCDateTime
     :param bool buffered: whether the input data is being processed as part of a buffer or not
 
     :returns: Calculated PSD curves in acceleration and velocity, corresponding frequencies, start of next window (if buffered is True)
     """
     seg_len = pow(2, 17)
-    freqs, vel_psds = [], []
+    freqs, vel_psds, times = [], [], []
     next_win_start = None
     if buffered:
         next_win_start = trace.stats.starttime
 
     # Calculate PSDs in velocity
     for sect in trace.slide(win_len, win_len * (1 - overlap), nearest_sample=False):
+        if endtime is not None:
+            if sect.stats.starttime > endtime:
+                next_win_start = next_win_start - win_len * (1 - overlap)
+                continue    # skip windows which start after `endtime` and reset next start to include last window in next section of buffer
         psd, frq = mlab.psd(sect.data, NFFT=seg_len, Fs=trace.meta.sampling_rate,
                             noverlap=sub_overlap*trace.meta.sampling_rate,
                             window=signal.get_window('hann', seg_len, False), detrend='linear')
         freqs.append(frq)
         vel_psds.append(psd)
+        midpoint = sect.stats.starttime + (sect.stats.endtime - sect.stats.starttime) / 2
+        times.append(midpoint.timestamp)
         if buffered:
             next_win_start = next_win_start + win_len * (1 - overlap)
 
@@ -214,9 +221,9 @@ def calc_psds(trace, win_len, overlap, sub_overlap, buffered=False):
         acc_psds.append(apsd)
 
     if buffered:
-        return acc_psds, vel_psds, freqs, next_win_start
+        return acc_psds, vel_psds, freqs, times, next_win_start
     else:
-        return acc_psds, vel_psds, freqs
+        return acc_psds, vel_psds, freqs, times
 
 
 def psd_plot(trace, outdir, win_len, overlap, sub_overlap):
@@ -235,7 +242,7 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap):
     psd_a_plot = os.path.join(outdir, 'psd_seismic_acc_{0}.png'.format(trace.id))
 
     # Calculate all PSDs
-    apsds, vpsds, freqs = calc_psds(trace, win_len, overlap, sub_overlap)
+    apsds, vpsds, freqs, times = calc_psds(trace, win_len, overlap, sub_overlap)
 
     # Plot velocity PSDs
     psd_v_fig, vax = plt.subplots(1, 1, num=1, clear=True)
@@ -313,7 +320,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     psd_temp_results = {
         'psd_array': None,
         'vpsd_array': None,
-        'psd_freqs': None
+        'psd_freqs': None,
+        'psd_times': None
     }
     #psd_array, vpsd_array, psd_freqs = [], [], []
     while i < len(files):
@@ -463,13 +471,17 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         # Calculate PSDs and save to running lists
         psd_start = first_psd_start
         new_data = this_channel.slice(psd_start, None, nearest_sample=False)
-        apsds, vpsds, freqs, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, buffered=True)
+        apsds, vpsds, freqs, times, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True)
 
         for running, current in zip(['psd_array', 'vpsd_array', 'psd_freqs'], [apsds, vpsds, freqs]):
             if psd_temp_results[running] is None:
                 psd_temp_results[running] = current
             else:
                 psd_temp_results[running] = np.concatenate((psd_temp_results[running], current), axis=0)
+        if psd_temp_results['psd_times'] is None:
+            psd_temp_results['psd_times'] = times
+        else:
+            psd_temp_results['psd_times'] = np.concatenate((psd_temp_results['psd_times'], times), axis=None)
         #psd_array = np.concatenate((psd_array, apsds), axis=0)
         #vpsd_array = np.concatenate((vpsd_array, vpsds), axis=0)
         #psd_freqs = np.concatenate((psd_freqs, freqs), axis=0)
@@ -483,7 +495,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         spec_data = this_channel.slice(first_spec_start, last_spec_start + spec_win)
         spec, sfrq, t = mlab.specgram(spec_data.data, NFFT=npts, Fs=this_channel.stats.sampling_rate,
                                       window=signal.get_window('hann', npts, False), noverlap=nover, detrend='linear')
-        st = np.array([spec_data.stats.starttime + tm for tm in t])
+        st = np.array([(spec_data.stats.starttime + tm).timestamp for tm in t])
         if spec_array is None:
             spec_array = np.array(spec)
             spec_times = np.array(st)
@@ -523,12 +535,37 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             psd_a_fig.savefig(psd_a_plot)
             psd_a_plots.append(psd_a_plot)
 
+            # Spectrogram plot from PSDs
+            spec_psd_plot = os.path.join(outdir,
+                                            'spec_psd_{0}_{1}_to_{2}.png'.format(this_channel.id,
+                                                                             plot_start.datetime.strftime('%Y-%m-%d'),
+                                                                             plot_end.datetime.strftime('%Y-%m-%d')))
+            spec_fig, sax = plt.subplots(1, 1, num=1, clear=True)
+            spec_psds = 10. * np.log10(np.transpose(psd_temp_results['psd_array']))
+            spec_psds = np.flipud(spec_psds)
+
+            pad_xextent = (npts - nover) / this_channel.stats.sampling_rate / 2
+            xextent = np.min(psd_temp_results['psd_times']) - pad_xextent, np.max(psd_temp_results['psd_times']) + pad_xextent
+            # TODO: change x-limits to plot_start/end?
+            xmin, xmax = xextent
+            extent = xmin, xmax, sfrq[0], sfrq[-1]
+
+            im = sax.imshow(spec_psds, cmap=None, extent=extent, vmin=None, vmax=None, origin='upper')
+            sax.axis('auto')
+            sax._sci(im)
+            sax.set_yscale('log')
+            sax.set_ylim(ymin=8e-3, ymax=this_channel.stats.sampling_rate/2)
+            sax.set_ylabel('Frequency (Hz)')
+            # TODO: Add appropriate x-ticks for time span
+            spec_fig.savefig(spec_psd_plot)
+
             # Reset temp arrays for PSDs
             #psd_array, vpsd_array, psd_freqs = [], [], []
             psd_temp_results = {
                 'psd_array': None,
                 'vpsd_array': None,
-                'psd_freqs': None
+                'psd_freqs': None,
+                'psd_times': None
             }
 
             # Spectrogram plot
@@ -550,7 +587,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             sax.axis('auto')
             sax._sci(im)
             sax.set_yscale('log')
-            sax.set_ylim(ymin=1e-3, ymax=this_channel.stats.sampling_rate/2)
+            sax.set_ylim(ymin=8e-3, ymax=this_channel.stats.sampling_rate/2)
             sax.set_ylabel('Frequency (Hz)')
             # TODO: Add appropriate x-ticks for time span
             spec_fig.savefig(spectrogram_plot)
