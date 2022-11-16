@@ -324,6 +324,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         # Read next data file if nothing saved from previous loop iteration
         if latest_data is None:
             latest_data = obspy.read(files[i])
+            i += 1
         # Trim data to window of interest
         latest_data.trim(start, end, nearest_sample=False)
         # Check for empty stream (no data in file, or no data within window of interest)
@@ -349,7 +350,6 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             buffer.append(tr)  # have to add one trace at a time to existing Stream object
             if (tr.stats.starttime > last_start) or (last_start is None):
                 last_start = tr.stats.starttime
-        i += 1
         files_in_buffer += 1
         buffer.merge()
 
@@ -360,6 +360,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         # Fill remaining space in buffer with new files, keeping a copy of the last one read as "latest_data"
         while (files_in_buffer < buffer_length) and mid_plot and (i < len(files)):
             latest_data = obspy.read(files[i])
+            i += 1
             latest_data.trim(start, end, nearest_sample=False)  # trim to time window of interest
             if len(latest_data) > 0:
                 for tr in latest_data:
@@ -369,7 +370,6 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     buffer.append(tr)   # have to add one trace at a time to existing Stream object
                     if (tr.stats.starttime > last_start) or (last_start is None):
                         last_start = tr.stats.starttime
-                i += 1
                 files_in_buffer += 1
                 buffer.merge()
             if buffer.count() > 0:
