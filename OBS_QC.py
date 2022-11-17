@@ -31,7 +31,8 @@ if not os.path.isdir(resource_dir):
     os.makedirs(resource_dir)
 
 
-def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, project_meta=None, full=True, detrend=False, backup=True, **kwargs):
+def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, project_meta=None,
+            full=True, detrend=False, backup=True, use_existing_plots=False, **kwargs):
     """
     Extra keyword arguments are included as report parameters (must match variables in template file).
     """
@@ -166,11 +167,12 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             data_start = min(filetimes[:, 0])
             data_end = max(filetimes[:, 1])
 
-            trace_info = nf.plotting.buffer_seismic_data(files['path'].values, output_dir, g_log, network_id,
+            trace_info, gaps = nf.plotting.buffer_seismic_data(files['path'].values, output_dir, g_log, network_id,
                                                          station_info, channel_map, project_meta, win_len, spec_win,
-                                                         overlap, plot_length=7)
+                                                         overlap, plot_length=7, use_existing_plots=use_existing_plots)
             channel_type = trace_info['channelType']
 
+            all_gaps.extend(gaps)
             report_params[channel_type + '_channels'].append(trace_info)
 
             g_log.info('{0} | {1} - {2} | {3}'.format(trace_info['seedID'],
@@ -281,7 +283,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 g_log.debug("Time spent with other metadata admin: {0} seconds".format((more_meta_time - cg_time)))
 
                 # Time series plot
-                trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, dmin, dmax, qc_config)
+                trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, dmin, dmax, qc_config, use_existing_plots)
 
                 plt_time = timeit.default_timer()
                 g_log.debug("Time spent plotting trace: {0} seconds".format((plt_time - more_meta_time)))
@@ -296,13 +298,14 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     if detrend:
                         tr.detrend('linear')
                         demean_data_plot = os.path.join(output_dir, 'demean_{0}.png'.format(tr.id))
-                        data.plot(outfile=demean_data_plot)
+                        if not (use_existing_plots and os.path.isfile(demean_data_plot)):
+                            data.plot(outfile=demean_data_plot)
 
                     # Spectrogram
-                    trace_info['specLoc'] = nf.plotting.spectrogram(tr, output_dir, spec_win, overlap)
+                    trace_info['specLoc'] = nf.plotting.spectrogram(tr, output_dir, spec_win, overlap, use_existing_plots)
 
                     # Plot PSDs of data
-                    trace_info['psdLoc'] = nf.plotting.psd_plot(tr, output_dir, win_len, overlap)
+                    trace_info['psdLoc'] = nf.plotting.psd_plot(tr, output_dir, win_len, overlap, use_existing_plots)
 
                     if full:
                         # TODO: Decide if the same operations are appropriate for the hydrophone data or not
@@ -322,7 +325,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 if np.any(range_check > 1):
                                     g_log.info('Channel {0} has suspect values at {1} sample(s) and failing values at {2} sample(s)'.format(tr.id, np.sum(range_check==3), np.sum(range_check==4)))
                                 check_trace = obspy.Trace(range_check, header=tr.stats)
-                                trace_info['qcPlotLoc'] = nf.plotting.qartod_plot(check_trace, output_dir, 'gross_range_check')
+                                trace_info['qcPlotLoc'] = nf.plotting.qartod_plot(check_trace, output_dir, 'gross_range_check', use_existing_plots)
 
                             if re.match(r'[A-Z]M[1-3ENZ]', tr.meta.channel) and ('flat_line_test' in qc_config['qartod']):
                                 # centring channels only, must have flat-line test criteria specified
@@ -406,6 +409,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         # TODO: Compile text to summarize centring behaviour
         ctx = ''
 
+        # TODO: Implement use_existing_plots option
         centring_plot = os.path.join(output_dir, 'centring_{0}.png'.format(obs_log['OBS ID'].values[0]))
         fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
         is_centred.astype(float).plot(kind='line', ax=ax)
@@ -460,6 +464,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                                                 pd.to_datetime(power_stats['End'].max()).strftime('%Y-%m-%d'))
         power_stats.to_csv(os.path.join(output_dir, csv_name))
 
+        # TODO: Implement use_existing_plots option
         # Average power vs time
         avgpow_plot = os.path.join(output_dir, 'power_mean_{0}.png'.format(obs_log['OBS ID'].values[0]))
         fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
@@ -562,7 +567,9 @@ if __name__ == '__main__':
     parser.add_argument('--detrend_seismic', dest="detrend_seis", action="store_true",
                         help="Detrend seismic data (RMS linear fit). False by default.")
     parser.add_argument('--skip_backup', dest="skip_backup", action="store_true",
-                        help="If true, will skip creating a backup copy of the raw data files.")
+                        help="Skip creating a backup copy of the raw data files. False by default.")
+    parser.add_argument('--use_existing_plots', dest='use_existing_plots', action='store_true',
+                        help='Do not re-create plots which already exist in output directory. False by default.')
     # TODO: When using ST, project name will come from there instead
     parser.add_argument('--projectname', dest="project_name", help="Project name to be displayed in reports")
     parser.add_argument('--config', dest='config_path', help="Path to config file (if not using default).")
@@ -716,7 +723,10 @@ if __name__ == '__main__':
         g_log.info("Time spent parsing arguments and preparing to process data: {0} seconds".format(setup_time - t0))
 
         # Process data files to apply clock drift correction and update metadata
-        process(data_dir, base_meta, args.network_id, config, output_dir, metadata_file, channel_map, project_meta, not args.function_check, args.detrend_seis, not args.skip_backup, **report_kwargs)
+        process(data_dir, base_meta, args.network_id, config, output_dir=output_dir, metadata=metadata_file,
+                channel_map=channel_map, project_meta=project_meta, full=(not args.function_check),
+                detrend=args.detrend_seis, backup=(not args.skip_backup), use_existing_plots=args.use_existing_plots,
+                **report_kwargs)
 
         proc_time = timeit.default_timer()
         g_log.info("Time spent processing data: {0} seconds".format(proc_time - setup_time))
