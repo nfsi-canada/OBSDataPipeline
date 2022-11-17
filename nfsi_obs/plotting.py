@@ -18,6 +18,7 @@ QARTOD_COLOURS = {
     9: '0.5'
 }
 
+# Global seismic noise models from Peterson (1993), for plotting with acceleration PSDs
 NLNM_A = [-162.36, -166.7, -170., -166.4, -168.6, -159.98, -141.1, -71.36, -97.26, -132.18, -205.27, -37.65, -114.37, -160.58, -187.5, -216.47, -185., -168.34, -217.43, -258.28, -346.88]
 NLNM_B = [5.64, 0., -8.3, 28.9, 52.48, 29.81, 0., -99.77, -66.49, -31.57, 36.16, -104.33, -47.1, -16.28, 0., 15.7, 0., -7.61, 11.9, 26.6, 48.75]
 NLNM_P = [0.1, 0.17, 0.4, 0.8, 1.24, 2.4, 4.3, 5., 6., 10., 12., 15.6, 21.9, 31.6, 45., 70., 101., 154., 328., 600., 10000.]
@@ -620,7 +621,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
             # PSD plots
             if not (use_existing_plots and os.path.isfile(psd_v_plot)):
-                psd_v_fig, vax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.5))
+                psd_v_fig, vax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
                 for f, v in zip(psd_temp_results['psd_freqs'], psd_temp_results['vpsd_array']):
                     vax.plot(f, 10. * np.log10(v), c='0.8', lw=0.5, marker=None)
                 vax.set_xscale('log')
@@ -631,15 +632,16 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             psd_v_plots.append(psd_v_plot)
 
             if not (use_existing_plots and os.path.isfile(psd_a_plot)):
-                psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.5))
-                aax.plot(NLNM[0], NLNM[1], c='k', lw=1, marker=None)
-                aax.plot(NHNM[0], NHNM[1], c='k', lw=1, marker=None)
+                psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
+                aax.plot(NLNM[0], NLNM[1], c='k', lw=0.5, marker=None)
+                aax.plot(NHNM[0], NHNM[1], c='k', lw=0.5, marker=None)
                 for f, a in zip(psd_temp_results['psd_freqs'], psd_temp_results['psd_array']):
                     aax.plot(f, 10. * np.log10(a), c='0.8', lw=0.5, marker=None)
                 aax.set_xscale('log')
                 plt.grid(True, ls=':')
                 aax.set_xlabel('Frequency (Hz)')
                 aax.set_ylabel('Power Spectral Density (dB)')
+                aax.set_xlim(xmin=1e-3)
                 plt.tight_layout()
                 psd_a_fig.savefig(psd_a_plot)
             psd_a_plots.append({
@@ -653,7 +655,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
             # Spectrogram plot from PSDs
             if not (use_existing_plots and os.path.isfile(spec_psd_plot)):
-                spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.5))
+                spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
                 spec_psds = 10. * np.log10(np.transpose(psd_temp_results['vpsd_array']))
                 spec_psds = np.flipud(spec_psds)
 
@@ -684,7 +686,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
             # Spectrogram plot
             if not (use_existing_plots and os.path.isfile(spectrogram_plot)):
-                spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.5))
+                spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
                 spec_array = 10. * np.log10(spec_array)
                 spec_array = np.flipud(spec_array)
 
