@@ -393,7 +393,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             g_log.warn('Data buffering not yet implemented for non-seismic channel {0} of type {1}'.format(ch_id, input_type))
             return report_info
 
-    buffer_length = 2   # number of files to keep in memory at a given time, will optimize later
+    buffer_length = 2   # number of files to keep in memory at a given time; testing shows using more files per buffer loop does not improve performance
     psd_a_plots, psd_v_plots, spec_plots = [], [], []
     all_gaps = []
 
@@ -416,6 +416,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         'psd_times': None
     }
     while i < len(files):
+        g_log.info('Starting buffer loop...')
         # Read data into buffer, keep copy of last file read
         buffer = obspy.Stream()
         files_in_buffer = 0
@@ -423,6 +424,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         # Read next data file if nothing saved from previous loop iteration
         if latest_data is None:
             latest_data = obspy.read(files[i])
+            g_log.info('Read file {0}'.format(files[i]))
+            print(latest_data)
             i += 1
         # Trim data to window of interest
         latest_data.trim(start, end, nearest_sample=False)
@@ -480,6 +483,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         # Fill remaining space in buffer with new files, keeping a copy of the last one read as "latest_data"
         while (files_in_buffer < buffer_length) and mid_plot and (i < len(files)):
             latest_data = obspy.read(files[i])
+            g_log.info('Read file {0}'.format(files[i]))
+            print(latest_data)
             i += 1
             latest_data.trim(start, end, nearest_sample=False)  # trim to time window of interest
             if len(latest_data) > 0:
@@ -653,6 +658,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             })
 
             # X-axis ticks for spectrogram plots (actual date strings rather than timestamps)
+            # TODO: Add minor ticks every day?
             tm_x_ticks, tm_x_ticklabels = date_ticks(plot_start, plot_end)
 
             # Spectrogram plot from PSDs
