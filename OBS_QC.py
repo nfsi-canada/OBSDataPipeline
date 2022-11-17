@@ -168,7 +168,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
             trace_info, gaps = nf.plotting.buffer_seismic_data(files['path'].values, output_dir, g_log, network_id,
                                                          station_info, channel_map, project_meta, win_len, spec_win,
-                                                         overlap, plot_length=7, use_existing_plots=use_existing_plots)
+                                                         overlap, use_existing_plots=use_existing_plots)
             channel_type = trace_info['channelType']
 
             all_gaps.extend(gaps)

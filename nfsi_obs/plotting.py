@@ -595,6 +595,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         else:
             psd_temp_results['psd_times'] = np.concatenate((psd_temp_results['psd_times'], times), axis=None)
 
+        """
         # Calculate spectrogram
         npts = int(spec_win * this_channel.stats.sampling_rate)
         nover = int(overlap * npts)
@@ -612,6 +613,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             spec_array = np.concatenate((spec_array, spec), axis=1)
             spec_times = np.concatenate((spec_times, st), axis=None)
         next_spec_start = last_spec_start + spec_win * (1 - overlap)    # start time for next iteration of buffer loop
+        """
 
         if make_plot:
             # TODO: Decide about trace plot, maybe downsample to 5Hz before plotting?
@@ -655,6 +657,10 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
             # Spectrogram plot from PSDs
             if not (use_existing_plots and os.path.isfile(spec_psd_plot)):
+                sfrq = psd_temp_results['psd_freqs'][0]
+                npts = int(spec_win * this_channel.stats.sampling_rate)
+                nover = int(overlap * npts)
+
                 spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
                 spec_psds = 10. * np.log10(np.transpose(psd_temp_results['vpsd_array']))
                 spec_psds = np.flipud(spec_psds)
@@ -684,6 +690,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 'psd_times': None
             }
 
+            """
             # Spectrogram plot
             if not (use_existing_plots and os.path.isfile(spectrogram_plot)):
                 spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
@@ -706,8 +713,9 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 sax.tick_params(axis='x', rotation=40)
                 plt.tight_layout()
                 spec_fig.savefig(spectrogram_plot)
+            """
             spec_plots.append({
-                'image': spectrogram_plot,
+                'image': spec_psd_plot,
                 'start': plot_start.strftime('%Y-%m-%d'),
                 'end': (plot_end - 1).strftime('%Y-%m-%d')
             })
