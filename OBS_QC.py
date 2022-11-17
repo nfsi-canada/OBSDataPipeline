@@ -156,7 +156,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         g_log.info("Begin processing channel set {0}".format(label))
         g_log.info("{0} data file(s) in list".format(len(files.index)))
 
-        # Ignore channels with lots of data files (long time periods of seismic data) for now
         # TODO: Implement data file buffering for long time periods
         if len(files.index) > 3:
             filetimes = []
@@ -409,12 +408,12 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         # TODO: Compile text to summarize centring behaviour
         ctx = ''
 
-        # TODO: Implement use_existing_plots option
         centring_plot = os.path.join(output_dir, 'centring_{0}.png'.format(obs_log['OBS ID'].values[0]))
-        fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-        is_centred.astype(float).plot(kind='line', ax=ax)
-        fig.savefig(centring_plot)
-        plt.close(fig)
+        if not (use_existing_plots and os.path.isfile(centring_plot)):
+            fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
+            is_centred.astype(float).plot(kind='line', ax=ax)
+            fig.savefig(centring_plot)
+            plt.close(fig)
 
         report_params['centring'] = {
             'plot': centring_plot,
@@ -464,30 +463,32 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                                                 pd.to_datetime(power_stats['End'].max()).strftime('%Y-%m-%d'))
         power_stats.to_csv(os.path.join(output_dir, csv_name))
 
-        # TODO: Implement use_existing_plots option
         # Average power vs time
         avgpow_plot = os.path.join(output_dir, 'power_mean_{0}.png'.format(obs_log['OBS ID'].values[0]))
-        fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-        power_stats.plot(x='Plot_Time', y='Power_Mean', kind='line', ax=ax, xlabel='Date/Time', ylabel='Average Power Consumption (W)')
-        fig.tight_layout()
-        fig.savefig(avgpow_plot)
-        plt.close(fig)
+        if not (use_existing_plots and os.path.isfile(avgpow_plot)):
+            fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
+            power_stats.plot(x='Plot_Time', y='Power_Mean', kind='line', ax=ax, xlabel='Date/Time', ylabel='Average Power Consumption (W)', legend=False)
+            fig.tight_layout()
+            fig.savefig(avgpow_plot)
+            plt.close(fig)
 
         # Average voltage vs time
         avgvlt_plot = os.path.join(output_dir, 'voltage_mean_{0}.png'.format(obs_log['OBS ID'].values[0]))
-        fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-        power_stats.plot(x='Plot_Time', y='Voltage_Mean', kind='line', ax=ax, xlabel='Date/Time', ylabel='Average Voltage (V)')
-        fig.tight_layout()
-        fig.savefig(avgvlt_plot)
-        plt.close(fig)
+        if not (use_existing_plots and os.path.isfile(avgvlt_plot)):
+            fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
+            power_stats.plot(x='Plot_Time', y='Voltage_Mean', kind='line', ax=ax, xlabel='Date/Time', ylabel='Average Voltage (V)', legend=False)
+            fig.tight_layout()
+            fig.savefig(avgvlt_plot)
+            plt.close(fig)
 
         # Voltage gradient vs time
         vltgrd_plot = os.path.join(output_dir, 'voltage_gradient_{0}.png'.format(obs_log['OBS ID'].values[0]))
-        fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-        power_stats.plot(x='Plot_Time', y='Voltage_gradient', kind='line', ax=ax, xlabel='Date/Time', ylabel='Voltage Gradient (mV/day)')
-        fig.tight_layout()
-        fig.savefig(vltgrd_plot)
-        plt.close(fig)
+        if not (use_existing_plots and os.path.isfile(vltgrd_plot)):
+            fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
+            power_stats.plot(x='Plot_Time', y='Voltage_gradient', kind='line', ax=ax, xlabel='Date/Time', ylabel='Voltage Gradient (mV/day)', legend=False)
+            fig.tight_layout()
+            fig.savefig(vltgrd_plot)
+            plt.close(fig)
 
         report_params['batteryStats'] = {}
         report_params['batteryStats']['meanPowerPlot'] = avgpow_plot
