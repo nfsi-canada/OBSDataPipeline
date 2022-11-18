@@ -4,6 +4,7 @@ import numpy as np
 import obspy
 import os
 from scipy import signal
+import timeit
 
 from .waveform import WaveformPlotting
 from .metadata import get_channel_type, update_metadata
@@ -384,6 +385,27 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
     :return: dictionary of channel information for auto-report generation
     """
+    func_start = timeit.default_timer()
+    timing = {
+        'setup': 0.,
+        'loop_setup': 0.,
+        'file_read': 0.,
+        'time_cut': 0.,
+        'plot_admin': 0.,
+        'buffer_build': 0.,
+        'apply_meta': 0.,
+        'this_channel': 0.,
+        'meta_admin': 0.,
+        'gap_test': 0.,
+        'psd_calc': 0.,
+        'psd_buffer': 0.,
+        'spec_calc': 0.,
+        'trace_plot': 0.,
+        'psd_plot': 0.,
+        'spec_plot': 0.,
+        'report_info': 0.,
+        'array_reset': 0.,
+    }
     report_info = {'order': 100}
     channel_info = None
     if ch_id is not None:
@@ -415,11 +437,16 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         'psd_freqs': None,
         'psd_times': None
     }
+    timing['setup'] += timeit.default_timer() - func_start
+
     while i < len(files):
+        loop_start = timeit.default_timer()
         g_log.info('Starting buffer loop...')
         # Read data into buffer, keep copy of last file read
         buffer = obspy.Stream()
         files_in_buffer = 0
+        setup_time = timeit.default_timer()
+        timing['loop_setup'] += setup_time - loop_start
 
         # Read next data file if nothing saved from previous loop iteration
         if latest_data is None:
@@ -427,12 +454,17 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             g_log.info('Read file {0}'.format(files[i]))
             print(latest_data)
             i += 1
+        done_read = timeit.default_timer()
+        timing['file_read'] += done_read - setup_time
+
         # Trim data to window of interest
         latest_data.trim(start, end, nearest_sample=False)
         # Check for empty stream (no data in file, or no data within window of interest)
         if len(latest_data) < 1:
             latest_data = None
             continue
+        trim_time = timeit.default_timer()
+        timing['time_cut'] += trim_time - done_read
 
         # Set start and end of current plot time window if not already set (should only need for first loop iteration)
         if plot_end is None:
@@ -464,6 +496,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 plot_start, plot_end = next_plot_window(plot_end, plot_length=plot_length)
                 psd_v_plot, psd_a_plot, spec_psd_plot, spectrogram_plot = plot_filenames(outdir, ch_id, plot_start,
                                                                                          plot_end)
+        plot_setup = timeit.default_timer()
+        timing['plot_admin'] += plot_setup - trim_time
 
         # Add trace data from first data file to buffer
         for tr in latest_data:
@@ -479,14 +513,21 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         mid_plot = True
         if buffer.count() > 0:
             mid_plot = (buffer[0].stats.endtime < plot_end)
+        buffer_init = timeit.default_timer()
+        timing['buffer_build'] += buffer_init - plot_setup
 
         # Fill remaining space in buffer with new files, keeping a copy of the last one read as "latest_data"
         while (files_in_buffer < buffer_length) and mid_plot and (i < len(files)):
+            read_start = timeit.default_timer()
             latest_data = obspy.read(files[i])
             g_log.info('Read file {0}'.format(files[i]))
             print(latest_data)
             i += 1
+            done_read = timeit.default_timer()
+            timing['file_read'] += done_read - read_start
             latest_data.trim(start, end, nearest_sample=False)  # trim to time window of interest
+            trim_time = timeit.default_timer()
+            timing['time_cut'] += trim_time - done_read
             if len(latest_data) > 0:
                 for tr in latest_data:
                     if ch_id is not None:
@@ -499,16 +540,23 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 buffer.merge()
             if buffer.count() > 0:
                 mid_plot = (buffer[0].stats.endtime < plot_end)     # Complains if there are no traces in the buffer (e.g. no matching channel IDs from latest data)
+            buff_add = timeit.default_timer()
+            timing['buffer_build'] += buff_add - trim_time
 
         if ch_id is None:
             ch_id = buffer[0].id    # channel ID before correction (use to ensure same channel analyzed throughout)
 
+        buffer_full = timeit.default_timer()
         # Update metadata from other sources
         buffer = update_metadata(buffer, net_id, g_log, station_info, channel_map, project_meta)
+        meta_time = timeit.default_timer()
+        timing['apply_meta'] += meta_time - buffer_full
 
         if len(buffer) > 1:
             g_log.warn('Multiple channels present in data files, analyzing first one only: {0}'.format(buffer[0].id))
         this_channel = buffer[0]    # Only look at first channel in files
+        pull_time = timeit.default_timer()
+        timing['this_channel'] += pull_time - meta_time
 
         report_info['seedID'] = this_channel.id
         report_info['channelName'] = this_channel.id
@@ -521,7 +569,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         report_info['channelType'] = channel_type
         if channel_type != 'seismic':
             g_log.warn('Data buffering only implemented for seismic channels. Channel {0} is type {1}.'.format(this_channel.id, channel_type))
-            return report_info
+            timing['meta_admin'] += timeit.default_timer() - pull_time
+            return report_info, all_gaps, timing
 
         if channel_info is None:
             if project_meta is not None:
@@ -534,11 +583,15 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             if 'hide' in channel_info:
                 if channel_info['hide']:
                     g_log.info('Channel {0} hidden from report. Skipping analysis.'.format(this_channel.id))
-                    return report_info
+                    timing['meta_admin'] += timeit.default_timer() - pull_time
+                    return report_info, all_gaps, timing
             if 'order' in channel_info:
                 report_info['order'] = int(channel_info['order'])
             if 'qc_config' in channel_info:
                 g_log.warn('QARTOD QC checks not yet implemented for buffered data, config ignored')
+
+        more_meta = timeit.default_timer()
+        timing['meta_admin'] += more_meta - pull_time
 
         # Gap test
         # TODO: Would be nice if this could account for overlap between consecutive buffer sections to not duplicate gap info...
@@ -547,12 +600,16 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             all_gaps.extend(gaps)
             g_log.info('Found {0} gap(s) or overlap(s) in recorded data'.format(len(gaps)))
             this_channel.split().print_gaps()
+        gap_time = timeit.default_timer()
+        timing['gap_test'] += gap_time - more_meta
 
         # Apply channel sensitivity and remove linear trend, if applicable
         if hasattr(this_channel.meta, 'response'):
             this_channel.remove_sensitivity()
         if detrend:
             this_channel.detrend('linear')
+        data_clean = timeit.default_timer()
+        timing['data_clean'] += data_clean - gap_time
 
         if last_start is not None:
             # Windows start from midnight UTC on the first day of data collection
@@ -585,10 +642,15 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             # data in buffer spans a plot breakpoint, or last file read => make plots this pass
             make_plot = True
 
+        plot_admin = timeit.default_timer()
+        timing['plot_admin'] += plot_admin - data_clean
+
         # Calculate PSDs and save to running lists
         psd_start = first_psd_start
         new_data = cut_trace(this_channel, psd_start, None, nearest_sample=True, pad=True)
         apsds, vpsds, freqs, times, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True)
+        psd_calc_time = timeit.default_timer()
+        timing['psd_calc'] += psd_calc_time - plot_admin
 
         for running, current in zip(['psd_array', 'vpsd_array', 'psd_freqs'], [apsds, vpsds, freqs]):
             if psd_temp_results[running] is None:
@@ -599,6 +661,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             psd_temp_results['psd_times'] = times
         else:
             psd_temp_results['psd_times'] = np.concatenate((psd_temp_results['psd_times'], times), axis=None)
+        psd_arr_build = timeit.default_timer()
+        timing['psd_buffer'] += psd_arr_build - psd_calc_time
 
         """
         # Calculate spectrogram
@@ -619,12 +683,19 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             spec_times = np.concatenate((spec_times, st), axis=None)
         next_spec_start = last_spec_start + spec_win * (1 - overlap)    # start time for next iteration of buffer loop
         """
+        spec_calc_time = timeit.default_timer()
+        timing['spec_calc'] += spec_calc_time - psd_arr_build
 
         if make_plot:
+            start_plotting = timeit.default_timer()
             # TODO: Decide about trace plot, maybe downsample to 5Hz before plotting?
+            trace_time = timeit.default_timer()
+            timing['trace_plot'] += trace_time - start_plotting
 
             psd_v_plot, psd_a_plot, spec_psd_plot, spectrogram_plot = plot_filenames(outdir, this_channel.id,
                                                                                      plot_start, plot_end)
+            get_filenames = timeit.default_timer()
+            timing['plot_admin'] += get_filenames - trace_time
 
             # PSD plots
             if not (use_existing_plots and os.path.isfile(psd_v_plot)):
@@ -651,11 +722,15 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 aax.set_xlim(xmin=1e-3)
                 plt.tight_layout()
                 psd_a_fig.savefig(psd_a_plot)
+            done_psds = timeit.default_timer()
+            timing['psd_plot'] += done_psds - get_filenames
             psd_a_plots.append({
                 'image': psd_a_plot,
                 'start': plot_start.strftime('%Y-%m-%d'),
                 'end': (plot_end - 1).strftime('%Y-%m-%d')
             })
+            report_add = timeit.default_timer()
+            timing['report_info'] += report_add - done_psds
 
             # X-axis ticks for spectrogram plots (actual date strings rather than timestamps)
             # TODO: Add minor ticks every day?
@@ -688,6 +763,9 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 plt.tight_layout()
                 spec_fig.savefig(spec_psd_plot)
 
+            done_spec_psd = timeit.default_timer()
+            timing['spec_plot'] += done_spec_psd - report_add
+
             # Reset temp arrays for PSDs
             psd_temp_results = {
                 'psd_array': None,
@@ -695,6 +773,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 'psd_freqs': None,
                 'psd_times': None
             }
+            reset_psds = timeit.default_timer()
+            timing['array_reset'] += reset_psds - done_spec_psd
 
             """
             # Spectrogram plot
@@ -720,19 +800,30 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 plt.tight_layout()
                 spec_fig.savefig(spectrogram_plot)
             """
+            done_spec_plot = timeit.default_timer()
+            timing['spec_plot'] += done_spec_plot - reset_psds
+
             spec_plots.append({
                 'image': spec_psd_plot,
                 'start': plot_start.strftime('%Y-%m-%d'),
                 'end': (plot_end - 1).strftime('%Y-%m-%d')
             })
+            report_add = timeit.default_timer()
+            timing['report_info'] += report_add - done_spec_plot
 
             # Reset temp arrays for spectrogram
             spec_array, spec_times = None, None
+            reset_spec = timeit.default_timer()
+            timing['array_reset'] += reset_spec - report_add
 
             make_plot = False
             # Update plot_end for next time window
             plot_start, plot_end = next_plot_window(plot_end, plot_length=plot_length)
+            timing['plot_admin'] += timeit.default_timer() - reset_spec
 
+    add_to_report = timeit.default_timer()
     report_info['psdLoc'] = psd_a_plots
     report_info['specLoc'] = spec_plots
-    return report_info, all_gaps
+    timing['report_info'] += timeit.default_timer() - add_to_report
+    timing['trace_analysis'] = timeit.default_timer() - func_start
+    return report_info, all_gaps, timing
