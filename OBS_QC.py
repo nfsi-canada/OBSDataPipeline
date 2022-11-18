@@ -161,11 +161,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     # Add keys for running totals
     debug_info['timing'].update({
-        'psd_calc': 0.,
-        'psd_plot': 0.,
-        'spec_calc': 0.,
         'file_read': 0.,
-        'qartod': 0.,
         'time_cut': 0.,
         'apply_meta': 0.,
         'group_setup': 0.,
@@ -173,6 +169,12 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         'group_assign': 0.,
         'meta_admin': 0.,
         'trace_plot': 0.,
+        'psd_calc': 0.,
+        'psd_plot': 0.,
+        'spec_calc': 0.,
+        'spec_plot': 0.,
+        'qartod': 0.,
+        'power_analysis': 0.,
         'trace_analysis': 0.,
         'long_series_check': 0.,
     })
@@ -204,7 +206,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     debug_info['timing'][key] += buff_time[key]
                 else:
                     debug_info['timing'][key] = buff_time[key]
-            
+
             channel_type = trace_info['channelType']
 
             all_gaps.extend(gaps)
@@ -324,7 +326,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 g_log.debug("Time spent with other metadata admin: {0} seconds".format((more_meta_time - cg_time)))
                 debug_info['timing']['meta_admin'] += more_meta_time - cg_time
 
-                # Time series plot
+                # Time series plot (applies instrument sensitivity in-place if response present in tr.meta)
                 trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, dmin, dmax, qc_config, use_existing_plots)
 
                 plt_time = timeit.default_timer()
@@ -344,11 +346,16 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         if not (use_existing_plots and os.path.isfile(demean_data_plot)):
                             data.plot(outfile=demean_data_plot)
 
+                    start_plots = timeit.default_timer()
                     # Spectrogram
                     trace_info['specLoc'] = nf.plotting.spectrogram(tr, output_dir, spec_win, overlap, use_existing_plots)
+                    done_spec = timeit.default_timer()
+                    debug_info['timing']['spec_plot'] += done_spec - start_plots
 
                     # Plot PSDs of data
                     trace_info['psdLoc'] = nf.plotting.psd_plot(tr, output_dir, win_len, overlap, use_existing_plots)
+                    done_psd = timeit.default_timer()
+                    debug_info['timing']['psd_plot'] += done_psd - done_spec
 
                     if full:
                         # TODO: Decide if the same operations are appropriate for the hydrophone data or not
@@ -361,6 +368,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     # Analysis of auxiliary data
                     timestamps = pd.to_datetime(tr.times(type='timestamp'), unit='s').values
                     # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
+                    start_tran = timeit.default_timer()
                     if qc_config is not None:
                         if 'qartod' in qc_config:
                             if 'gross_range_test' in qc_config['qartod']:
@@ -377,6 +385,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                                                  int(flt_params.pop('suspect_threshold')),
                                                                  int(flt_params.pop('fail_threshold')))
                                 centring[tr.id] = pd.Series(flatline, index=timestamps)
+                    done_qartod = timeit.default_timer()
+                    debug_info['timing']['qartod'] += done_qartod - start_tran
 
                     if channel_type == 'power':
                         # Voltage and power consumption channels
@@ -418,6 +428,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                     r2 = reg.score(secs_valid, valid_data)   # R^2 coefficient of linear fit (should be very close to 1)
                                     voltage_stats.append([window_start.datetime, window.data.min(), window.max(), window.data.mean(), gradient, r2])
                                 window_start += window_offset
+                    done_power = timeit.default_timer()
+                    debug_info['timing']['power_analysis'] += done_power - done_qartod
+                    
                     # TODO: Analysis of state-of-health variables?
                     # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
 
