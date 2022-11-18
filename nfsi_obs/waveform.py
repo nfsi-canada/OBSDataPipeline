@@ -117,6 +117,8 @@ class WaveformPlotting(object):
         # Whether to use straight plotting or the fast minmax method. If not set explicitly by the user "full" method
         # will be used by default and "fast" method will be used above some threshold of data points to plot.
         self.plotting_method = kwargs.get('method', None)
+        if self.qartod:
+            self.plotting_method = 'full'   # required for colour scaling of QARTOD results
         # Below that value the data points will be plotted normally. Above it the data will be plotted using a different
         # approach (details see below). Can be overwritten by the above self.plotting_method kwarg.
         if self.type == 'section':

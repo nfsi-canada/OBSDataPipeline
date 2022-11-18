@@ -397,6 +397,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         'this_channel': 0.,
         'meta_admin': 0.,
         'gap_test': 0.,
+        'data_clean': 0.,
         'psd_calc': 0.,
         'psd_buffer': 0.,
         'spec_calc': 0.,

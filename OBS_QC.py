@@ -376,7 +376,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 if np.any(range_check > 1):
                                     g_log.info('Channel {0} has suspect values at {1} sample(s) and failing values at {2} sample(s)'.format(tr.id, np.sum(range_check==3), np.sum(range_check==4)))
                                 check_trace = obspy.Trace(range_check, header=tr.stats)
-                                trace_info['qcPlotLoc'] = nf.plotting.qartod_plot(check_trace, output_dir, 'gross_range_check', use_existing_plots)
+                                #trace_info['qcPlotLoc'] = nf.plotting.qartod_plot(check_trace, output_dir, 'gross_range_check', use_existing_plots)
 
                             if re.match(r'[A-Z]M[1-3ENZ]', tr.meta.channel) and ('flat_line_test' in qc_config['qartod']):
                                 # centring channels only, must have flat-line test criteria specified
@@ -430,7 +430,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 window_start += window_offset
                     done_power = timeit.default_timer()
                     debug_info['timing']['power_analysis'] += done_power - done_qartod
-                    
+
                     # TODO: Analysis of state-of-health variables?
                     # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
 
