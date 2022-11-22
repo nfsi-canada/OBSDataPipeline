@@ -1,3 +1,4 @@
+import gc
 import matplotlib.pyplot as plt
 from matplotlib import mlab
 import numpy as np
@@ -452,9 +453,14 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
             # Read next data file if nothing saved from previous loop iteration
             if latest_data is None:
-                latest_data = obspy.read(files[i])
-                g_log.info('Read file {0}'.format(files[i]))
-                print(latest_data)
+                try:
+                    latest_data = obspy.read(files[i])
+                    g_log.info('Read file {0}'.format(files[i]))
+                    print(latest_data)
+                except Exception as e:
+                    g_log.error(str(e))
+                    g_log.error('Error reading file {0}'.format(files[i]))
+                    latest_data = obspy.Stream()
                 i += 1
             done_read = timeit.default_timer()
             timing['file_read'] += done_read - setup_time
@@ -521,12 +527,21 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             # Fill remaining space in buffer with new files, keeping a copy of the last one read as "latest_data"
             while (files_in_buffer < buffer_length) and mid_plot and (i < len(files)):
                 read_start = timeit.default_timer()
-                latest_data = obspy.read(files[i])
-                g_log.info('Read file {0}'.format(files[i]))
-                print(latest_data)
-                i += 1
-                done_read = timeit.default_timer()
-                timing['file_read'] += done_read - read_start
+                try:
+                    latest_data = obspy.read(files[i])
+                    g_log.info('Read file {0}'.format(files[i]))
+                    print(latest_data)
+                    i += 1
+                    done_read = timeit.default_timer()
+                    timing['file_read'] += done_read - read_start
+                except Exception as e:
+                    msg = str(e)
+                    g_log.error(msg)
+                    g_log.error('Error reading file {0}'.format(files[i]))
+                    i += 1
+                    done_read = timeit.default_timer()
+                    timing['file_read'] += done_read - read_start
+                    continue
                 latest_data.trim(start, end, nearest_sample=False)  # trim to time window of interest
                 trim_time = timeit.default_timer()
                 timing['time_cut'] += trim_time - done_read
@@ -832,6 +847,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 # Update plot_end for next time window
                 plot_start, plot_end = next_plot_window(plot_end, plot_length=plot_length)
                 timing['plot_admin'] += timeit.default_timer() - reset_arr
+
+                gc.collect()
 
     add_to_report = timeit.default_timer()
     report_info['psdLoc'] = psd_a_plots
