@@ -251,14 +251,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
             # Perform QC
             # TODO: Combine single and multi-channel cases to simplify code (no real reason to separate) -> TEST multi-channel
-            seismic = obspy.Stream()
-            ocean = obspy.Stream()
-            power = obspy.Stream()
-            health = obspy.Stream()
-
-            str_time = timeit.default_timer()
-            g_log.debug("Time spent creating empty streams: {0} seconds".format((str_time - sf_time)))
-            debug_info['timing']['group_setup'] += str_time - sf_time
 
             # Gap test
             gaps = data.get_gaps()
@@ -268,25 +260,14 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 data.print_gaps()
 
             gt_time = timeit.default_timer()
-            g_log.debug("Time spent for gap test: {0} seconds".format((gt_time - str_time)))
-            debug_info['timing']['gap_test'] += gt_time - str_time
+            g_log.debug("Time spent for gap test: {0} seconds".format((gt_time - metadata_time)))
+            debug_info['timing']['gap_test'] += gt_time - metadata_time
 
             for tr in data:
                 tr_starttime = timeit.default_timer()
 
-                # Assign to relevant group of channels
+                # Channel type determines what analysis gets run on this trace
                 channel_type = nf.metadata.get_channel_type(tr.meta.channel)
-                if channel_type == 'seismic':
-                    # seismic data and hydrophone
-                    seismic.append(tr)
-                elif channel_type == 'ocean':
-                    # oceanographic data (external P/T, include APG if present)
-                    ocean.append(tr)
-                elif channel_type == 'power':
-                    # battery voltage and power consumption
-                    power.append(tr)
-                else:
-                    health.append(tr)
 
                 cg_time = timeit.default_timer()
                 g_log.debug("Time spent assigning to channel group: {0} seconds".format((cg_time - tr_starttime)))
