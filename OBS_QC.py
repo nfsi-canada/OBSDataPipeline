@@ -1,7 +1,7 @@
 import argparse
+from datetime import datetime, timedelta
 from glob import glob
-from ioos_qc import utils as iq_utils
-from ioos_qc import qartod
+import gc
 import json
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,19 +10,21 @@ import os
 import pandas as pd
 import pypandoc
 import re
-from scipy import signal
 import shutil
+import timeit
 import traceback
 import warnings
-from datetime import datetime, timedelta
-from obspy.io.stationxml.core import validate_stationxml
-from obspy.signal import PPSD
-from sklearn.linear_model import LinearRegression
-import timeit
+
 from obspy.io.mseed.util import get_start_and_end_time
+from obspy.io.stationxml.core import validate_stationxml
+from sklearn.linear_model import LinearRegression
+
+from ioos_qc import qartod
 
 import nfsi_obs as nf
-from utilities import config_handler, logger, check_nan, ReportGenerator
+from utilities import config_handler, logger, ReportGenerator
+
+gc.set_debug(gc.DEBUG_UNCOLLECTABLE)
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 # Ensure resource directory exists
@@ -811,7 +813,10 @@ if __name__ == '__main__':
             g_log.info("Total run time: {0} seconds ({1} days)".format(run_time, run_time/3600/24))
 
         logger.close_logs()
+
+        print(gc.get_stats())
     except Exception as e:
         print(traceback.print_exc())
         parser.print_help()
+        print(gc.get_stats())
         exit(1)
