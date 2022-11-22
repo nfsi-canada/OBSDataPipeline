@@ -441,386 +441,396 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     timing['setup'] += timeit.default_timer() - func_start
 
     while i < len(files):
-        loop_start = timeit.default_timer()
-        g_log.info('Starting buffer loop...')
-        # Read data into buffer, keep copy of last file read
-        buffer = obspy.Stream()
-        files_in_buffer = 0
-        setup_time = timeit.default_timer()
-        timing['loop_setup'] += setup_time - loop_start
+        try:
+            loop_start = timeit.default_timer()
+            g_log.info('Starting buffer loop...')
+            # Read data into buffer, keep copy of last file read
+            buffer = obspy.Stream()
+            files_in_buffer = 0
+            setup_time = timeit.default_timer()
+            timing['loop_setup'] += setup_time - loop_start
 
-        # Read next data file if nothing saved from previous loop iteration
-        if latest_data is None:
-            latest_data = obspy.read(files[i])
-            g_log.info('Read file {0}'.format(files[i]))
-            print(latest_data)
-            i += 1
-        done_read = timeit.default_timer()
-        timing['file_read'] += done_read - setup_time
+            # Read next data file if nothing saved from previous loop iteration
+            if latest_data is None:
+                latest_data = obspy.read(files[i])
+                g_log.info('Read file {0}'.format(files[i]))
+                print(latest_data)
+                i += 1
+            done_read = timeit.default_timer()
+            timing['file_read'] += done_read - setup_time
 
-        # Trim data to window of interest
-        latest_data.trim(start, end, nearest_sample=False)
-        # Check for empty stream (no data in file, or no data within window of interest)
-        if len(latest_data) < 1:
-            latest_data = None
-            continue
-        trim_time = timeit.default_timer()
-        timing['time_cut'] += trim_time - done_read
+            # Trim data to window of interest
+            latest_data.trim(start, end, nearest_sample=False)
+            # Check for empty stream (no data in file, or no data within window of interest)
+            if len(latest_data) < 1:
+                latest_data = None
+                continue
+            trim_time = timeit.default_timer()
+            timing['time_cut'] += trim_time - done_read
 
-        # Set start and end of current plot time window if not already set (should only need for first loop iteration)
-        if plot_end is None:
-            if plot_length is None:
-                # default behaviour plots a single calendar month in each image
-                plot_start, plot_end = month_start_end(latest_data[0].stats.starttime)
+            # Set start and end of current plot time window if not already set (should only need for first loop iteration)
+            if plot_end is None:
+                if plot_length is None:
+                    # default behaviour plots a single calendar month in each image
+                    plot_start, plot_end = month_start_end(latest_data[0].stats.starttime)
+                else:
+                    # time window in days specified by plot_length
+                    plot_start = round_obspy_date(latest_data[0].stats.starttime)
+                    plot_end = plot_start + (plot_length * 24 * 60 * 60)
+
+            # Check for existing plots with current plot start/end, skip if use_existing_plots == True
+            if ch_id is not None:
+                psd_v_plot, psd_a_plot, spec_psd_plot, spectrogram_plot = plot_filenames(outdir, ch_id, plot_start,
+                                                                                         plot_end)
+                while use_existing_plots and os.path.isfile(psd_v_plot) and os.path.isfile(psd_a_plot) and os.path.isfile(spec_psd_plot) and os.path.isfile(spectrogram_plot):
+                    psd_v_plots.append(psd_v_plot)
+                    psd_a_plots.append({
+                        'image': psd_a_plot,
+                        'start': plot_start.strftime('%Y-%m-%d'),
+                        'end': (plot_end - 1).strftime('%Y-%m-%d')
+                    })
+                    spec_plots.append({
+                        'image': spectrogram_plot,
+                        'start': plot_start.strftime('%Y-%m-%d'),
+                        'end': (plot_end - 1).strftime('%Y-%m-%d')
+                    })
+
+                    plot_start, plot_end = next_plot_window(plot_end, plot_length=plot_length)
+                    psd_v_plot, psd_a_plot, spec_psd_plot, spectrogram_plot = plot_filenames(outdir, ch_id, plot_start,
+                                                                                             plot_end)
+            plot_setup = timeit.default_timer()
+            timing['plot_admin'] += plot_setup - trim_time
+
+            # Add trace data from first data file to buffer
+            for tr in latest_data:
+                if ch_id is not None:
+                    if tr.id != ch_id:
+                        continue  # ignore all other channels if *ch_id* is specified
+                buffer.append(tr)  # have to add one trace at a time to existing Stream object
+                if (tr.stats.starttime > last_start) or (last_start is None):
+                    last_start = tr.stats.starttime
+            files_in_buffer += 1
+            buffer.merge()
+
+            mid_plot = True
+            if buffer.count() > 0:
+                mid_plot = (buffer[0].stats.endtime < plot_end)
+            buffer_init = timeit.default_timer()
+            timing['buffer_build'] += buffer_init - plot_setup
+
+            # Fill remaining space in buffer with new files, keeping a copy of the last one read as "latest_data"
+            while (files_in_buffer < buffer_length) and mid_plot and (i < len(files)):
+                read_start = timeit.default_timer()
+                latest_data = obspy.read(files[i])
+                g_log.info('Read file {0}'.format(files[i]))
+                print(latest_data)
+                i += 1
+                done_read = timeit.default_timer()
+                timing['file_read'] += done_read - read_start
+                latest_data.trim(start, end, nearest_sample=False)  # trim to time window of interest
+                trim_time = timeit.default_timer()
+                timing['time_cut'] += trim_time - done_read
+                if len(latest_data) > 0:
+                    for tr in latest_data:
+                        if ch_id is not None:
+                            if tr.id != ch_id:
+                                continue    # ignore all other channels if *ch_id* is specified
+                        buffer.append(tr)   # have to add one trace at a time to existing Stream object
+                        if (tr.stats.starttime > last_start) or (last_start is None):
+                            last_start = tr.stats.starttime
+                    files_in_buffer += 1
+                    buffer.merge()
+                if buffer.count() > 0:
+                    mid_plot = (buffer[0].stats.endtime < plot_end)     # Complains if there are no traces in the buffer (e.g. no matching channel IDs from latest data)
+                buff_add = timeit.default_timer()
+                timing['buffer_build'] += buff_add - trim_time
+
+            if ch_id is None:
+                ch_id = buffer[0].id    # channel ID before correction (use to ensure same channel analyzed throughout)
+
+            buffer_full = timeit.default_timer()
+            # Update metadata from other sources
+            buffer = update_metadata(buffer, net_id, g_log, station_info, channel_map, project_meta)
+            meta_time = timeit.default_timer()
+            timing['apply_meta'] += meta_time - buffer_full
+
+            if len(buffer) > 1:
+                g_log.warn('Multiple channels present in data files, analyzing first one only: {0}'.format(buffer[0].id))
+            this_channel = buffer[0]    # Only look at first channel in files
+            pull_time = timeit.default_timer()
+            timing['this_channel'] += pull_time - meta_time
+
+            report_info['seedID'] = this_channel.id
+            report_info['channelName'] = this_channel.id
+            for metaKey, reportKey in zip(['description', 'azimuth', 'dip'], ['channelName', 'azimuth', 'dip']):
+                if hasattr(this_channel.meta, metaKey):
+                    report_info[reportKey] = this_channel.meta[metaKey]
+
+            # Check that this is a seismic channel
+            channel_type = get_channel_type(this_channel.stats.channel)
+            report_info['channelType'] = channel_type
+            if channel_type != 'seismic':
+                g_log.warn('Data buffering only implemented for seismic channels. Channel {0} is type {1}.'.format(this_channel.id, channel_type))
+                timing['meta_admin'] += timeit.default_timer() - pull_time
+                return report_info, all_gaps, timing
+
+            if channel_info is None:
+                if project_meta is not None:
+                    try:
+                        channel_info = list(filter(lambda ch: ch['channel_id'] == this_channel.id.split('.')[-1], project_meta['channels']))[0]
+                    except (KeyError, IndexError):
+                        pass
+
+            if channel_info is not None:
+                if 'hide' in channel_info:
+                    if channel_info['hide']:
+                        g_log.info('Channel {0} hidden from report. Skipping analysis.'.format(this_channel.id))
+                        timing['meta_admin'] += timeit.default_timer() - pull_time
+                        return report_info, all_gaps, timing
+                if 'order' in channel_info:
+                    report_info['order'] = int(channel_info['order'])
+                if 'qc_config' in channel_info:
+                    g_log.warn('QARTOD QC checks not yet implemented for buffered data, config ignored')
+
+            more_meta = timeit.default_timer()
+            timing['meta_admin'] += more_meta - pull_time
+
+            # Gap test
+            # TODO: Would be nice if this could account for overlap between consecutive buffer sections to not duplicate gap info...
+            gaps = this_channel.split().get_gaps()
+            if len(gaps) > 0:
+                all_gaps.extend(gaps)
+                g_log.info('Found {0} gap(s) or overlap(s) in recorded data'.format(len(gaps)))
+                this_channel.split().print_gaps()
+            gap_time = timeit.default_timer()
+            timing['gap_test'] += gap_time - more_meta
+
+            # Apply channel sensitivity and remove linear trend, if applicable
+            if hasattr(this_channel.meta, 'response'):
+                this_channel.remove_sensitivity()
+            if detrend:
+                this_channel.detrend('linear')
+            data_clean = timeit.default_timer()
+            timing['data_clean'] += data_clean - gap_time
+
+            if last_start is not None:
+                # Windows start from midnight UTC on the first day of data collection
+                start_of_day = round_obspy_date(this_channel.stats.starttime)
+                if first_psd_start is None:
+                    pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / (psd_win * (1 - overlap)))
+                    first_psd_start = start_of_day + pre_windows * psd_win * (1 - overlap)
+                if first_spec_start is None:
+                    pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / (spec_win * (1 - overlap)))
+                    first_spec_start = start_of_day + pre_windows * spec_win * (1 - overlap)
+
+                # If "last_end" timestamps are set from previous loop iteration, use those as "first_start" timestamps
+                if next_psd_start is not None:
+                    first_psd_start = next_psd_start
+
+                if next_spec_start is not None:
+                    first_spec_start = next_spec_start
+
+            if this_channel.stats.starttime > plot_end:
+                # Update plot time window if all data is out of range
+                if plot_length is None:
+                    # default behaviour plots a single calendar month in each image
+                    plot_start, plot_end = month_start_end(this_channel.stats.starttime)
+                else:
+                    # time window in days specified by plot_length
+                    plot_start = round_obspy_date(this_channel.stats.starttime)
+                    plot_end = plot_start + (plot_length * 24 * 60 * 60)
+
+            if (this_channel.stats.endtime > plot_end) or (i == len(files)):
+                # data in buffer spans a plot breakpoint, or last file read => make plots this pass
+                make_plot = True
+
+            plot_admin = timeit.default_timer()
+            timing['plot_admin'] += plot_admin - data_clean
+
+            # Calculate PSDs and save to running lists
+            psd_start = first_psd_start
+            new_data = cut_trace(this_channel, psd_start, None, nearest_sample=True, pad=True)
+            apsds, vpsds, freqs, times, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True)
+            psd_calc_time = timeit.default_timer()
+            timing['psd_calc'] += psd_calc_time - plot_admin
+
+            for running, current in zip(['psd_array', 'vpsd_array', 'psd_freqs'], [apsds, vpsds, freqs]):
+                if psd_temp_results[running] is None:
+                    psd_temp_results[running] = current
+                else:
+                    psd_temp_results[running] = np.concatenate((psd_temp_results[running], current), axis=0)
+            if psd_temp_results['psd_times'] is None:
+                psd_temp_results['psd_times'] = times
             else:
-                # time window in days specified by plot_length
-                plot_start = round_obspy_date(latest_data[0].stats.starttime)
-                plot_end = plot_start + (plot_length * 24 * 60 * 60)
+                psd_temp_results['psd_times'] = np.concatenate((psd_temp_results['psd_times'], times), axis=None)
+            psd_arr_build = timeit.default_timer()
+            timing['psd_buffer'] += psd_arr_build - psd_calc_time
 
-        # Check for existing plots with current plot start/end, skip if use_existing_plots == True
-        if ch_id is not None:
-            psd_v_plot, psd_a_plot, spec_psd_plot, spectrogram_plot = plot_filenames(outdir, ch_id, plot_start,
-                                                                                     plot_end)
-            while use_existing_plots and os.path.isfile(psd_v_plot) and os.path.isfile(psd_a_plot) and os.path.isfile(spec_psd_plot) and os.path.isfile(spectrogram_plot):
+            """
+            # Calculate spectrogram
+            npts = int(spec_win * this_channel.stats.sampling_rate)
+            nover = int(overlap * npts)
+            analysis_end = min(this_channel.stats.endtime, plot_end)
+            num_win = np.floor((analysis_end - first_spec_start - spec_win) / (spec_win * (1 - overlap)))
+            last_spec_start = first_spec_start + num_win * spec_win * (1 - overlap)
+            spec_data = this_channel.slice(first_spec_start, last_spec_start + spec_win)
+            spec, sfrq, t = mlab.specgram(spec_data.data, NFFT=npts, Fs=this_channel.stats.sampling_rate,
+                                          window=signal.get_window('hann', npts, False), noverlap=nover, detrend='linear')
+            st = np.array([(spec_data.stats.starttime + tm).timestamp for tm in t])
+            if spec_array is None:
+                spec_array = np.array(spec)
+                spec_times = np.array(st)
+            else:
+                spec_array = np.concatenate((spec_array, spec), axis=1)
+                spec_times = np.concatenate((spec_times, st), axis=None)
+            next_spec_start = last_spec_start + spec_win * (1 - overlap)    # start time for next iteration of buffer loop
+            """
+            spec_calc_time = timeit.default_timer()
+            timing['spec_calc'] += spec_calc_time - psd_arr_build
+        except Exception as e:
+            msg = 'nfsi_obs.plotting.buffer_seismic_data: Error processing raw data files, latest file: {0}'.format(files[i-1])
+            g_log.error(str(e))
+            g_log.error(msg)
+
+        if make_plot:
+            try:
+                start_plotting = timeit.default_timer()
+                # TODO: Decide about trace plot, maybe downsample to 5Hz before plotting?
+                trace_time = timeit.default_timer()
+                timing['trace_plot'] += trace_time - start_plotting
+
+                psd_v_plot, psd_a_plot, spec_psd_plot, spectrogram_plot = plot_filenames(outdir, this_channel.id,
+                                                                                         plot_start, plot_end)
+                get_filenames = timeit.default_timer()
+                timing['plot_admin'] += get_filenames - trace_time
+
+                # PSD plots
+                if not (use_existing_plots and os.path.isfile(psd_v_plot)):
+                    psd_v_fig, vax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
+                    for f, v in zip(psd_temp_results['psd_freqs'], psd_temp_results['vpsd_array']):
+                        vax.plot(f, 10. * np.log10(v), c='0.8', lw=0.5, marker=None)
+                    vax.set_xscale('log')
+                    vax.set_xlabel('Frequency (Hz)')
+                    vax.set_ylabel('Power Spectral Density (dB)')
+                    plt.tight_layout()
+                    psd_v_fig.savefig(psd_v_plot)
                 psd_v_plots.append(psd_v_plot)
+
+                if not (use_existing_plots and os.path.isfile(psd_a_plot)):
+                    psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
+                    aax.plot(NLNM[0], NLNM[1], c='k', lw=0.5, marker=None)
+                    aax.plot(NHNM[0], NHNM[1], c='k', lw=0.5, marker=None)
+                    for f, a in zip(psd_temp_results['psd_freqs'], psd_temp_results['psd_array']):
+                        aax.plot(f, 10. * np.log10(a), c='0.8', lw=0.5, marker=None)
+                    aax.set_xscale('log')
+                    plt.grid(True, ls=':')
+                    aax.set_xlabel('Frequency (Hz)')
+                    aax.set_ylabel('Power Spectral Density (dB)')
+                    aax.set_xlim(xmin=1e-3)
+                    plt.tight_layout()
+                    psd_a_fig.savefig(psd_a_plot)
+                done_psds = timeit.default_timer()
+                timing['psd_plot'] += done_psds - get_filenames
                 psd_a_plots.append({
                     'image': psd_a_plot,
                     'start': plot_start.strftime('%Y-%m-%d'),
                     'end': (plot_end - 1).strftime('%Y-%m-%d')
                 })
+                report_add = timeit.default_timer()
+                timing['report_info'] += report_add - done_psds
+
+                # X-axis ticks for spectrogram plots (actual date strings rather than timestamps)
+                # TODO: Add minor ticks every day?
+                tm_x_ticks, tm_x_ticklabels = date_ticks(plot_start, plot_end)
+
+                # Spectrogram plot from PSDs
+                if not (use_existing_plots and os.path.isfile(spec_psd_plot)):
+                    sfrq = psd_temp_results['psd_freqs'][0]
+                    npts = int(spec_win * this_channel.stats.sampling_rate)
+                    nover = int(overlap * npts)
+
+                    spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
+                    spec_psds = 10. * np.log10(np.transpose(psd_temp_results['vpsd_array']))
+                    spec_psds = np.flipud(spec_psds)
+
+                    pad_xextent = (npts - nover) / this_channel.stats.sampling_rate / 2
+                    xextent = np.min(psd_temp_results['psd_times']) - pad_xextent, np.max(psd_temp_results['psd_times']) + pad_xextent
+                    xmin, xmax = xextent
+                    extent = xmin, xmax, sfrq[0], sfrq[-1]
+
+                    im = sax.imshow(spec_psds, cmap=None, extent=extent, vmin=None, vmax=None, origin='upper')
+                    sax.axis('auto')
+                    sax._sci(im)
+                    sax.set_yscale('log')
+                    sax.set_ylim(ymin=8e-3, ymax=this_channel.stats.sampling_rate/2)
+                    sax.set_ylabel('Frequency (Hz)')
+                    # Set appropriate x-ticks for time span (also changes x-lim)
+                    sax.set_xticks(tm_x_ticks, tm_x_ticklabels, horizontalalignment='right')
+                    sax.tick_params(axis='x', rotation=40)
+                    plt.tight_layout()
+                    spec_fig.savefig(spec_psd_plot)
+
+                done_spec_psd = timeit.default_timer()
+                timing['spec_plot'] += done_spec_psd - report_add
+
+                # Reset temp arrays for PSDs
+                psd_temp_results = {
+                    'psd_array': None,
+                    'vpsd_array': None,
+                    'psd_freqs': None,
+                    'psd_times': None
+                }
+                reset_psds = timeit.default_timer()
+                timing['array_reset'] += reset_psds - done_spec_psd
+
+                """
+                # Spectrogram plot
+                if not (use_existing_plots and os.path.isfile(spectrogram_plot)):
+                    spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
+                    spec_array = 10. * np.log10(spec_array)
+                    spec_array = np.flipud(spec_array)
+    
+                    pad_xextent = (npts - nover) / this_channel.stats.sampling_rate / 2
+                    xextent = np.min(spec_times) - pad_xextent, np.max(spec_times) + pad_xextent
+                    xmin, xmax = xextent
+                    extent = xmin, xmax, sfrq[0], sfrq[-1]
+    
+                    im = sax.imshow(spec_array, cmap=None, extent=extent, vmin=None, vmax=None, origin='upper')
+                    sax.axis('auto')
+                    sax._sci(im)
+                    sax.set_yscale('log')
+                    sax.set_ylim(ymin=8e-3, ymax=this_channel.stats.sampling_rate/2)
+                    sax.set_ylabel('Frequency (Hz)')
+                    # Set appropriate x-ticks for time span (also changes x-lim)
+                    sax.set_xticks(tm_x_ticks, tm_x_ticklabels, horizontalalignment='right')
+                    sax.tick_params(axis='x', rotation=40)
+                    plt.tight_layout()
+                    spec_fig.savefig(spectrogram_plot)
+                """
+                done_spec_plot = timeit.default_timer()
+                timing['spec_plot'] += done_spec_plot - reset_psds
+
                 spec_plots.append({
-                    'image': spectrogram_plot,
+                    'image': spec_psd_plot,
                     'start': plot_start.strftime('%Y-%m-%d'),
                     'end': (plot_end - 1).strftime('%Y-%m-%d')
                 })
+                report_add = timeit.default_timer()
+                timing['report_info'] += report_add - done_spec_plot
 
+                # Reset temp arrays for spectrogram
+                spec_array, spec_times = None, None
+                reset_spec = timeit.default_timer()
+                timing['array_reset'] += reset_spec - report_add
+
+                make_plot = False
+                # Update plot_end for next time window
                 plot_start, plot_end = next_plot_window(plot_end, plot_length=plot_length)
-                psd_v_plot, psd_a_plot, spec_psd_plot, spectrogram_plot = plot_filenames(outdir, ch_id, plot_start,
-                                                                                         plot_end)
-        plot_setup = timeit.default_timer()
-        timing['plot_admin'] += plot_setup - trim_time
-
-        # Add trace data from first data file to buffer
-        for tr in latest_data:
-            if ch_id is not None:
-                if tr.id != ch_id:
-                    continue  # ignore all other channels if *ch_id* is specified
-            buffer.append(tr)  # have to add one trace at a time to existing Stream object
-            if (tr.stats.starttime > last_start) or (last_start is None):
-                last_start = tr.stats.starttime
-        files_in_buffer += 1
-        buffer.merge()
-
-        mid_plot = True
-        if buffer.count() > 0:
-            mid_plot = (buffer[0].stats.endtime < plot_end)
-        buffer_init = timeit.default_timer()
-        timing['buffer_build'] += buffer_init - plot_setup
-
-        # Fill remaining space in buffer with new files, keeping a copy of the last one read as "latest_data"
-        while (files_in_buffer < buffer_length) and mid_plot and (i < len(files)):
-            read_start = timeit.default_timer()
-            latest_data = obspy.read(files[i])
-            g_log.info('Read file {0}'.format(files[i]))
-            print(latest_data)
-            i += 1
-            done_read = timeit.default_timer()
-            timing['file_read'] += done_read - read_start
-            latest_data.trim(start, end, nearest_sample=False)  # trim to time window of interest
-            trim_time = timeit.default_timer()
-            timing['time_cut'] += trim_time - done_read
-            if len(latest_data) > 0:
-                for tr in latest_data:
-                    if ch_id is not None:
-                        if tr.id != ch_id:
-                            continue    # ignore all other channels if *ch_id* is specified
-                    buffer.append(tr)   # have to add one trace at a time to existing Stream object
-                    if (tr.stats.starttime > last_start) or (last_start is None):
-                        last_start = tr.stats.starttime
-                files_in_buffer += 1
-                buffer.merge()
-            if buffer.count() > 0:
-                mid_plot = (buffer[0].stats.endtime < plot_end)     # Complains if there are no traces in the buffer (e.g. no matching channel IDs from latest data)
-            buff_add = timeit.default_timer()
-            timing['buffer_build'] += buff_add - trim_time
-
-        if ch_id is None:
-            ch_id = buffer[0].id    # channel ID before correction (use to ensure same channel analyzed throughout)
-
-        buffer_full = timeit.default_timer()
-        # Update metadata from other sources
-        buffer = update_metadata(buffer, net_id, g_log, station_info, channel_map, project_meta)
-        meta_time = timeit.default_timer()
-        timing['apply_meta'] += meta_time - buffer_full
-
-        if len(buffer) > 1:
-            g_log.warn('Multiple channels present in data files, analyzing first one only: {0}'.format(buffer[0].id))
-        this_channel = buffer[0]    # Only look at first channel in files
-        pull_time = timeit.default_timer()
-        timing['this_channel'] += pull_time - meta_time
-
-        report_info['seedID'] = this_channel.id
-        report_info['channelName'] = this_channel.id
-        for metaKey, reportKey in zip(['description', 'azimuth', 'dip'], ['channelName', 'azimuth', 'dip']):
-            if hasattr(this_channel.meta, metaKey):
-                report_info[reportKey] = this_channel.meta[metaKey]
-
-        # Check that this is a seismic channel
-        channel_type = get_channel_type(this_channel.stats.channel)
-        report_info['channelType'] = channel_type
-        if channel_type != 'seismic':
-            g_log.warn('Data buffering only implemented for seismic channels. Channel {0} is type {1}.'.format(this_channel.id, channel_type))
-            timing['meta_admin'] += timeit.default_timer() - pull_time
-            return report_info, all_gaps, timing
-
-        if channel_info is None:
-            if project_meta is not None:
-                try:
-                    channel_info = list(filter(lambda ch: ch['channel_id'] == this_channel.id.split('.')[-1], project_meta['channels']))[0]
-                except (KeyError, IndexError):
-                    pass
-
-        if channel_info is not None:
-            if 'hide' in channel_info:
-                if channel_info['hide']:
-                    g_log.info('Channel {0} hidden from report. Skipping analysis.'.format(this_channel.id))
-                    timing['meta_admin'] += timeit.default_timer() - pull_time
-                    return report_info, all_gaps, timing
-            if 'order' in channel_info:
-                report_info['order'] = int(channel_info['order'])
-            if 'qc_config' in channel_info:
-                g_log.warn('QARTOD QC checks not yet implemented for buffered data, config ignored')
-
-        more_meta = timeit.default_timer()
-        timing['meta_admin'] += more_meta - pull_time
-
-        # Gap test
-        # TODO: Would be nice if this could account for overlap between consecutive buffer sections to not duplicate gap info...
-        gaps = this_channel.split().get_gaps()
-        if len(gaps) > 0:
-            all_gaps.extend(gaps)
-            g_log.info('Found {0} gap(s) or overlap(s) in recorded data'.format(len(gaps)))
-            this_channel.split().print_gaps()
-        gap_time = timeit.default_timer()
-        timing['gap_test'] += gap_time - more_meta
-
-        # Apply channel sensitivity and remove linear trend, if applicable
-        if hasattr(this_channel.meta, 'response'):
-            this_channel.remove_sensitivity()
-        if detrend:
-            this_channel.detrend('linear')
-        data_clean = timeit.default_timer()
-        timing['data_clean'] += data_clean - gap_time
-
-        if last_start is not None:
-            # Windows start from midnight UTC on the first day of data collection
-            start_of_day = round_obspy_date(this_channel.stats.starttime)
-            if first_psd_start is None:
-                pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / (psd_win * (1 - overlap)))
-                first_psd_start = start_of_day + pre_windows * psd_win * (1 - overlap)
-            if first_spec_start is None:
-                pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / (spec_win * (1 - overlap)))
-                first_spec_start = start_of_day + pre_windows * spec_win * (1 - overlap)
-
-            # If "last_end" timestamps are set from previous loop iteration, use those as "first_start" timestamps
-            if next_psd_start is not None:
-                first_psd_start = next_psd_start
-
-            if next_spec_start is not None:
-                first_spec_start = next_spec_start
-
-        if this_channel.stats.starttime > plot_end:
-            # Update plot time window if all data is out of range
-            if plot_length is None:
-                # default behaviour plots a single calendar month in each image
-                plot_start, plot_end = month_start_end(this_channel.stats.starttime)
-            else:
-                # time window in days specified by plot_length
-                plot_start = round_obspy_date(this_channel.stats.starttime)
-                plot_end = plot_start + (plot_length * 24 * 60 * 60)
-
-        if (this_channel.stats.endtime > plot_end) or (i == len(files)):
-            # data in buffer spans a plot breakpoint, or last file read => make plots this pass
-            make_plot = True
-
-        plot_admin = timeit.default_timer()
-        timing['plot_admin'] += plot_admin - data_clean
-
-        # Calculate PSDs and save to running lists
-        psd_start = first_psd_start
-        new_data = cut_trace(this_channel, psd_start, None, nearest_sample=True, pad=True)
-        apsds, vpsds, freqs, times, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True)
-        psd_calc_time = timeit.default_timer()
-        timing['psd_calc'] += psd_calc_time - plot_admin
-
-        for running, current in zip(['psd_array', 'vpsd_array', 'psd_freqs'], [apsds, vpsds, freqs]):
-            if psd_temp_results[running] is None:
-                psd_temp_results[running] = current
-            else:
-                psd_temp_results[running] = np.concatenate((psd_temp_results[running], current), axis=0)
-        if psd_temp_results['psd_times'] is None:
-            psd_temp_results['psd_times'] = times
-        else:
-            psd_temp_results['psd_times'] = np.concatenate((psd_temp_results['psd_times'], times), axis=None)
-        psd_arr_build = timeit.default_timer()
-        timing['psd_buffer'] += psd_arr_build - psd_calc_time
-
-        """
-        # Calculate spectrogram
-        npts = int(spec_win * this_channel.stats.sampling_rate)
-        nover = int(overlap * npts)
-        analysis_end = min(this_channel.stats.endtime, plot_end)
-        num_win = np.floor((analysis_end - first_spec_start - spec_win) / (spec_win * (1 - overlap)))
-        last_spec_start = first_spec_start + num_win * spec_win * (1 - overlap)
-        spec_data = this_channel.slice(first_spec_start, last_spec_start + spec_win)
-        spec, sfrq, t = mlab.specgram(spec_data.data, NFFT=npts, Fs=this_channel.stats.sampling_rate,
-                                      window=signal.get_window('hann', npts, False), noverlap=nover, detrend='linear')
-        st = np.array([(spec_data.stats.starttime + tm).timestamp for tm in t])
-        if spec_array is None:
-            spec_array = np.array(spec)
-            spec_times = np.array(st)
-        else:
-            spec_array = np.concatenate((spec_array, spec), axis=1)
-            spec_times = np.concatenate((spec_times, st), axis=None)
-        next_spec_start = last_spec_start + spec_win * (1 - overlap)    # start time for next iteration of buffer loop
-        """
-        spec_calc_time = timeit.default_timer()
-        timing['spec_calc'] += spec_calc_time - psd_arr_build
-
-        if make_plot:
-            start_plotting = timeit.default_timer()
-            # TODO: Decide about trace plot, maybe downsample to 5Hz before plotting?
-            trace_time = timeit.default_timer()
-            timing['trace_plot'] += trace_time - start_plotting
-
-            psd_v_plot, psd_a_plot, spec_psd_plot, spectrogram_plot = plot_filenames(outdir, this_channel.id,
-                                                                                     plot_start, plot_end)
-            get_filenames = timeit.default_timer()
-            timing['plot_admin'] += get_filenames - trace_time
-
-            # PSD plots
-            if not (use_existing_plots and os.path.isfile(psd_v_plot)):
-                psd_v_fig, vax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
-                for f, v in zip(psd_temp_results['psd_freqs'], psd_temp_results['vpsd_array']):
-                    vax.plot(f, 10. * np.log10(v), c='0.8', lw=0.5, marker=None)
-                vax.set_xscale('log')
-                vax.set_xlabel('Frequency (Hz)')
-                vax.set_ylabel('Power Spectral Density (dB)')
-                plt.tight_layout()
-                psd_v_fig.savefig(psd_v_plot)
-            psd_v_plots.append(psd_v_plot)
-
-            if not (use_existing_plots and os.path.isfile(psd_a_plot)):
-                psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
-                aax.plot(NLNM[0], NLNM[1], c='k', lw=0.5, marker=None)
-                aax.plot(NHNM[0], NHNM[1], c='k', lw=0.5, marker=None)
-                for f, a in zip(psd_temp_results['psd_freqs'], psd_temp_results['psd_array']):
-                    aax.plot(f, 10. * np.log10(a), c='0.8', lw=0.5, marker=None)
-                aax.set_xscale('log')
-                plt.grid(True, ls=':')
-                aax.set_xlabel('Frequency (Hz)')
-                aax.set_ylabel('Power Spectral Density (dB)')
-                aax.set_xlim(xmin=1e-3)
-                plt.tight_layout()
-                psd_a_fig.savefig(psd_a_plot)
-            done_psds = timeit.default_timer()
-            timing['psd_plot'] += done_psds - get_filenames
-            psd_a_plots.append({
-                'image': psd_a_plot,
-                'start': plot_start.strftime('%Y-%m-%d'),
-                'end': (plot_end - 1).strftime('%Y-%m-%d')
-            })
-            report_add = timeit.default_timer()
-            timing['report_info'] += report_add - done_psds
-
-            # X-axis ticks for spectrogram plots (actual date strings rather than timestamps)
-            # TODO: Add minor ticks every day?
-            tm_x_ticks, tm_x_ticklabels = date_ticks(plot_start, plot_end)
-
-            # Spectrogram plot from PSDs
-            if not (use_existing_plots and os.path.isfile(spec_psd_plot)):
-                sfrq = psd_temp_results['psd_freqs'][0]
-                npts = int(spec_win * this_channel.stats.sampling_rate)
-                nover = int(overlap * npts)
-
-                spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
-                spec_psds = 10. * np.log10(np.transpose(psd_temp_results['vpsd_array']))
-                spec_psds = np.flipud(spec_psds)
-
-                pad_xextent = (npts - nover) / this_channel.stats.sampling_rate / 2
-                xextent = np.min(psd_temp_results['psd_times']) - pad_xextent, np.max(psd_temp_results['psd_times']) + pad_xextent
-                xmin, xmax = xextent
-                extent = xmin, xmax, sfrq[0], sfrq[-1]
-
-                im = sax.imshow(spec_psds, cmap=None, extent=extent, vmin=None, vmax=None, origin='upper')
-                sax.axis('auto')
-                sax._sci(im)
-                sax.set_yscale('log')
-                sax.set_ylim(ymin=8e-3, ymax=this_channel.stats.sampling_rate/2)
-                sax.set_ylabel('Frequency (Hz)')
-                # Set appropriate x-ticks for time span (also changes x-lim)
-                sax.set_xticks(tm_x_ticks, tm_x_ticklabels, horizontalalignment='right')
-                sax.tick_params(axis='x', rotation=40)
-                plt.tight_layout()
-                spec_fig.savefig(spec_psd_plot)
-
-            done_spec_psd = timeit.default_timer()
-            timing['spec_plot'] += done_spec_psd - report_add
-
-            # Reset temp arrays for PSDs
-            psd_temp_results = {
-                'psd_array': None,
-                'vpsd_array': None,
-                'psd_freqs': None,
-                'psd_times': None
-            }
-            reset_psds = timeit.default_timer()
-            timing['array_reset'] += reset_psds - done_spec_psd
-
-            """
-            # Spectrogram plot
-            if not (use_existing_plots and os.path.isfile(spectrogram_plot)):
-                spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
-                spec_array = 10. * np.log10(spec_array)
-                spec_array = np.flipud(spec_array)
-
-                pad_xextent = (npts - nover) / this_channel.stats.sampling_rate / 2
-                xextent = np.min(spec_times) - pad_xextent, np.max(spec_times) + pad_xextent
-                xmin, xmax = xextent
-                extent = xmin, xmax, sfrq[0], sfrq[-1]
-
-                im = sax.imshow(spec_array, cmap=None, extent=extent, vmin=None, vmax=None, origin='upper')
-                sax.axis('auto')
-                sax._sci(im)
-                sax.set_yscale('log')
-                sax.set_ylim(ymin=8e-3, ymax=this_channel.stats.sampling_rate/2)
-                sax.set_ylabel('Frequency (Hz)')
-                # Set appropriate x-ticks for time span (also changes x-lim)
-                sax.set_xticks(tm_x_ticks, tm_x_ticklabels, horizontalalignment='right')
-                sax.tick_params(axis='x', rotation=40)
-                plt.tight_layout()
-                spec_fig.savefig(spectrogram_plot)
-            """
-            done_spec_plot = timeit.default_timer()
-            timing['spec_plot'] += done_spec_plot - reset_psds
-
-            spec_plots.append({
-                'image': spec_psd_plot,
-                'start': plot_start.strftime('%Y-%m-%d'),
-                'end': (plot_end - 1).strftime('%Y-%m-%d')
-            })
-            report_add = timeit.default_timer()
-            timing['report_info'] += report_add - done_spec_plot
-
-            # Reset temp arrays for spectrogram
-            spec_array, spec_times = None, None
-            reset_spec = timeit.default_timer()
-            timing['array_reset'] += reset_spec - report_add
-
-            make_plot = False
-            # Update plot_end for next time window
-            plot_start, plot_end = next_plot_window(plot_end, plot_length=plot_length)
-            timing['plot_admin'] += timeit.default_timer() - reset_spec
+                timing['plot_admin'] += timeit.default_timer() - reset_spec
+            except Exception as e:
+                msg = 'nfsi_obs.plotting.buffer_seismic_data: Error creating plots, latest file: {0}'.format(files[i - 1])
+                g_log.error(str(e))
+                g_log.error(msg)
 
     add_to_report = timeit.default_timer()
     report_info['psdLoc'] = psd_a_plots
