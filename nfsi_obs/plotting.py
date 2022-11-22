@@ -688,6 +688,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             spec_calc_time = timeit.default_timer()
             timing['spec_calc'] += spec_calc_time - psd_arr_build
         except Exception as e:
+            # TODO: Separate error handling for data read and data analysis
             msg = 'nfsi_obs.plotting.buffer_seismic_data: Error processing raw data files, latest file: {0}'.format(files[i-1])
             g_log.error(str(e))
             g_log.error(msg)
@@ -773,16 +774,6 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 done_spec_psd = timeit.default_timer()
                 timing['spec_plot'] += done_spec_psd - report_add
 
-                # Reset temp arrays for PSDs
-                psd_temp_results = {
-                    'psd_array': None,
-                    'vpsd_array': None,
-                    'psd_freqs': None,
-                    'psd_times': None
-                }
-                reset_psds = timeit.default_timer()
-                timing['array_reset'] += reset_psds - done_spec_psd
-
                 """
                 # Spectrogram plot
                 if not (use_existing_plots and os.path.isfile(spectrogram_plot)):
@@ -808,7 +799,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     spec_fig.savefig(spectrogram_plot)
                 """
                 done_spec_plot = timeit.default_timer()
-                timing['spec_plot'] += done_spec_plot - reset_psds
+                timing['spec_plot'] += done_spec_plot - done_spec_psd
 
                 spec_plots.append({
                     'image': spec_psd_plot,
@@ -818,19 +809,29 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 report_add = timeit.default_timer()
                 timing['report_info'] += report_add - done_spec_plot
 
-                # Reset temp arrays for spectrogram
-                spec_array, spec_times = None, None
-                reset_spec = timeit.default_timer()
-                timing['array_reset'] += reset_spec - report_add
-
-                make_plot = False
-                # Update plot_end for next time window
-                plot_start, plot_end = next_plot_window(plot_end, plot_length=plot_length)
-                timing['plot_admin'] += timeit.default_timer() - reset_spec
             except Exception as e:
                 msg = 'nfsi_obs.plotting.buffer_seismic_data: Error creating plots, latest file: {0}'.format(files[i - 1])
                 g_log.error(str(e))
                 g_log.error(msg)
+            finally:
+                final_start = timeit.default_timer()
+                # Reset temp arrays for PSDs
+                psd_temp_results = {
+                    'psd_array': None,
+                    'vpsd_array': None,
+                    'psd_freqs': None,
+                    'psd_times': None
+                }
+
+                # Reset temp arrays for spectrogram
+                spec_array, spec_times = None, None
+                reset_arr = timeit.default_timer()
+                timing['array_reset'] += reset_arr - final_start
+
+                make_plot = False
+                # Update plot_end for next time window
+                plot_start, plot_end = next_plot_window(plot_end, plot_length=plot_length)
+                timing['plot_admin'] += timeit.default_timer() - reset_arr
 
     add_to_report = timeit.default_timer()
     report_info['psdLoc'] = psd_a_plots
