@@ -124,9 +124,9 @@ Orientation: {{ ch.azimuth }} / {{ ch.dip }}
 {% endfor %}
 {% endif %}
 
-{% endfor %}
-
 \newpage{}
+
+{% endfor %}
 
 # Oceanographic Data
 

@@ -25,6 +25,7 @@ import nfsi_obs as nf
 from utilities import config_handler, logger, ReportGenerator
 
 gc.set_debug(gc.DEBUG_UNCOLLECTABLE)
+feature_test = False    # set to True to test new features
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 # Ensure resource directory exists
@@ -359,17 +360,21 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 if 'gross_range_test' in qc_config['qartod']:
                                     range_check = qartod.gross_range_test(tr.data, **qc_config['qartod']['gross_range_test'])
                                     if np.any(range_check > 1):
-                                        g_log.info('Channel {0} has suspect values at {1} sample(s) and failing values at {2} sample(s)'.format(tr.id, np.sum(range_check==3), np.sum(range_check==4)))
+                                        num_sus = np.sum(range_check == 3)
+                                        num_fail = np.sum(range_check == 4)
+                                        g_log.info('Channel {0} has suspect values at {1} sample(s) ({3:.1%}) and failing values at {2} sample(s) ({4:.1%})'.format(tr.id, num_sus, num_fail, num_sus / len(range_check), num_fail / len(range_check)))
                                     check_trace = obspy.Trace(range_check, header=tr.stats)
                                     #trace_info['qcPlotLoc'] = nf.plotting.qartod_plot(check_trace, output_dir, 'gross_range_check', use_existing_plots)
 
-                                if re.match(r'[A-Z]M[1-3ENZ]', tr.meta.channel) and ('flat_line_test' in qc_config['qartod']):
-                                    # centring channels only, must have flat-line test criteria specified
-                                    flt_params = qc_config['qartod']['flat_line_test'].copy()
-                                    flatline = qartod.flat_line_test(tr.data, timestamps,
-                                                                     int(flt_params.pop('suspect_threshold')),
-                                                                     int(flt_params.pop('fail_threshold')))
-                                    centring[tr.id] = pd.Series(flatline, index=timestamps)
+                                if feature_test:
+                                    if re.match(r'[A-Z]M[1-3ENZ]', tr.meta.channel) and ('flat_line_test' in qc_config['qartod']):
+                                        # centring channels only, must have flat-line test criteria specified
+                                        # TODO: Need to re-visit this, not sure it's doing what we want even...
+                                        flt_params = qc_config['qartod']['flat_line_test'].copy()
+                                        flatline = qartod.flat_line_test(tr.data, timestamps,
+                                                                         int(flt_params.pop('suspect_threshold')),
+                                                                         int(flt_params.pop('fail_threshold')))
+                                        centring[tr.id] = pd.Series(flatline, index=timestamps)
                         done_qartod = timeit.default_timer()
                         debug_info['timing']['qartod'] += done_qartod - start_tran
 
