@@ -363,6 +363,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                         num_sus = np.sum(range_check == 3)
                                         num_fail = np.sum(range_check == 4)
                                         g_log.info('Channel {0} has suspect values at {1} sample(s) ({3:.1%}) and failing values at {2} sample(s) ({4:.1%})'.format(tr.id, num_sus, num_fail, num_sus / len(range_check), num_fail / len(range_check)))
+                                        # TODO: Add fail/suspect stats to report as well as log printout
                                     check_trace = obspy.Trace(range_check, header=tr.stats)
                                     #trace_info['qcPlotLoc'] = nf.plotting.qartod_plot(check_trace, output_dir, 'gross_range_check', use_existing_plots)
 

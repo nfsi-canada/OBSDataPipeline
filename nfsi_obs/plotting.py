@@ -442,7 +442,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     }
     timing['setup'] += timeit.default_timer() - func_start
 
-    while i < len(files):
+    proc_complete, all_data_read = False, False
+    while not proc_complete:
         # TODO: Ignores remaining data if last file includes a plot break
         try:
             loop_start = timeit.default_timer()
@@ -464,6 +465,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     g_log.error('Error reading file {0}'.format(files[i]))
                     latest_data = obspy.Stream()
                 i += 1
+                if i >= len(files):
+                    all_data_read = True
             done_read = timeit.default_timer()
             timing['file_read'] += done_read - setup_time
 
@@ -527,7 +530,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             timing['buffer_build'] += buffer_init - plot_setup
 
             # Fill remaining space in buffer with new files, keeping a copy of the last one read as "latest_data"
-            while (files_in_buffer < buffer_length) and mid_plot and (i < len(files)):
+            while (files_in_buffer < buffer_length) and mid_plot and (i < len(files)) and (not all_data_read):
                 read_start = timeit.default_timer()
                 try:
                     latest_data = obspy.read(files[i])
@@ -561,6 +564,10 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     mid_plot = (buffer[0].stats.endtime < plot_end)     # Complains if there are no traces in the buffer (e.g. no matching channel IDs from latest data)
                 buff_add = timeit.default_timer()
                 timing['buffer_build'] += buff_add - trim_time
+
+            if i >= len(files):
+                all_data_read = True
+                make_plot = True
 
             if ch_id is None:
                 ch_id = buffer[0].id    # channel ID before correction (use to ensure same channel analyzed throughout)
@@ -657,7 +664,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     plot_start = round_obspy_date(this_channel.stats.starttime)
                     plot_end = plot_start + (plot_length * 24 * 60 * 60)
 
-            if (this_channel.stats.endtime > plot_end) or (i == len(files)):
+            if (this_channel.stats.endtime > plot_end) or (i >= len(files)):
                 # data in buffer spans a plot breakpoint, or last file read => make plots this pass
                 make_plot = True
 
@@ -849,6 +856,9 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 # Update plot_end for next time window
                 plot_start, plot_end = next_plot_window(plot_end, plot_length=plot_length)
                 timing['plot_admin'] += timeit.default_timer() - reset_arr
+
+                if all_data_read and (plot_start > this_channel.stats.endtime):
+                    proc_complete = True
 
                 gc.collect()
 
