@@ -189,7 +189,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         g_log.info("{0} data file(s) in list".format(len(files.index)))
 
         try:
-            # TODO: Implement data file buffering for long time periods
+            # Data file buffering for long time periods (should only be needed for seismic data)
             if len(files.index) > 3:
                 filetimes = []
                 for rf in files['path'].values:

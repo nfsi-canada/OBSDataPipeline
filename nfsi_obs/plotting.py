@@ -456,7 +456,6 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
     proc_complete, all_data_read = False, False
     while not proc_complete:
-        # TODO: Ignores remaining data if last file includes a plot break
         try:
             loop_start = timeit.default_timer()
             g_log.info('Starting buffer loop...')
