@@ -727,6 +727,15 @@ class WaveformPlotting(object):
                 extreme_values = np.empty((pixel_count, 2), dtype=float)
                 extreme_values[:, 0] = min_
                 extreme_values[:, 1] = max_
+            # Preserve masking for pixels where all data is masked (missing)
+            if isinstance(min_, np.ma.core.MaskedArray):
+                min_mask = np.zeros(extreme_values.shape[0], dtype=bool)
+                min_mask[:len(min_)] = min_.mask
+                extreme_values[min_mask, 0] = np.nan
+            if isinstance(max_, np.ma.core.MaskedArray):
+                max_mask = np.zeros(extreme_values.shape[0], dtype=bool)
+                max_mask[:len(max_)] = max_.mask
+                extreme_values[max_mask, 1] = np.nan
             # Finally plot the data.
             start = self._time_to_xvalue(tr.stats.starttime)
             end = self._time_to_xvalue(tr.stats.endtime)
