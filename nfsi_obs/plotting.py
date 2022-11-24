@@ -140,6 +140,7 @@ def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing
             ax = plt.gca()
             if qc_bars:
                 for fail in [low_fail, high_fail]:
+                    # TODO: Low_fail bar gives a diagonal line (not horizontal) for external temperature, fine for other traces...
                     if fail is not None:
                         ax.axhspan(fail[0], fail[1], alpha=0.1, color='r')
                 for sus in [low_sus, high_sus]:
@@ -442,6 +443,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     timing['setup'] += timeit.default_timer() - func_start
 
     while i < len(files):
+        # TODO: Ignores remaining data if last file includes a plot break
         try:
             loop_start = timeit.default_timer()
             g_log.info('Starting buffer loop...')

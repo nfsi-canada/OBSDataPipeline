@@ -721,6 +721,7 @@ class WaveformPlotting(object):
                 extreme_values[:-1, 0] = min_
                 extreme_values[:-1, 1] = max_
                 extreme_values[-1, 0] = tr.data[-remaining_samples:].min() * tr.stats.calib
+                # TODO: Getting "UserWarning: converting a masked element to nan" from line below
                 extreme_values[-1, 1] = tr.data[-remaining_samples:].max() * tr.stats.calib
             else:
                 extreme_values = np.empty((pixel_count, 2), dtype=float)
