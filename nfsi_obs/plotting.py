@@ -94,7 +94,7 @@ def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing
 
     :return: path to plot PNG file
     """
-    # Add horizontal bars for QARTOD fail and suspect limits
+    # Add horizontal bars for QARTOD fail and suspect thresholds
     qc_bars = False
     low_fail, high_fail, low_sus, high_sus = None, None, None, None
     if qc_config is not None:
@@ -104,10 +104,16 @@ def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing
                 if 'fail_span' in ranges:
                     low_fail = [-1e32, float(ranges['fail_span'][0])]
                     high_fail = [float(ranges['fail_span'][1]), 1e32]
-                    if dmin is not None and dmin < float(ranges['fail_span'][0]):
-                        low_fail[0] = dmin
-                    if dmax is not None and dmax > float(ranges['fail_span'][1]):
-                        high_fail[1] = dmax
+                    if dmin is not None:
+                        if dmin < float(ranges['fail_span'][0]):
+                            low_fail[0] = dmin
+                        else:
+                            low_fail = None     # low fail threshold outside plot limits
+                    if dmax is not None:
+                        if dmax > float(ranges['fail_span'][1]):
+                            high_fail[1] = dmax
+                        else:
+                            high_fail = None    # high fail threshold outside plot limits
                 if 'suspect_span' in ranges:
                     low_sus = [-1e32, float(ranges['suspect_span'][0])]
                     high_sus = [float(ranges['suspect_span'][1]), 1e32]
@@ -115,17 +121,23 @@ def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing
                         if low_fail[1] < float(ranges['suspect_span'][0]):
                             low_sus[0] = low_fail[1]
                         else:
-                            low_sus = None  # Low end of fail range is equal or greater than low end of suspect range
-                    elif dmin is not None and dmin < float(ranges['suspect_span'][0]):
-                        low_sus[0] = dmin
+                            low_sus = None  # Low fail threshold is equal or greater than low suspect threshold
+                    elif dmin is not None:
+                        if dmin < float(ranges['suspect_span'][0]):
+                            low_sus[0] = dmin
+                        else:
+                            low_sus = None  # Low suspect threshold outside plot limits
 
                     if high_fail is not None:
                         if high_fail[0] > float(ranges['suspect_span'][1]):
                             high_sus[1] = high_fail[0]
                         else:
-                            high_sus = None     # High end of fail range is equal or less than high end of suspect range
-                    elif dmax is not None and dmax > float(ranges['suspect_span'][1]):
-                        high_sus[1] = dmax
+                            high_sus = None     # High fail threshold is equal or less than high suspect threshold
+                    elif dmax is not None:
+                        if dmax > float(ranges['suspect_span'][1]):
+                            high_sus[1] = dmax
+                        else:
+                            high_sus = None     # High suspect threshold outside plot limits
     if any([low_sus is not None, low_fail is not None, high_sus is not None, high_fail is not None]):
         qc_bars = True
 
