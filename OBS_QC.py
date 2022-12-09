@@ -390,6 +390,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                             num_windows = int(round((last_window - first_window) / window_offset))
 
                             if tr.meta.channel == 'LE3':
+                                # TODO: Show power consumption as positive rather than negative (as recorded)
                                 # Power consumption
                                 report_params['meanPower'] = '{:.3f}'.format(np.mean(tr.data))
 
@@ -636,6 +637,7 @@ if __name__ == '__main__':
     parser.add_argument('--config', dest='config_path', help="Path to config file (if not using default).")
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help="Activate debug mode (more verbose logging).")
+    # TODO: Implement a config file to replace most of these arguments (simplify terminal command to make it more user-friendly to run)
 
     try:
         start_time = datetime.now()

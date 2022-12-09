@@ -1167,7 +1167,7 @@ class WaveformPlotting(object):
         self._tr_max_count = np.empty(self._tr_num)
         self._tr_npts = np.empty(self._tr_num)
         self._tr_delta = np.empty(self._tr_num)
-        # TODO dynamic DATA_MAXLENGTH according to dpi
+        # TODO dynamic DATA_MAXLENGTH according to dpi (this is from obspy source)
         for _i, tr in enumerate(self.stream):
             if len(tr.data) >= self.max_npts:
                 tmp_data = signal.resample(tr.data, self.max_npts)
