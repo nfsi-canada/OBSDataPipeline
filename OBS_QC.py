@@ -398,7 +398,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 window_start = first_window
                                 while window_start < last_window:
                                     window = tr.slice(window_start, window_start + window_length)
-                                    if window.data.count() > 0:
+                                    if (isinstance(window.data, np.ndarray) and len(window.data) > 0) or window.data.count() > 0:
                                         avg_power.append([window_start.datetime, window.data.mean()])
                                     window_start += window_offset
 
@@ -411,13 +411,17 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 window_start = first_window
                                 while window_start < last_window:
                                     window = tr.slice(window_start, window_start + window_length)
-                                    if window.data.count() > 0:
+                                    if (isinstance(window.data, np.ndarray) and len(window.data) > 0) or window.data.count() > 0:
                                         secs = np.array(window.times(type='relative'))
-                                        secs_valid = secs[window.data.mask == False].reshape(-1, 1)
-                                        valid_data = window.data[window.data.mask == False]
-                                        reg = LinearRegression().fit(secs_valid, valid_data)
+                                        if isinstance(window.data, np.ma.MaskedArray):
+                                            secs_valid = secs[window.data.mask == False].reshape(-1, 1)
+                                            valid_data = window.data[window.data.mask == False]
+                                            reg = LinearRegression().fit(secs_valid, valid_data)
+                                            r2 = reg.score(secs_valid, valid_data)   # R^2 coefficient of linear fit (should be very close to 1)
+                                        else:
+                                            reg = LinearRegression().fit(secs, window.data)
+                                            r2 = reg.score(secs, window.data)
                                         gradient = reg.coef_[0] * 1000 * 60 * 60 * 24   # convert V/s to mV/day for voltage gradient
-                                        r2 = reg.score(secs_valid, valid_data)   # R^2 coefficient of linear fit (should be very close to 1)
                                         voltage_stats.append([window_start.datetime, window.data.min(), window.max(), window.data.mean(), gradient, r2])
                                     window_start += window_offset
                         done_power = timeit.default_timer()
