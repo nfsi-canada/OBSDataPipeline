@@ -419,8 +419,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                             reg = LinearRegression().fit(secs_valid, valid_data)
                                             r2 = reg.score(secs_valid, valid_data)   # R^2 coefficient of linear fit (should be very close to 1)
                                         else:
-                                            reg = LinearRegression().fit(secs, window.data)
-                                            r2 = reg.score(secs, window.data)
+                                            reg = LinearRegression().fit(secs.reshape(-1, 1), window.data)
+                                            r2 = reg.score(secs.reshape(-1, 1), window.data)
                                         gradient = reg.coef_[0] * 1000 * 60 * 60 * 24   # convert V/s to mV/day for voltage gradient
                                         voltage_stats.append([window_start.datetime, window.data.min(), window.max(), window.data.mean(), gradient, r2])
                                     window_start += window_offset
