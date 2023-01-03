@@ -701,25 +701,6 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             psd_arr_build = timeit.default_timer()
             timing['psd_buffer'] += psd_arr_build - psd_calc_time
 
-            """
-            # Calculate spectrogram
-            npts = int(spec_win * this_channel.stats.sampling_rate)
-            nover = int(overlap * npts)
-            analysis_end = min(this_channel.stats.endtime, plot_end)
-            num_win = np.floor((analysis_end - first_spec_start - spec_win) / (spec_win * (1 - overlap)))
-            last_spec_start = first_spec_start + num_win * spec_win * (1 - overlap)
-            spec_data = this_channel.slice(first_spec_start, last_spec_start + spec_win)
-            spec, sfrq, t = mlab.specgram(spec_data.data, NFFT=npts, Fs=this_channel.stats.sampling_rate,
-                                          window=signal.get_window('hann', npts, False), noverlap=nover, detrend='linear')
-            st = np.array([(spec_data.stats.starttime + tm).timestamp for tm in t])
-            if spec_array is None:
-                spec_array = np.array(spec)
-                spec_times = np.array(st)
-            else:
-                spec_array = np.concatenate((spec_array, spec), axis=1)
-                spec_times = np.concatenate((spec_times, st), axis=None)
-            next_spec_start = last_spec_start + spec_win * (1 - overlap)    # start time for next iteration of buffer loop
-            """
             spec_calc_time = timeit.default_timer()
             timing['spec_calc'] += spec_calc_time - psd_arr_build
         except Exception as e:
