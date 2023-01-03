@@ -534,7 +534,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 if ch_id is not None:
                     if tr.id != ch_id:
                         continue  # ignore all other channels if *ch_id* is specified
-                buffer.append(tr)  # have to add one trace at a time to existing Stream object
+                buffer.append(tr.copy())  # have to add one trace at a time to existing Stream object
                 if (tr.stats.starttime > last_start) or (last_start is None):
                     last_start = tr.stats.starttime
             files_in_buffer += 1
@@ -572,7 +572,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                         if ch_id is not None:
                             if tr.id != ch_id:
                                 continue    # ignore all other channels if *ch_id* is specified
-                        buffer.append(tr)   # have to add one trace at a time to existing Stream object
+                        buffer.append(tr.copy())   # have to add one trace at a time to existing Stream object
                         if (tr.stats.starttime > last_start) or (last_start is None):
                             last_start = tr.stats.starttime
                     files_in_buffer += 1
