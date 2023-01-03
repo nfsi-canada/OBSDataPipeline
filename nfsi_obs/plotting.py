@@ -430,6 +430,12 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             g_log.warn('Data buffering not yet implemented for non-seismic channel {0} of type {1}'.format(ch_id, input_type))
             return report_info
 
+    # If no start/end information given, fallback to start/end dates from project metadata (JSON or [future] ST integration)
+    if start is None and project_meta['start_date']:
+        start = obspy.UTCDateTime(project_meta['start_date'])
+    if end is None and project_meta['end_date']:
+        end = obspy.UTCDateTime(project_meta['end_date']) + 24 * 60 * 60
+
     buffer_length = 2   # number of files to keep in memory at a given time; testing shows using more files per buffer loop does not improve performance
     psd_a_plots, psd_v_plots, spec_plots = [], [], []
     all_gaps = []
@@ -790,40 +796,13 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 done_spec_psd = timeit.default_timer()
                 timing['spec_plot'] += done_spec_psd - report_add
 
-                """
-                # Spectrogram plot
-                if not (use_existing_plots and os.path.isfile(spectrogram_plot)):
-                    spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
-                    spec_array = 10. * np.log10(spec_array)
-                    spec_array = np.flipud(spec_array)
-    
-                    pad_xextent = (npts - nover) / this_channel.stats.sampling_rate / 2
-                    xextent = np.min(spec_times) - pad_xextent, np.max(spec_times) + pad_xextent
-                    xmin, xmax = xextent
-                    extent = xmin, xmax, sfrq[0], sfrq[-1]
-    
-                    im = sax.imshow(spec_array, cmap=None, extent=extent, vmin=None, vmax=None, origin='upper')
-                    sax.axis('auto')
-                    sax._sci(im)
-                    sax.set_yscale('log')
-                    sax.set_ylim(ymin=8e-3, ymax=this_channel.stats.sampling_rate/2)
-                    sax.set_ylabel('Frequency (Hz)')
-                    # Set appropriate x-ticks for time span (also changes x-lim)
-                    sax.set_xticks(tm_x_ticks, tm_x_ticklabels, horizontalalignment='right')
-                    sax.tick_params(axis='x', rotation=40)
-                    plt.tight_layout()
-                    spec_fig.savefig(spectrogram_plot)
-                """
-                done_spec_plot = timeit.default_timer()
-                timing['spec_plot'] += done_spec_plot - done_spec_psd
-
                 spec_plots.append({
                     'image': spec_psd_plot,
                     'start': plot_start.strftime('%Y-%m-%d'),
                     'end': (plot_end - 1).strftime('%Y-%m-%d')
                 })
                 report_add = timeit.default_timer()
-                timing['report_info'] += report_add - done_spec_plot
+                timing['report_info'] += report_add - done_spec_psd
 
             except Exception as e:
                 msg = 'nfsi_obs.plotting.buffer_seismic_data: Error creating plots, latest file: {0}'.format(files[i - 1])

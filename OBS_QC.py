@@ -65,12 +65,20 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     g_log.debug("Basic processing setup time: {0} seconds".format((base_time - proc_start)))
     debug_info['timing']['base_setup'] = base_time - proc_start
 
-    # Start/end of time on seafloor (if provided)
-    sf_start, sf_end = None, None
+    # Start/end of time period to analyze: (1) on seafloor, (2) off-ship, (3) project start/end
+    data_start, data_end = None, None
     if not pd.isnull(obs_log['Date/Time on Seafloor (UTC)'].values[0]):
-        sf_start = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time on Seafloor (UTC)'].values[0]))
+        data_start = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time on Seafloor (UTC)'].values[0]))
+    elif not pd.isnull(obs_log['Launch Date/Time (UTC)'].values[0]):
+        data_start = obspy.UTCDateTime(pd.to_datetime(obs_log['Launch Date/Time (UTC)'].values[0]))
+    elif project_meta['start_date']:
+        data_start = obspy.UTCDateTime(project_meta['start_date'])
     if not pd.isnull(obs_log['Date/Time Released (UTC)'].values[0]):
-        sf_end = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time Released (UTC)'].values[0]))
+        data_end = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time Released (UTC)'].values[0]))
+    elif not pd.isnull(obs_log['Recovery Date/Time (UTC)'].values[0]):
+        data_end = obspy.UTCDateTime(pd.to_datetime(obs_log['Recovery Date/Time (UTC)'].values[0]))
+    elif project_meta['end_date']:
+        data_end = obspy.UTCDateTime(project_meta['end_date']) + 24 * 60 * 60
 
     # Read station metadata file
     station_info = None
@@ -234,13 +242,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 g_log.debug("Time spent reading data file(s): {0} seconds".format((read_time - ch_start)))
                 debug_info['timing']['file_read'] += read_time - ch_start
 
-                # Cut data to time on seafloor (if start/end times provided)
-                if (sf_start is not None) or (sf_end is not None):
+                # Cut data to time period of interest (if start/end times provided)
+                if (data_start is not None) or (data_end is not None):
                     # This shouldn't change `data` if there is no data to cut out
-                    data.trim(sf_start, sf_end, nearest_sample=False)
+                    data.trim(data_start, data_end, nearest_sample=False)
 
                 sf_time = timeit.default_timer()
-                g_log.debug("Time spent cutting to on-seafloor: {0} seconds".format((sf_time - read_time)))
+                g_log.debug("Time spent cutting to period of interest: {0} seconds".format((sf_time - read_time)))
                 debug_info['timing']['time_cut'] += sf_time - read_time
 
                 # Populate metadata from other files as necessary
