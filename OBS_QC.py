@@ -204,8 +204,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     times = get_start_and_end_time(rf)
                     filetimes.append(times)
                 filetimes = np.array(filetimes)
-                data_start = min(filetimes[:, 0])
-                data_end = max(filetimes[:, 1])
+                files_start = min(filetimes[:, 0])
+                files_end = max(filetimes[:, 1])
 
                 startend = timeit.default_timer()
                 debug_info['timing']['long_series_check'] += startend - ch_start
@@ -226,8 +226,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 report_params[channel_type + '_channels'].append(trace_info)
 
                 g_log.info('{0} | {1} - {2} | {3}'.format(trace_info['seedID'],
-                                                          data_start.datetime.strftime('%Y-%m-%d %H:%M:%S.%f'),
-                                                          data_end.datetime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                                                          files_start.datetime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                                                          files_end.datetime.strftime('%Y-%m-%d %H:%M:%S.%f'),
                                                           trace_info['channelName']))
             else:
                 # Read all files in list
@@ -406,7 +406,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 window_start = first_window
                                 while window_start < last_window:
                                     window = tr.slice(window_start, window_start + window_length)
-                                    if (isinstance(window.data, np.ndarray) and len(window.data) > 0) or window.data.count() > 0:
+                                    if (not np.ma.isMaskedArray(window.data) and len(window.data) > 0) or window.data.count() > 0:
                                         avg_power.append([window_start.datetime, window.data.mean()])
                                     window_start += window_offset
 
@@ -419,11 +419,12 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 window_start = first_window
                                 while window_start < last_window:
                                     window = tr.slice(window_start, window_start + window_length)
-                                    if (isinstance(window.data, np.ndarray) and len(window.data) > 0) or window.data.count() > 0:
+                                    if (not np.ma.isMaskedArray(window.data) and len(window.data) > 0) or window.data.count() > 0:
                                         secs = np.array(window.times(type='relative'))
                                         if isinstance(window.data, np.ma.MaskedArray):
-                                            secs_valid = secs[window.data.mask == False].reshape(-1, 1)
-                                            valid_data = window.data[window.data.mask == False]
+                                            mask = np.ma.getmaskarray(window.data)
+                                            secs_valid = secs[mask == False].reshape(-1, 1)
+                                            valid_data = window.data[mask == False]
                                             reg = LinearRegression().fit(secs_valid, valid_data)
                                             r2 = reg.score(secs_valid, valid_data)   # R^2 coefficient of linear fit (should be very close to 1)
                                         else:
@@ -498,9 +499,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         for gap in all_gaps:
             report_params['gapList'].append({
                 'id': '.'.join(gap[0:4]),
-                'start': gap[4].strftime('%Y-%m-%d %H:%M:%S.%f'),
-                'end': gap[5].strftime('%Y-%m-%d %H:%M:%S.%f'),
-                'sec': gap[6],
+                'start': gap[4].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                'end': gap[5].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                'sec': '{:.3f}'.format(gap[6]),
                 'samp': gap[7]
             })
 
