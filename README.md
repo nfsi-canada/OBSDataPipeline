@@ -4,7 +4,7 @@ Pre-processing and QC tasks for data collected from NFSI's OBS instruments
 ## Setup
 ### Environment
 * This package uses a conda environment (Anaconda/Miniconda)
-* Run `conda env create` to setup the environment
+* Run `conda env create` to setup the environment or `conda env update` to update an existing environment after a package version change
 
 ### Configuration
 * This package expects to be located at `[base_dir]/OBSDataPipeline`, with a folder called `resource` at the same level as `base_dir`.
