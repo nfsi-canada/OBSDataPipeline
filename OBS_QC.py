@@ -494,6 +494,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     debug_info['timing']['centring_summary'] = centre_time - loop_time
 
     # Parse gap information for report
+    # TODO: Include check for duplicates (may come out of buffered seismic data)
     if len(all_gaps) > 0:
         report_params['gapList'] = []
         for gap in all_gaps:
