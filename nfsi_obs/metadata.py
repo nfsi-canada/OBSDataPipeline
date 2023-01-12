@@ -56,9 +56,9 @@ def update_metadata(data, network_id, log, station_info=None, channel_map=None, 
     :param data: input time series data as obspy.core.stream.Stream object
     :param network_id: 2-character FDSN network code
     :param log: Logging object used by calling script
-    :param station_info
-    :param channel_map
-    :param project_meta
+    :param station_info: information loaded from StationXML or dataless SEED file, for example with read_dataless()
+    :param channel_map: pandas.DataFrame with SEED channel codes raw as-recorded and corrected
+    :param project_meta: extra project metadata, loaded from JSON file or Sensor Tracker
 
     :return: updated Stream object
     """
@@ -98,7 +98,7 @@ def update_metadata(data, network_id, log, station_info=None, channel_map=None, 
 
 
 def get_channel_type(ch_code):
-    # Assign to appropriate group of channels
+    # Assign to appropriate group of channels based on SEED channel code
     channel_type = 'health'
     if (re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', ch_code)) or (re.match(r'[A-Z]D[HF]', ch_code)):
         # seismic data and hydrophone
