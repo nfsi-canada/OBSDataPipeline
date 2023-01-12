@@ -13,6 +13,7 @@ def parse_obs_log(log_file, delimiter=','):
     :return: dictionary with relevant information from the log file
     :rtype: dict
     """
+    # TODO: Hoping to replace this entirely with Sensor Tracker integration
     # If there are changes to the template, these column names will need to be updated. Consider putting in config.ini?
     location_cols = ['Station', 'OBS Name', 'OBS ID', 'Launch Date/Time (UTC)', 'Date/Time on Seafloor (UTC)',
                      'Survey Start Date/Time (UTC)', 'Date/Time Released (UTC)', 'Surfaced Date/Time (UTC)',

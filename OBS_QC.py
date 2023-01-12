@@ -1,7 +1,7 @@
 import argparse
+from datetime import datetime, timedelta
 from glob import glob
-from ioos_qc import utils as iq_utils
-from ioos_qc import qartod
+import gc
 import json
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,19 +10,22 @@ import os
 import pandas as pd
 import pypandoc
 import re
-from scipy import signal
 import shutil
+import timeit
 import traceback
 import warnings
-from datetime import datetime, timedelta
-from obspy.io.stationxml.core import validate_stationxml
-from obspy.signal import PPSD
-from sklearn.linear_model import LinearRegression
-import timeit
+
 from obspy.io.mseed.util import get_start_and_end_time
+from obspy.io.stationxml.core import validate_stationxml
+from sklearn.linear_model import LinearRegression
+
+from ioos_qc import qartod
 
 import nfsi_obs as nf
-from utilities import config_handler, logger, check_nan, ReportGenerator
+from utilities import config_handler, logger, ReportGenerator
+
+gc.set_debug(gc.DEBUG_UNCOLLECTABLE)
+feature_test = False    # set to True to test new features
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 # Ensure resource directory exists
@@ -31,12 +34,16 @@ if not os.path.isdir(resource_dir):
     os.makedirs(resource_dir)
 
 
-def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, project_meta=None, full=True, detrend=False, backup=True, **kwargs):
+def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, project_meta=None,
+            full=True, detrend=False, backup=True, use_existing_plots=False, **kwargs):
     """
     Extra keyword arguments are included as report parameters (must match variables in template file).
     """
+    error_count = 0
     proc_start = timeit.default_timer()
     g_log.info("start")
+
+    debug_info = {'timing': {}}
 
     # Initialize report parameters dictionary with input keywords
     report_params = {}
@@ -55,7 +62,23 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     spec_win = int(config.get('seismic', 'spectrogram_window', fallback=60))
 
     base_time = timeit.default_timer()
-    g_log.info("Basic processing setup time: {0} seconds".format((base_time - proc_start)))
+    g_log.debug("Basic processing setup time: {0} seconds".format((base_time - proc_start)))
+    debug_info['timing']['base_setup'] = base_time - proc_start
+
+    # Start/end of time period to analyze: (1) on seafloor, (2) off-ship, (3) project start/end
+    data_start, data_end = None, None
+    if not pd.isnull(obs_log['Date/Time on Seafloor (UTC)'].values[0]):
+        data_start = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time on Seafloor (UTC)'].values[0]))
+    elif not pd.isnull(obs_log['Launch Date/Time (UTC)'].values[0]):
+        data_start = obspy.UTCDateTime(pd.to_datetime(obs_log['Launch Date/Time (UTC)'].values[0]))
+    elif project_meta['start_date']:
+        data_start = obspy.UTCDateTime(project_meta['start_date'])
+    if not pd.isnull(obs_log['Date/Time Released (UTC)'].values[0]):
+        data_end = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time Released (UTC)'].values[0]))
+    elif not pd.isnull(obs_log['Recovery Date/Time (UTC)'].values[0]):
+        data_end = obspy.UTCDateTime(pd.to_datetime(obs_log['Recovery Date/Time (UTC)'].values[0]))
+    elif project_meta['end_date']:
+        data_end = obspy.UTCDateTime(project_meta['end_date']) + 24 * 60 * 60
 
     # Read station metadata file
     station_info = None
@@ -91,12 +114,14 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             g_log.warning("No metadata file provided, and none found in data directory.")
 
     meta_time = timeit.default_timer()
-    g_log.info("Time spent reading station metadata file: {0} seconds".format((meta_time - base_time)))
+    g_log.debug("Time spent reading station metadata file: {0} seconds".format((meta_time - base_time)))
+    debug_info['timing']['station_meta'] = meta_time - base_time
 
     # Find data files and backup if necessary
     # TODO: Remove file backup here once it has been copied to pre-processing script (QC doesn't change miniSEED files)
     raw_files = glob(os.path.join(data_dir, '**/*.mseed'), recursive=True)
     g_log.info("Found {0} miniSEED file(s) in data directory and sub-folders".format(len(raw_files)))
+    debug_info['num_files'] = len(raw_files)
     backup_exists = False
     if output_dir is None:
         if backup:
@@ -115,7 +140,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         output_dir = data_dir
 
     search_time = timeit.default_timer()
-    g_log.info("Time spent searching for data files and backing up raw data: {0} seconds".format((search_time - meta_time)))
+    g_log.debug("Time spent searching for data files and backing up raw data: {0} seconds".format((search_time - meta_time)))
+    debug_info['timing']['file_search'] = search_time - meta_time
 
     # label files by channel name
     labels = []
@@ -128,9 +154,11 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         labels.append({'channel': ch_name, 'path': rf})
     labeled_files = pd.DataFrame(labels)
     g_log.info("Files contain data for {0} unique set(s) of channels".format(len(np.unique(labeled_files['channel'].values))))
+    debug_info['num_channels'] = len(np.unique(labeled_files['channel'].values))
 
     sort_time = timeit.default_timer()
-    g_log.info("Time spent sorting and labeling data files: {0} seconds".format((sort_time - search_time)))
+    g_log.debug("Time spent sorting and labeling data files: {0} seconds".format((sort_time - search_time)))
+    debug_info['timing']['file_sort'] = sort_time - search_time
 
     # Initialize arrays for saving stats
     all_gaps = []
@@ -140,329 +168,305 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     voltage_stats = []
 
     arr_time = timeit.default_timer()
-    g_log.info("Time spent setting up arrays for stats: {0} seconds".format((arr_time - sort_time)))
+    g_log.debug("Time spent setting up arrays for stats: {0} seconds".format((arr_time - sort_time)))
+    debug_info['timing']['array_setup'] = arr_time - sort_time
 
+    # Add keys for running totals
+    debug_info['timing'].update({
+        'file_read': 0.,
+        'time_cut': 0.,
+        'apply_meta': 0.,
+        'group_setup': 0.,
+        'gap_test': 0.,
+        'group_assign': 0.,
+        'meta_admin': 0.,
+        'trace_plot': 0.,
+        'psd_calc': 0.,
+        'psd_plot': 0.,
+        'spec_calc': 0.,
+        'spec_plot': 0.,
+        'qartod': 0.,
+        'power_analysis': 0.,
+        'trace_analysis': 0.,
+        'long_series_check': 0.,
+    })
     # Loop through data files (grouped by channel set name)
     for label, files in labeled_files.groupby('channel'):
         ch_start = timeit.default_timer()
         g_log.info("Begin processing channel set {0}".format(label))
         g_log.info("{0} data file(s) in list".format(len(files.index)))
 
-        # Ignore channels with lots of data files (long time periods of seismic data) for now
-        # TODO: Implement data file buffering for long time periods
-        if len(files.index) > 3:
-            filetimes = []
-            for rf in files['path'].values:
-                times = get_start_and_end_time(rf)
-                filetimes.append(times)
-            filetimes = np.array(filetimes)
-            data_start = min(filetimes[:, 0])
-            data_end = max(filetimes[:, 1])
-            g_log.info("Data time span: {0} - {1}".format(data_start.datetime.strftime('%Y-%m-%d %H:%M:%S.%f'),
-                                                          data_end.datetime.strftime('%Y-%m-%d %H:%M:%S.%f')))
+        try:
+            # Data file buffering for long time periods (should only be needed for seismic data)
+            if len(files.index) > 3:
+                filetimes = []
+                for rf in files['path'].values:
+                    times = get_start_and_end_time(rf)
+                    filetimes.append(times)
+                filetimes = np.array(filetimes)
+                files_start = min(filetimes[:, 0])
+                files_end = max(filetimes[:, 1])
 
-            # TODO: Modify PSD and spectrogram plotting routines to separate calculation from actual plot
-            # TODO: Calculate PSD/Spectrogram info for buffered data, plot out by month
-            # TODO: Decide between plotting by calendar month vs time since start of data (constant period per plot)
-            # TODO: Test how many files to read at once (optimize for runtime and memory usage)
+                startend = timeit.default_timer()
+                debug_info['timing']['long_series_check'] += startend - ch_start
 
-            g_log.warning("Too many data files to be handled by current code setup! Skipping channel")
-            continue
+                trace_info, gaps, buff_time = nf.plotting.buffer_seismic_data(files['path'].values, output_dir, g_log,
+                                                                              network_id, station_info, channel_map,
+                                                                              project_meta, win_len, spec_win, overlap,
+                                                                              use_existing_plots=use_existing_plots)
+                for key in buff_time:
+                    if key in debug_info['timing']:
+                        debug_info['timing'][key] += buff_time[key]
+                    else:
+                        debug_info['timing'][key] = buff_time[key]
 
-        # Read all files in list
-        data = obspy.Stream()
-        for rf in files['path'].values:
-            temp = obspy.read(rf)
-            for tr in temp:
-                data.append(tr)
-        data.merge()
+                channel_type = trace_info['channelType']
 
-        read_time = timeit.default_timer()
-        g_log.info("Time spent reading data file(s): {0} seconds".format((read_time - ch_start)))
+                all_gaps.extend(gaps)
+                report_params[channel_type + '_channels'].append(trace_info)
 
-        # Populate metadata from other files as necessary
-        for tr in data:
-            # Get response info from metadata
-            if station_info is not None:
-                try:
-                    tr.attach_response(station_info)
-                except ValueError:
-                    warnings.warn("No matching response information found")
-
-                # Get orientations of seismic channels
-                if re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', tr.meta.channel):
-                    orient = station_info.get_orientation(tr.id)
-                    for key in ['azimuth', 'dip']:
-                        tr.stats[key] = orient[key]
-
-            # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
-            if channel_map is not None:
-                ch_info = channel_map.loc[tr.id]
-                for code in ['Network', 'Station', 'Location', 'Channel', 'Description']:
-                    if ch_info[code] is not None and ~check_nan(ch_info[code]):
-                        tr.meta[code.lower()] = ch_info[code]
-            if tr.meta.network != network_id:
-                raise AssertionError('Channel {0} is not in network {1}'.format(tr.id, network_id))
-
-            # Get channel info from project metadata JSON
-            if project_meta is not None:
-                try:
-                    channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_meta['channels']))[0]
-                    if 'description' in channel_info:
-                        tr.meta.description = channel_info['description']
-                except (KeyError, IndexError):
-                    g_log.warning("No matching information found in project metadata for channel {0}".format(tr.id))
-
-        data.merge()
-        print(data)
-
-        metadata_time = timeit.default_timer()
-        g_log.info("Time spent applying metadata: {0} seconds".format((metadata_time - read_time)))
-
-        # Cut data to time on seafloor (if start/end times provided)
-        start, end = None, None
-        if not pd.isnull(obs_log['Date/Time on Seafloor (UTC)'].values[0]):
-            start = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time on Seafloor (UTC)'].values[0]))
-        if not pd.isnull(obs_log['Date/Time Released (UTC)'].values[0]):
-            end = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time Released (UTC)'].values[0]))
-
-        data = data.slice(start, end, nearest_sample=False)
-
-        sf_time = timeit.default_timer()
-        g_log.info("Time spent cutting to on-seafloor: {0} seconds".format((sf_time - metadata_time)))
-
-        # Perform QC
-        # TODO: Combine single and multi-channel cases to simplify code (no real reason to separate) -> TEST multi-channel
-        seismic = obspy.Stream()
-        ocean = obspy.Stream()
-        power = obspy.Stream()
-        health = obspy.Stream()
-
-        str_time = timeit.default_timer()
-        g_log.info("Time spent creating empty streams: {0} seconds".format((str_time - sf_time)))
-
-        # Gap test
-        gaps = data.get_gaps()
-        all_gaps.extend(gaps)
-        if len(gaps) > 0:
-            g_log.info('Found {0} gap(s) or overlap(s) in recorded data'.format(len(gaps)))
-            data.print_gaps()
-
-        gt_time = timeit.default_timer()
-        g_log.info("Time spent for gap test: {0} seconds".format((gt_time - str_time)))
-
-        for tr in data:
-            tr_starttime = timeit.default_timer()
-
-            # Assign to relevant group of channels
-            channel_type = 'health'
-            if (re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', tr.meta.channel)) or (re.match(r'[A-Z]D[HF]', tr.meta.channel)):
-                # seismic data and hydrophone
-                channel_type = 'seismic'
-                seismic.append(tr)
-            elif tr.meta.channel in ['LKO', 'MDO', 'MDU']:
-                # oceanographic data (external P/T, include APG if present)
-                # TODO: Would like this to be more general, but internal temperature is also labeled with "KO" source/subsource code by default
-                channel_type = 'ocean'
-                ocean.append(tr)
-            elif tr.meta.channel in ['LE3', 'ME4']:
-                # battery voltage and power consumption
-                channel_type = 'power'
-                power.append(tr)
+                g_log.info('{0} | {1} - {2} | {3}'.format(trace_info['seedID'],
+                                                          files_start.datetime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                                                          files_end.datetime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                                                          trace_info['channelName']))
             else:
-                health.append(tr)
+                # Read all files in list
+                data = obspy.Stream()
+                for rf in files['path'].values:
+                    temp = obspy.read(rf)
+                    for tr in temp:
+                        data.append(tr)
+                data.merge()
 
-            cg_time = timeit.default_timer()
-            g_log.info("Time spent assigning to channel group: {0} seconds".format((cg_time - tr_starttime)))
+                read_time = timeit.default_timer()
+                g_log.debug("Time spent reading data file(s): {0} seconds".format((read_time - ch_start)))
+                debug_info['timing']['file_read'] += read_time - ch_start
 
-            # Start gathering trace information for report
-            trace_info = {
-                'seedID': tr.id,
-                'channelName': tr.id,
-                'order': 100
-            }
-            if hasattr(tr.meta, 'description'):
-                trace_info['channelName'] = tr.meta.description
+                # Cut data to time period of interest (if start/end times provided)
+                if (data_start is not None) or (data_end is not None):
+                    # This shouldn't change `data` if there is no data to cut out
+                    data.trim(data_start, data_end, nearest_sample=False)
 
-            # Get channel info from project metadata JSON
-            channel_info = None
-            if project_meta is not None:
-                try:
-                    channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_meta['channels']))[0]
-                except (KeyError, IndexError):
-                    pass
+                sf_time = timeit.default_timer()
+                g_log.debug("Time spent cutting to period of interest: {0} seconds".format((sf_time - read_time)))
+                debug_info['timing']['time_cut'] += sf_time - read_time
 
-            dmin, dmax = None, None
-            qc_config = None
-            if channel_info is not None:
-                if 'hide' in channel_info:
-                    if channel_info['hide']:
-                        continue
-                if 'max' in channel_info:
-                    dmax = float(channel_info['max'])
-                if 'min' in channel_info:
-                    dmin = float(channel_info['min'])
-                if 'order' in channel_info:
-                    trace_info['order'] = int(channel_info['order'])
-                if 'qc_config' in channel_info:
-                    qc_config = channel_info['qc_config']
+                # Populate metadata from other files as necessary
+                data = nf.metadata.update_metadata(data, network_id, g_log, station_info, channel_map, project_meta)
+                data.merge()
+                print(data)
 
-            more_meta_time = timeit.default_timer()
-            g_log.info("Time spent with other metadata admin: {0} seconds".format((more_meta_time - cg_time)))
+                metadata_time = timeit.default_timer()
+                g_log.debug("Time spent applying metadata: {0} seconds".format((metadata_time - sf_time)))
+                debug_info['timing']['apply_meta'] += metadata_time - sf_time
 
-            # Time series plot
-            trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, dmin, dmax, qc_config)
+                # Perform QC
+                # TODO: Combine single and multi-channel cases to simplify code (no real reason to separate) -> TEST multi-channel
 
-            plt_time = timeit.default_timer()
-            g_log.info("Time spent plotting trace: {0} seconds".format((plt_time - more_meta_time)))
+                # Gap test
+                gaps = data.get_gaps()
+                all_gaps.extend(gaps)
+                if len(gaps) > 0:
+                    g_log.info('Found {0} gap(s) or overlap(s) in recorded data'.format(len(gaps)))
+                    data.print_gaps()
 
-            # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
-            if channel_type == 'seismic':
-                for metaKey, reportKey in zip(['azimuth', 'dip'], ['azimuth', 'dip']):
-                    if hasattr(tr.meta, metaKey):
-                        trace_info[reportKey] = tr.meta[metaKey]
+                gt_time = timeit.default_timer()
+                g_log.debug("Time spent for gap test: {0} seconds".format((gt_time - metadata_time)))
+                debug_info['timing']['gap_test'] += gt_time - metadata_time
 
-                # Detrend seismic data (RMS linear fit)
-                if detrend:
-                    tr.detrend('linear')
-                    demean_data_plot = os.path.join(output_dir, 'demean_{0}.png'.format(tr.id))
-                    data.plot(outfile=demean_data_plot)
-
-                # Spectrogram
-                trace_info['specLoc'] = nf.plotting.spectrogram(tr, output_dir, spec_win, overlap)
-
-                # Plot PSDs of data
-                trace_info['psdLoc'] = nf.plotting.psd_plot(tr, output_dir, win_len, overlap)
-
-                if full:
-                    # TODO: Decide if the same operations are appropriate for the hydrophone data or not
-                    # TODO: Calculate hourly PSDs
-                    # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
-                    # TODO: Linearity of PSD curves
-                    g_log.warning("Full QC of seismic noise not yet implemented")
-
-            else:
-                # Analysis of auxiliary data
-                timestamps = pd.to_datetime(tr.times(type='timestamp'), unit='s').values
-                # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
-                if qc_config is not None:
-                    if 'qartod' in qc_config:
-                        if 'gross_range_test' in qc_config['qartod']:
-                            range_check = qartod.gross_range_test(tr.data, **qc_config['qartod']['gross_range_test'])
-                            if np.any(range_check > 1):
-                                g_log.info('Channel {0} has suspect values at {1} sample(s) and failing values at {2} sample(s)'.format(tr.id, np.sum(range_check==3), np.sum(range_check==4)))
-                            check_trace = obspy.Trace(range_check, header=tr.stats)
-                            trace_info['qcPlotLoc'] = nf.plotting.qartod_plot(check_trace, output_dir, 'gross_range_check')
-
-                        if re.match(r'[A-Z]M[1-3ENZ]', tr.meta.channel) and ('flat_line_test' in qc_config['qartod']):
-                            # centring channels only, must have flat-line test criteria specified
-                            flt_params = qc_config['qartod']['flat_line_test'].copy()
-                            flatline = qartod.flat_line_test(tr.data, timestamps,
-                                                             int(flt_params.pop('suspect_threshold')),
-                                                             int(flt_params.pop('fail_threshold')))
-                            centring[tr.id] = pd.Series(flatline, index=timestamps)
-
-                if channel_type == 'power':
-                    # Voltage and power consumption channels
-                    trace_start = tr.meta.starttime
-                    trace_end = tr.meta.endtime
-                    first_window = obspy.UTCDateTime(trace_start.year, trace_start.month, trace_start.day)
-                    last_window = obspy.UTCDateTime(trace_end.year, trace_end.month, trace_end.day - 1)
-                    window_length = 3 * 24 * 60 * 60    # 3 days in seconds
-                    window_offset = 24 * 60 * 60        # 1 day in seconds
-                    num_windows = int(round((last_window - first_window) / window_offset))
-
-                    if tr.meta.channel == 'LE3':
-                        # Power consumption
-                        report_params['meanPower'] = '{:.3f}'.format(np.mean(tr.data))
-
-                        # 3-day rolling window of average power consumption
-                        window_start = first_window
-                        while window_start < last_window:
-                            window = tr.slice(window_start, window_start + window_length)
-                            if window.data.count() > 0:
-                                avg_power.append([window_start.datetime, window.data.mean()])
-                            window_start += window_offset
-
-                        # TODO: Get times of data writes (spikes 45 minutes apart)
-                        if (qc_config is not None) and ('qartod' in qc_config) and ('spike_test' in qc_config['qartod']):
-                            spikes = qartod.spike_test(tr.data, **qc_config['qartod']['spike_test'])
-                    if tr.meta.channel == 'ME4':
-                        # Battery voltage
-                        # 3-day rolling window for stats
-                        window_start = first_window
-                        while window_start < last_window:
-                            window = tr.slice(window_start, window_start + window_length)
-                            if window.data.count() > 0:
-                                secs = np.array(window.times(type='relative'))
-                                secs_valid = secs[window.data.mask == False].reshape(-1, 1)
-                                valid_data = window.data[window.data.mask == False]
-                                reg = LinearRegression().fit(secs_valid, valid_data)
-                                gradient = reg.coef_[0] * 1000 * 60 * 60 * 24   # convert V/s to mV/day for voltage gradient
-                                r2 = reg.score(secs_valid, valid_data)   # R^2 coefficient of linear fit (should be very close to 1)
-                                voltage_stats.append([window_start.datetime, window.data.min(), window.max(), window.data.mean(), gradient, r2])
-                            window_start += window_offset
-                # TODO: Analysis of state-of-health variables?
-                # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
-
-            tran_time = timeit.default_timer()
-            g_log.info("Time spent performing trace-specific analysis: {0} seconds".format((tran_time - plt_time)))
-
-            # Summary statistics
-            if hasattr(tr.meta, 'response'):
-                units = tr.meta.response.instrument_sensitivity.input_units
-            else:
-                units = ''
-            print("{0} | {1} - {2} | {3} | Average {4:.3f} {5}".format(
-                tr.id,
-                tr.meta.starttime.strftime('%Y-%m-%d %H:%M:%S.%f'),
-                tr.meta.endtime.strftime('%Y-%m-%d %H:%M:%S.%f'),
-                trace_info['channelName'],
-                np.mean(tr.data),
-                units
-            ))
-
-            report_params[channel_type + '_channels'].append(trace_info)
-
-            rpt_time = timeit.default_timer()
-            g_log.info("Time spent compiling report info by trace: {0} seconds".format((rpt_time - tran_time)))
-
-        # TODO: Decide whether to keep this section. Don't actually use these plots.
-        for data, description in zip([seismic, ocean, power, health], ['seismic', 'ocean', 'power', 'health']):
-            # Check for empty Stream object
-            if len(data) > 0:
-                # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
-                raw_data_plot = os.path.join(output_dir, 'raw_{0}_{1}.png'.format(description, network_id))
-                data.plot(outfile=raw_data_plot)
-
-                # Apply instrument sensitivity
-                sens_applied = False
                 for tr in data:
-                    if hasattr(tr.meta, 'response'):
-                        tr.remove_sensitivity()
-                        sens_applied = True
-                if sens_applied:
-                    # TODO: Make vertical scales for each channel appropriate
-                    # TODO: Replace with custom plotting routine
-                    full_data_plot = os.path.join(output_dir, 'full_{0}_{1}.png'.format(description, network_id))
-                    fig = data.plot(show=False, handle=True)
-                    for i in range(len(data.traces)):
-                        if hasattr(data.traces[i].meta, 'description'):
-                            ax = fig.axes[i]
-                            ax.set_ylabel("{0} ({1})".format(data.traces[i].meta.description,
-                                                             data.traces[i].meta.response.instrument_sensitivity.input_units))
-                    plt.grid(True, ls=':')
-                    fig.savefig(full_data_plot)
-                    plt.close(fig)
+                    tr_starttime = timeit.default_timer()
 
-                if detrend and (description == 'seismic'):
-                    # detrend seismic data (RMS linear fit)
-                    data.detrend('linear')
-                    demean_data_plot = os.path.join(output_dir, 'demean_seismic_{0}.png'.format(network_id))
-                    data.plot(outfile=demean_data_plot)
+                    # Channel type determines what analysis gets run on this trace
+                    channel_type = nf.metadata.get_channel_type(tr.meta.channel)
+
+                    cg_time = timeit.default_timer()
+                    g_log.debug("Time spent assigning to channel group: {0} seconds".format((cg_time - tr_starttime)))
+                    debug_info['timing']['group_assign'] += cg_time - tr_starttime
+
+                    # Start gathering trace information for report
+                    trace_info = {
+                        'seedID': tr.id,
+                        'channelName': tr.id,
+                        'order': 100
+                    }
+                    if hasattr(tr.meta, 'description'):
+                        trace_info['channelName'] = tr.meta.description
+
+                    # Get channel info from project metadata JSON
+                    channel_info = None
+                    if project_meta is not None:
+                        try:
+                            channel_info = list(filter(lambda ch: ch['channel_id'] == tr.meta.channel, project_meta['channels']))[0]
+                        except (KeyError, IndexError):
+                            pass
+
+                    dmin, dmax = None, None
+                    qc_config = None
+                    if channel_info is not None:
+                        if 'hide' in channel_info:
+                            if channel_info['hide']:
+                                continue
+                        if 'max' in channel_info:
+                            dmax = float(channel_info['max'])
+                        if 'min' in channel_info:
+                            dmin = float(channel_info['min'])
+                        if 'order' in channel_info:
+                            trace_info['order'] = int(channel_info['order'])
+                        if 'qc_config' in channel_info:
+                            qc_config = channel_info['qc_config']
+
+                    more_meta_time = timeit.default_timer()
+                    g_log.debug("Time spent with other metadata admin: {0} seconds".format((more_meta_time - cg_time)))
+                    debug_info['timing']['meta_admin'] += more_meta_time - cg_time
+
+                    # Time series plot (applies instrument sensitivity in-place if response present in tr.meta)
+                    trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, dmin, dmax, qc_config, use_existing_plots)
+
+                    plt_time = timeit.default_timer()
+                    g_log.debug("Time spent plotting trace: {0} seconds".format((plt_time - more_meta_time)))
+                    debug_info['timing']['trace_plot'] += plt_time - more_meta_time
+
+                    # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
+                    if channel_type == 'seismic':
+                        for metaKey, reportKey in zip(['azimuth', 'dip'], ['azimuth', 'dip']):
+                            if hasattr(tr.meta, metaKey):
+                                trace_info[reportKey] = tr.meta[metaKey]
+
+                        # Detrend seismic data (RMS linear fit)
+                        if detrend:
+                            tr.detrend('linear')
+                            demean_data_plot = os.path.join(output_dir, 'demean_{0}.png'.format(tr.id))
+                            if not (use_existing_plots and os.path.isfile(demean_data_plot)):
+                                data.plot(outfile=demean_data_plot)
+
+                        start_plots = timeit.default_timer()
+                        # Spectrogram
+                        trace_info['specLoc'] = nf.plotting.spectrogram(tr, output_dir, spec_win, overlap, use_existing_plots)
+                        done_spec = timeit.default_timer()
+                        debug_info['timing']['spec_plot'] += done_spec - start_plots
+
+                        # Plot PSDs of data
+                        trace_info['psdLoc'] = nf.plotting.psd_plot(tr, output_dir, win_len, overlap, use_existing_plots)
+                        done_psd = timeit.default_timer()
+                        debug_info['timing']['psd_plot'] += done_psd - done_spec
+
+                        if full:
+                            # TODO: Decide if the same operations are appropriate for the hydrophone data or not
+                            # TODO: Calculate hourly PSDs
+                            # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
+                            # TODO: Linearity of PSD curves
+                            g_log.warning("Full QC of seismic noise not yet implemented")
+
+                    else:
+                        # Analysis of auxiliary data
+                        timestamps = pd.to_datetime(tr.times(type='timestamp'), unit='s').values
+                        # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
+                        start_tran = timeit.default_timer()
+                        if qc_config is not None:
+                            if 'qartod' in qc_config:
+                                if 'gross_range_test' in qc_config['qartod']:
+                                    range_check = qartod.gross_range_test(tr.data, **qc_config['qartod']['gross_range_test'])
+                                    if np.any(range_check > 1):
+                                        num_sus = np.sum(range_check == 3)
+                                        num_fail = np.sum(range_check == 4)
+                                        g_log.info('Channel {0} has suspect values at {1} sample(s) ({3:.1%}) and failing values at {2} sample(s) ({4:.1%})'.format(tr.id, num_sus, num_fail, num_sus / len(range_check), num_fail / len(range_check)))
+                                        # TODO: Add fail/suspect stats to report as well as log printout
+                                    check_trace = obspy.Trace(range_check, header=tr.stats)
+                                    #trace_info['qcPlotLoc'] = nf.plotting.qartod_plot(check_trace, output_dir, 'gross_range_check', use_existing_plots)
+
+                                if feature_test:
+                                    if re.match(r'[A-Z]M[1-3ENZ]', tr.meta.channel) and ('flat_line_test' in qc_config['qartod']):
+                                        # centring channels only, must have flat-line test criteria specified
+                                        # TODO: Need to re-visit this, not sure it's doing what we want even...
+                                        flt_params = qc_config['qartod']['flat_line_test'].copy()
+                                        flatline = qartod.flat_line_test(tr.data, timestamps,
+                                                                         int(flt_params.pop('suspect_threshold')),
+                                                                         int(flt_params.pop('fail_threshold')))
+                                        centring[tr.id] = pd.Series(flatline, index=timestamps)
+                        done_qartod = timeit.default_timer()
+                        debug_info['timing']['qartod'] += done_qartod - start_tran
+
+                        if channel_type == 'power':
+                            # Voltage and power consumption channels
+                            trace_start = tr.meta.starttime
+                            trace_end = tr.meta.endtime
+                            first_window = obspy.UTCDateTime(trace_start.year, trace_start.month, trace_start.day)
+                            last_window = obspy.UTCDateTime(trace_end.year, trace_end.month, trace_end.day - 1)
+                            window_length = 3 * 24 * 60 * 60    # 3 days in seconds
+                            window_offset = 24 * 60 * 60        # 1 day in seconds
+                            num_windows = int(round((last_window - first_window) / window_offset))
+
+                            if tr.meta.channel == 'LE3':
+                                # TODO: Show power consumption as positive rather than negative (as recorded)
+                                # Power consumption
+                                report_params['meanPower'] = '{:.3f}'.format(np.mean(tr.data))
+
+                                # 3-day rolling window of average power consumption
+                                window_start = first_window
+                                while window_start < last_window:
+                                    window = tr.slice(window_start, window_start + window_length)
+                                    if (not np.ma.isMaskedArray(window.data) and len(window.data) > 0) or window.data.count() > 0:
+                                        avg_power.append([window_start.datetime, window.data.mean()])
+                                    window_start += window_offset
+
+                                # TODO: Get times of data writes (spikes 45 minutes apart)
+                                if (qc_config is not None) and ('qartod' in qc_config) and ('spike_test' in qc_config['qartod']):
+                                    spikes = qartod.spike_test(tr.data, **qc_config['qartod']['spike_test'])
+                            if tr.meta.channel == 'ME4':
+                                # Battery voltage
+                                # 3-day rolling window for stats
+                                window_start = first_window
+                                while window_start < last_window:
+                                    window = tr.slice(window_start, window_start + window_length)
+                                    if (not np.ma.isMaskedArray(window.data) and len(window.data) > 0) or window.data.count() > 0:
+                                        secs = np.array(window.times(type='relative'))
+                                        if isinstance(window.data, np.ma.MaskedArray):
+                                            mask = np.ma.getmaskarray(window.data)
+                                            secs_valid = secs[mask == False].reshape(-1, 1)
+                                            valid_data = window.data[mask == False]
+                                            reg = LinearRegression().fit(secs_valid, valid_data)
+                                            r2 = reg.score(secs_valid, valid_data)   # R^2 coefficient of linear fit (should be very close to 1)
+                                        else:
+                                            reg = LinearRegression().fit(secs.reshape(-1, 1), window.data)
+                                            r2 = reg.score(secs.reshape(-1, 1), window.data)
+                                        gradient = reg.coef_[0] * 1000 * 60 * 60 * 24   # convert V/s to mV/day for voltage gradient
+                                        voltage_stats.append([window_start.datetime, window.data.min(), window.max(), window.data.mean(), gradient, r2])
+                                    window_start += window_offset
+                        done_power = timeit.default_timer()
+                        debug_info['timing']['power_analysis'] += done_power - done_qartod
+
+                        # TODO: Analysis of state-of-health variables?
+                        # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
+
+                    tran_time = timeit.default_timer()
+                    g_log.debug("Time spent performing trace-specific analysis: {0} seconds".format((tran_time - plt_time)))
+                    debug_info['timing']['trace_analysis'] += tran_time - plt_time
+
+                    # Summary statistics
+                    if hasattr(tr.meta, 'response'):
+                        units = tr.meta.response.instrument_sensitivity.input_units
+                    else:
+                        units = ''
+                    print("{0} | {1} - {2} | {3} | Average {4:.3f} {5}".format(
+                        tr.id,
+                        tr.meta.starttime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                        tr.meta.endtime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                        trace_info['channelName'],
+                        np.mean(tr.data),
+                        units
+                    ))
+
+                report_params[channel_type + '_channels'].append(trace_info)
+        except Exception as e:
+            error_count += 1
+            msg = str(e)
+            g_log.error(traceback.format_exc())
+            g_log.error(msg)
 
     loop_time = timeit.default_timer()
-    g_log.info("Time spent processing data files: {0} seconds".format((loop_time - arr_time)))
+    g_log.debug("Time spent processing data files: {0} seconds".format((loop_time - arr_time)))
+    debug_info['timing']['all_proc'] = loop_time - arr_time
 
     # Check centring behaviour
     if len(centring.columns) > 0:
@@ -474,10 +478,11 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         ctx = ''
 
         centring_plot = os.path.join(output_dir, 'centring_{0}.png'.format(obs_log['OBS ID'].values[0]))
-        fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-        is_centred.astype(float).plot(kind='line', ax=ax)
-        fig.savefig(centring_plot)
-        plt.close(fig)
+        if not (use_existing_plots and os.path.isfile(centring_plot)):
+            fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
+            is_centred.astype(float).plot(kind='line', ax=ax)
+            fig.savefig(centring_plot)
+            plt.close(fig)
 
         report_params['centring'] = {
             'plot': centring_plot,
@@ -485,22 +490,25 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         }
 
     centre_time = timeit.default_timer()
-    g_log.info("Time spent checking centring behaviour: {0} seconds".format((centre_time - loop_time)))
+    g_log.debug("Time spent checking centring behaviour: {0} seconds".format((centre_time - loop_time)))
+    debug_info['timing']['centring_summary'] = centre_time - loop_time
 
     # Parse gap information for report
+    # TODO: Include check for duplicates (may come out of buffered seismic data)
     if len(all_gaps) > 0:
         report_params['gapList'] = []
         for gap in all_gaps:
             report_params['gapList'].append({
                 'id': '.'.join(gap[0:4]),
-                'start': gap[4].strftime('%Y-%m-%d %H:%M:%S.%f'),
-                'end': gap[5].strftime('%Y-%m-%d %H:%M:%S.%f'),
-                'sec': gap[6],
+                'start': gap[4].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                'end': gap[5].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                'sec': '{:.3f}'.format(gap[6]),
                 'samp': gap[7]
             })
 
     gap_time = timeit.default_timer()
-    g_log.info("Time spent formatting gap information: {0} seconds".format((gap_time - centre_time)))
+    g_log.debug("Time spent formatting gap information: {0} seconds".format((gap_time - centre_time)))
+    debug_info['timing']['gap_format'] = gap_time - centre_time
 
     # Combine voltage/power statistics and make plots
     if len(avg_power) > 0 or len(voltage_stats) > 0:
@@ -529,27 +537,30 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
         # Average power vs time
         avgpow_plot = os.path.join(output_dir, 'power_mean_{0}.png'.format(obs_log['OBS ID'].values[0]))
-        fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-        power_stats.plot(x='Plot_Time', y='Power_Mean', kind='line', ax=ax, xlabel='Date/Time', ylabel='Average Power Consumption (W)')
-        fig.tight_layout()
-        fig.savefig(avgpow_plot)
-        plt.close(fig)
+        if not (use_existing_plots and os.path.isfile(avgpow_plot)):
+            fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
+            power_stats.plot(x='Plot_Time', y='Power_Mean', kind='line', ax=ax, xlabel='Date/Time', ylabel='Average Power Consumption (W)', legend=False)
+            fig.tight_layout()
+            fig.savefig(avgpow_plot)
+            plt.close(fig)
 
         # Average voltage vs time
         avgvlt_plot = os.path.join(output_dir, 'voltage_mean_{0}.png'.format(obs_log['OBS ID'].values[0]))
-        fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-        power_stats.plot(x='Plot_Time', y='Voltage_Mean', kind='line', ax=ax, xlabel='Date/Time', ylabel='Average Voltage (V)')
-        fig.tight_layout()
-        fig.savefig(avgvlt_plot)
-        plt.close(fig)
+        if not (use_existing_plots and os.path.isfile(avgvlt_plot)):
+            fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
+            power_stats.plot(x='Plot_Time', y='Voltage_Mean', kind='line', ax=ax, xlabel='Date/Time', ylabel='Average Voltage (V)', legend=False)
+            fig.tight_layout()
+            fig.savefig(avgvlt_plot)
+            plt.close(fig)
 
         # Voltage gradient vs time
         vltgrd_plot = os.path.join(output_dir, 'voltage_gradient_{0}.png'.format(obs_log['OBS ID'].values[0]))
-        fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-        power_stats.plot(x='Plot_Time', y='Voltage_gradient', kind='line', ax=ax, xlabel='Date/Time', ylabel='Voltage Gradient (mV/day)')
-        fig.tight_layout()
-        fig.savefig(vltgrd_plot)
-        plt.close(fig)
+        if not (use_existing_plots and os.path.isfile(vltgrd_plot)):
+            fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
+            power_stats.plot(x='Plot_Time', y='Voltage_gradient', kind='line', ax=ax, xlabel='Date/Time', ylabel='Voltage Gradient (mV/day)', legend=False)
+            fig.tight_layout()
+            fig.savefig(vltgrd_plot)
+            plt.close(fig)
 
         report_params['batteryStats'] = {}
         report_params['batteryStats']['meanPowerPlot'] = avgpow_plot
@@ -568,7 +579,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         report_params['batteryStats']['HibernateEstimate'] = min_hib.strftime('%Y-%m-%d')
 
     battery_time = timeit.default_timer()
-    g_log.info("Time spent checking battery stats: {0} seconds".format((battery_time - gap_time)))
+    g_log.debug("Time spent checking battery stats: {0} seconds".format((battery_time - gap_time)))
+    debug_info['timing']['battery_summary'] = battery_time - gap_time
 
     # Sort channel information by specified order
     for ch_type in ['seismic', 'ocean', 'power', 'health']:
@@ -588,11 +600,14 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     report_pdf = os.path.join(output_dir, 'QC_report_{0}_auto.pdf'.format(obs_log['OBS ID'].values[0]))
     report_converted = pypandoc.convert_text(report_buffer, to='pdf', format='md', outputfile=report_pdf, extra_args=pandoc_args)
+    g_log.info("Report saved as {0}".format(report_pdf))
 
     report_time = timeit.default_timer()
-    g_log.info("Time spent creating report: {0} seconds".format((report_time - battery_time)))
+    g_log.debug("Time spent creating report: {0} seconds".format((report_time - battery_time)))
+    debug_info['timing']['create_report'] = report_time - battery_time
 
     g_log.info("end")
+    print(debug_info)
 
 
 if __name__ == '__main__':
@@ -628,10 +643,15 @@ if __name__ == '__main__':
     parser.add_argument('--detrend_seismic', dest="detrend_seis", action="store_true",
                         help="Detrend seismic data (RMS linear fit). False by default.")
     parser.add_argument('--skip_backup', dest="skip_backup", action="store_true",
-                        help="If true, will skip creating a backup copy of the raw data files.")
+                        help="Skip creating a backup copy of the raw data files. False by default.")
+    parser.add_argument('--use_existing_plots', dest='use_existing_plots', action='store_true',
+                        help='Do not re-create plots which already exist in output directory. False by default.')
     # TODO: When using ST, project name will come from there instead
     parser.add_argument('--projectname', dest="project_name", help="Project name to be displayed in reports")
     parser.add_argument('--config', dest='config_path', help="Path to config file (if not using default).")
+    parser.add_argument('--debug', dest='debug', action='store_true',
+                        help="Activate debug mode (more verbose logging).")
+    # TODO: Implement a config file to replace most of these arguments (simplify terminal command to make it more user-friendly to run)
 
     try:
         start_time = datetime.now()
@@ -639,7 +659,7 @@ if __name__ == '__main__':
         args = parser.parse_args()
         obs_id = args.obs_id
 
-        g_log = logger.get_general_logger(start_time, obs_id)
+        g_log = logger.get_general_logger(start_time, obs_id, debug=args.debug)
         g_log.info("\n\n=====================================================================")
         g_log.info("Starting job: {0}".format(str(args)))
 
@@ -702,6 +722,8 @@ if __name__ == '__main__':
                 channel_map = nf.io.read_channel_map(os.path.join(data_dir, args.channel_map))
             else:
                 channel_map = nf.io.read_channel_map(args.channel_map)
+        else:
+            g_log.info("No channel map provided. Channel IDs will be processed as they appear in the raw data files.")
 
         metadata_file = None
         if args.metadata_file:
@@ -721,11 +743,6 @@ if __name__ == '__main__':
         # Read project metadata JSON file
         project_meta = None
         # TODO: Replace with ST integration once we have an instance running
-        if channel_map is None:
-            g_log.info("No channel map provided. Checking data directory for project_info.json...")
-        else:
-            # TODO: This seems a bit weird... make these log statements more sensical
-            g_log.info("Reading project metadata from [data_dir]/project_info.json...")
         # Search data_dir for project JSON (should have channel descriptions)
         if args.extra_meta:
             if args.relative_paths:
@@ -735,6 +752,7 @@ if __name__ == '__main__':
         else:
             project_json = os.path.join(data_dir, 'project_info.json')
         if os.path.isfile(project_json):
+            g_log.info("Reading project metadata from {0}...".format(project_json))
             pj = open(project_json)
             project_meta = json.load(pj)
         else:
@@ -782,7 +800,10 @@ if __name__ == '__main__':
         g_log.info("Time spent parsing arguments and preparing to process data: {0} seconds".format(setup_time - t0))
 
         # Process data files to apply clock drift correction and update metadata
-        process(data_dir, base_meta, args.network_id, config, output_dir, metadata_file, channel_map, project_meta, not args.function_check, args.detrend_seis, not args.skip_backup, **report_kwargs)
+        process(data_dir, base_meta, args.network_id, config, output_dir=output_dir, metadata=metadata_file,
+                channel_map=channel_map, project_meta=project_meta, full=(not args.function_check),
+                detrend=args.detrend_seis, backup=(not args.skip_backup), use_existing_plots=args.use_existing_plots,
+                **report_kwargs)
 
         proc_time = timeit.default_timer()
         g_log.info("Time spent processing data: {0} seconds".format(proc_time - setup_time))
@@ -790,10 +811,20 @@ if __name__ == '__main__':
         g_log.info("Processing complete!")
         end_time = datetime.now()
         run_time = timeit.default_timer() - t0
-        g_log.info("Total run time: {0} seconds".format(run_time))
+        if run_time < 60:
+            g_log.info("Total run time: {0} seconds".format(run_time))
+        elif run_time < 3600:
+            g_log.info("Total run time: {0} seconds ({1} minutes)".format(run_time, run_time/60))
+        elif run_time < 3600*24:
+            g_log.info("Total run time: {0} seconds ({1} hours)".format(run_time, run_time/3600))
+        else:
+            g_log.info("Total run time: {0} seconds ({1} days)".format(run_time, run_time/3600/24))
 
         logger.close_logs()
+
+        print(gc.get_stats())
     except Exception as e:
         print(traceback.print_exc())
         parser.print_help()
+        print(gc.get_stats())
         exit(1)

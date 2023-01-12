@@ -68,7 +68,7 @@ Power spectral density curves are calculated using {{ psdWindowLength }} Hann wi
 The following gaps/overlaps were observed in the recorded data.
 
 | Channel | Start Time | End Time | Length (s) | Samples |
-|:--------|:-----------|:---------|-----------:|--------:|
+|:--|:---|:---|-:|-:|
 {% for gap in gapList %}
 | {{ gap.id }} | {{ gap.start }} | {{ gap.end }} | {{ gap.sec }} | {{ gap.samp }} |
 {% endfor %}
@@ -100,21 +100,33 @@ SEED ID: {{ ch.seedID }}
 Orientation: {{ ch.azimuth }} / {{ ch.dip }}
 {% endif %}
 
+{% if ch.traceLoc %}
 ### Full trace
 
 ![Recorded data for channel {{ ch.seedID }}]({{ ch.traceLoc }})
+{% endif %}
 
+{% if ch.specLoc %}
 ### Spectrogram
 
-![Spectrogram of channel {{ ch.seedID }}]({{ ch.specLoc }})
-
-### Power Spectral Density
-
-![Power spectral density curves for channel {{ ch.seedID }}]({{ ch.psdLoc }})
+{% for spec in ch.specLoc %}
+![Spectrogram of channel {{ ch.seedID }} for {{ spec.start }} to {{ spec.end }}]({{ spec.image }})
 
 {% endfor %}
+{% endif %}
+
+{% if ch.psdLoc %}
+### Power Spectral Density
+
+{% for psd in ch.psdLoc %}
+![Power spectral density curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
+
+{% endfor %}
+{% endif %}
 
 \newpage{}
+
+{% endfor %}
 
 # Oceanographic Data
 

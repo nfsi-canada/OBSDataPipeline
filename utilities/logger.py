@@ -21,7 +21,7 @@ general_log = None
 verbose_setting = None
 
 
-def get_general_logger(start=datetime.now(), obs_id="AQU-0000"):
+def get_general_logger(start=datetime.now(), obs_id="AQU-0000", debug=False):
     global general_log_handle
     global general_log
 
@@ -29,7 +29,10 @@ def get_general_logger(start=datetime.now(), obs_id="AQU-0000"):
         return general_log
 
     log = logging.getLogger('general_log')
-    log.setLevel(logging.INFO)
+    if debug:
+        log.setLevel(logging.DEBUG)
+    else:
+        log.setLevel(logging.INFO)
     general_log_name = start.strftime('%Y-%m-%d_%H-%M-%S') + '_' + obs_id + '.log'
     general_log_handle = logging.FileHandler(os.path.join(logs_dir, general_log_name), mode='a')
     general_log_handle.setLevel(logging.INFO)

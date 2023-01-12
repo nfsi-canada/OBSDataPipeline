@@ -117,6 +117,8 @@ class WaveformPlotting(object):
         # Whether to use straight plotting or the fast minmax method. If not set explicitly by the user "full" method
         # will be used by default and "fast" method will be used above some threshold of data points to plot.
         self.plotting_method = kwargs.get('method', None)
+        if self.qartod:
+            self.plotting_method = 'full'   # required for colour scaling of QARTOD results
         # Below that value the data points will be plotted normally. Above it the data will be plotted using a different
         # approach (details see below). Can be overwritten by the above self.plotting_method kwarg.
         if self.type == 'section':
@@ -724,6 +726,15 @@ class WaveformPlotting(object):
                 extreme_values = np.empty((pixel_count, 2), dtype=float)
                 extreme_values[:, 0] = min_
                 extreme_values[:, 1] = max_
+            # Preserve masking for pixels where all data is masked (missing)
+            if isinstance(min_, np.ma.core.MaskedArray):
+                min_mask = np.zeros(extreme_values.shape[0], dtype=bool)
+                min_mask[:len(min_)] = min_.mask
+                extreme_values[min_mask, 0] = np.nan
+            if isinstance(max_, np.ma.core.MaskedArray):
+                max_mask = np.zeros(extreme_values.shape[0], dtype=bool)
+                max_mask[:len(max_)] = max_.mask
+                extreme_values[max_mask, 1] = np.nan
             # Finally plot the data.
             start = self._time_to_xvalue(tr.stats.starttime)
             end = self._time_to_xvalue(tr.stats.endtime)
@@ -1155,7 +1166,7 @@ class WaveformPlotting(object):
         self._tr_max_count = np.empty(self._tr_num)
         self._tr_npts = np.empty(self._tr_num)
         self._tr_delta = np.empty(self._tr_num)
-        # TODO dynamic DATA_MAXLENGTH according to dpi
+        # TODO dynamic DATA_MAXLENGTH according to dpi (this is from obspy source)
         for _i, tr in enumerate(self.stream):
             if len(tr.data) >= self.max_npts:
                 tmp_data = signal.resample(tr.data, self.max_npts)
