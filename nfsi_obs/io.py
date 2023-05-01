@@ -23,7 +23,7 @@ def parse_obs_log(log_file, delimiter=','):
                      'Surveyed Depth (m)', 'Survey Depth Error (m)', 'Survey East Error (m)', 'Survey North Error (m)',
                      'Horizontal Drift during Fall (m)', 'Bearing Surveyed from Launch', 'Surfacing Latitude',
                      'Surfacing Longitude', 'Horizontal Drift during Rise (m)', 'Bearing Surfacing from Surveyed',
-                     'Recovery Latitude', 'Recovery Longitude', 'Drift on Surface (m)']
+                     'Recovery Latitude', 'Recovery Longitude', 'Drift on Surface (km)']
     deploy_cols = ['Station', 'Planned Latitude', 'Planned Longitude', 'Planned Depth (m)', 'Launch Latitude',
                    'Launch Longitude', 'Water Depth at Launch (m)', 'Distance Launch from Planned (km)',
                    'Launch Date/Time (UTC)', 'Date/Time on Seafloor (UTC)', 'Survey Start Date/Time (UTC)',
@@ -31,12 +31,12 @@ def parse_obs_log(log_file, delimiter=','):
                    'Minimus Firmware', 'Femtomus Firmware', 'Acoustic Modem Address', 'Acoustic Modem UID',
                    'Apollo S/N', 'XMB S/N', 'Radio beacon frequency (MHz)', 'Battery SOC at Deployment',
                    'Burn-wire Batch', 'Burn-wire Widget Test Voltage', 'Burn-wire Dunker Test Voltage', 'Comments']
-    recover_cols = ['Station', 'Surveyed Latitude', 'Surveyed Longitude', 'Water Depth (m)', 'OBS Name', 'OBS ID',
+    recover_cols = ['Station', 'Deployed Latitude', 'Deployed Longitude', 'Water Depth (m)', 'OBS Name', 'OBS ID',
                     'Acoustic Modem Address', 'Acoustic Modem UID', 'Date/Time Acoustic Contact Established (UTC)',
-                    'Date/Time Released from Anchor (UTC)', 'Surfacing Date/Time (UTC)', 'On Deck Date/Time (UTC)',
+                    'Date/Time Released from Anchor (UTC)', 'Surfacing Date/Time (UTC)', 'On-Deck Date/Time (UTC)',
                     'Date/Time Recording Stopped (UTC)', 'Surfacing Latitude', 'Surfacing Longitude',
-                    'Horizontal Drift during Rise (m)', 'Recovery Latitude', 'Recovery Longitude',
-                    'Drift on Surface (m)', 'Clock Offset at Seabed (ms)', 'Clock Offset on Deck (ms)',
+                    'Horizontal Drift during Rise (km)', 'Recovery Latitude', 'Recovery Longitude',
+                    'Drift on Surface (km)', 'Clock Offset at Seabed (ms)', 'Clock Offset on Deck (ms)',
                     'Battery SOC (%)', 'Backup hard drive IDs', 'Comments']
 
     log_info = {}
@@ -56,7 +56,7 @@ def parse_obs_log(log_file, delimiter=','):
             df.set_index('Station', drop=False, inplace=True)
 
         loc_info = locations[['Station', 'OBS Name', 'OBS ID', 'Launch Date/Time (UTC)', 'Date/Time on Seafloor (UTC)', 'Date/Time Released (UTC)', 'Recovery Date/Time (UTC)']].copy()
-        rec_info = recovery[['Surveyed Latitude', 'Surveyed Longitude', 'Water Depth (m)', 'Clock Offset on Deck (ms)']].copy()
+        rec_info = recovery[['Deployed Latitude', 'Deployed Longitude', 'Water Depth (m)', 'Clock Offset on Deck (ms)']].copy()
         dm_info = pd.merge(loc_info, rec_info, left_index=True, right_index=True, how='outer')
 
         log_info['locations'] = locations

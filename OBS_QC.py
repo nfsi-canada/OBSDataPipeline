@@ -780,8 +780,8 @@ if __name__ == '__main__':
         report_kwargs['stationName'] = base_meta['Station'].values[0]
         report_kwargs['obsName'] = base_meta['OBS Name'].values[0]
         report_kwargs['obsId'] = base_meta['OBS ID'].values[0]
-        report_kwargs['latitude'] = base_meta['Surveyed Latitude'].values[0]
-        report_kwargs['longitude'] = base_meta['Surveyed Longitude'].values[0]
+        report_kwargs['latitude'] = base_meta['Deployed Latitude'].values[0]
+        report_kwargs['longitude'] = base_meta['Deployed Longitude'].values[0]
         report_kwargs['waterDepth'] = base_meta['Water Depth (m)'].values[0]
         report_kwargs['deployed'] = pd.to_datetime(base_meta['Launch Date/Time (UTC)'].values[0])
         report_kwargs['deployComments'] = dep['Comments'].values[0]
