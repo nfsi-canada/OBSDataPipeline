@@ -1,0 +1,16 @@
+[common]
+# General settings
+log_dir=~/resource/OBSDataPipeline/logs
+pdftex_path=C:/texlive/2021/bin/win32/pdflatex
+
+
+[sensor_tracker]
+# Sensor tracker configuration
+#  host_url: URL to connect to instance of sensor_tracker
+#  user_token: auth token associated with user in instance of sensor_tracker
+
+
+[seismic]
+window_length=3600
+overlap_percent=50
+spectrogram_window=3600
