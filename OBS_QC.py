@@ -614,9 +614,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Perform basic QC for OBS data. Will correct channel identifiers if '
                                                  'optional --channelmap argument is provided. Does not require clock '
                                                  'drift correction to have been applied.')
-    parser.add_argument('--data_dir', dest="data_dir", help="Directory where OBS data is stored.")
+    parser.add_argument('--base_dir', dest='base_dir', help="Base directory where all files are stored (or will be "
+                                                            "specified relative to).")
     parser.add_argument('--relative_paths', dest="relative_paths", action="store_true",
-                        help="If true, all other path arguments are specified relative to the data directory.")
+                        help="If true, all other path arguments are specified relative to the base directory.")
+    parser.add_argument('--data_dir', dest="data_dir", help="Directory where OBS data is stored.")
     parser.add_argument('--datalog', dest="datalog",
                         help="Log file from deployment/recovery. Must include station identifiers and clock drift "
                              "measurements. If not specified, assumed to be a file called 'log.xlsx' in the data "
@@ -647,7 +649,9 @@ if __name__ == '__main__':
     parser.add_argument('--use_existing_plots', dest='use_existing_plots', action='store_true',
                         help='Do not re-create plots which already exist in output directory. False by default.')
     # TODO: When using ST, project name will come from there instead
-    parser.add_argument('--projectname', dest="project_name", help="Project name to be displayed in reports")
+    parser.add_argument('--projectname', dest="project_name",
+                        help="Project name to be displayed in reports. If not specified, code looks in file extra_meta "
+                             "instead.")
     parser.add_argument('--config', dest='config_path', help="Path to config file (if not using default).")
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help="Activate debug mode (more verbose logging).")
@@ -670,25 +674,52 @@ if __name__ == '__main__':
         elif re.match(r'D[aA][lL][_\-][0-9]{2,3}', obs_identifier):
             id_type = 'obs_name'
 
-        if args.data_dir:
-            data_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.data_dir)))
+        if args.base_dir:
+            base_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.base_dir)))
         else:
-            data_dir = os.path.join(resource_dir, 'test_data')
+            base_dir = None
+
+        if args.config_path:
+            if args.relative_paths:
+                if base_dir is not None:
+                    config = config_handler.get_config(os.path.join(base_dir, args.config_path))
+                else:
+                    raise RuntimeError('Missing command-line argument: Cannot use relative paths if no base_dir specified.')
+            else:
+                config = config_handler.get_config(os.path.abspath(os.path.expanduser(os.path.expandvars(args.config_path))))
+        else:
+            config = config_handler.get_config()
+
+        if base_dir is None:
+            base_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(config.get('dataset', 'base_dir', fallback=resource_dir))))
+        if args.relative_paths:
+            relpath = True
+        else:
+            relpath = config.get('dataset', 'relative_paths', fallback=False)
+
+        if args.data_dir:
+            if relpath:
+                data_dir = os.path.join(base_dir, args.data_dir)
+            else:
+                data_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.data_dir)))
+        else:
+            folder = config.get('dataset', 'data_dir', fallback='test_data')
+            data_dir = os.path.join(resource_dir, folder)
 
         output_dir = None
         if args.outdir is not None:
-            if args.relative_paths:
-                output_dir = os.path.join(data_dir, args.outdir)
+            if relpath:
+                output_dir = os.path.join(base_dir, args.outdir)
             else:
                 output_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.outdir)))
 
         if args.datalog:
-            if args.relative_paths:
-                data_log_file = os.path.join(data_dir, args.datalog)
+            if relpath:
+                data_log_file = os.path.join(base_dir, args.datalog)
             else:
                 data_log_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.datalog)))
         else:
-            data_log_file = os.path.join(data_dir, 'log.xlsx')
+            data_log_file = os.path.join(base_dir, 'log.xlsx')
 
         g_log.info('Reading project metadata from {0}...'.format(data_log_file))
         obs_log_info = nf.io.parse_obs_log(data_log_file, args.log_delim)
@@ -718,8 +749,8 @@ if __name__ == '__main__':
 
         channel_map = None
         if args.channel_map:
-            if args.relative_paths:
-                channel_map = nf.io.read_channel_map(os.path.join(data_dir, args.channel_map))
+            if relpath:
+                channel_map = nf.io.read_channel_map(os.path.join(base_dir, args.channel_map))
             else:
                 channel_map = nf.io.read_channel_map(args.channel_map)
         else:
@@ -727,30 +758,22 @@ if __name__ == '__main__':
 
         metadata_file = None
         if args.metadata_file:
-            if args.relative_paths:
-                metadata_file = os.path.join(data_dir, args.metadata_file)
+            if relpath:
+                metadata_file = os.path.join(base_dir, args.metadata_file)
             else:
                 metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.metadata_file)))
-
-        if args.config_path:
-            if args.relative_paths:
-                config = config_handler.get_config(os.path.join(data_dir, args.config_path))
-            else:
-                config = config_handler.get_config(os.path.abspath(os.path.expanduser(os.path.expandvars(args.config_path))))
-        else:
-            config = config_handler.get_config()
 
         # Read project metadata JSON file
         project_meta = None
         # TODO: Replace with ST integration once we have an instance running
         # Search data_dir for project JSON (should have channel descriptions)
         if args.extra_meta:
-            if args.relative_paths:
-                project_json = os.path.join(data_dir, args.extra_meta)
+            if relpath:
+                project_json = os.path.join(base_dir, args.extra_meta)
             else:
                 project_json = os.path.abspath(os.path.expanduser(os.path.expandvars(args.extra_meta)))
         else:
-            project_json = os.path.join(data_dir, 'project_info.json')
+            project_json = os.path.join(base_dir, 'project_info.json')
         if os.path.isfile(project_json):
             g_log.info("Reading project metadata from {0}...".format(project_json))
             pj = open(project_json)
