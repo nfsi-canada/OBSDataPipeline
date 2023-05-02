@@ -1,3 +1,4 @@
+import io
 import os
 import configparser
 import shutil
@@ -23,4 +24,15 @@ def get_config(config_path=None):
     # Load info from the config file
     config = configparser.ConfigParser()
     config.read(config_path)
+    config['dataset']['config_path'] = config_path
     return config
+
+
+def copy_config(old_config):
+    config_string = io.StringIO()
+    old_config.write(config_string)
+    config_string.seek(0)
+
+    new_config = configparser.ConfigParser()
+    new_config.read(config_string)
+    return new_config

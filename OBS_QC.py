@@ -35,7 +35,7 @@ if not os.path.isdir(resource_dir):
 
 
 def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, project_meta=None,
-            full=True, detrend=False, backup=True, use_existing_plots=False, **kwargs):
+            full=True, detrend=False, backup=True, use_existing_plots=False, flags_from_config=False, **kwargs):
     """
     Extra keyword arguments are included as report parameters (must match variables in template file).
     """
@@ -104,12 +104,14 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 g_log.info("Found dataless SEED volume in data directory: {0}".format(seed_files[0]))
             # take first dataless SEED file
             station_info = nf.metadata.read_dataless(seed_files[0])
+            config['dataset']['metadata'] = seed_files[0]
         elif len(xml_files) > 0:
             for xf in xml_files:
                 is_sxml = validate_stationxml(xf)[0]
                 if is_sxml and (station_info is None):
                     g_log.info("Found StationXML file in data directory: {0}".format(xf))
                     station_info = obspy.read_inventory(xf)
+                    config['dataset']['metadata'] = xf
         else:
             g_log.warning("No metadata file provided, and none found in data directory.")
 
@@ -138,6 +140,10 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         else:
             g_log.info("Skipping backup of raw data")
         output_dir = data_dir
+
+    # Write QC processing configuration to file
+    with open(os.path.join(output_dir, 'QC_config.ini'), 'w') as configfile:
+        config.write(configfile)
 
     search_time = timeit.default_timer()
     g_log.debug("Time spent searching for data files and backing up raw data: {0} seconds".format((search_time - meta_time)))
@@ -613,7 +619,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Perform basic QC for OBS data. Will correct channel identifiers if '
                                                  'optional --channelmap argument is provided. Does not require clock '
-                                                 'drift correction to have been applied.')
+                                                 'drift correction to have been applied. For most parameters, command '
+                                                 'line arguments will override values in config.ini file.')
     parser.add_argument('--base_dir', dest='base_dir', help="Base directory where all files are stored (or will be "
                                                             "specified relative to).")
     parser.add_argument('--relative_paths', dest="relative_paths", action="store_true",
@@ -623,14 +630,14 @@ if __name__ == '__main__':
                         help="Log file from deployment/recovery. Must include station identifiers and clock drift "
                              "measurements. If not specified, assumed to be a file called 'log.xlsx' in the data "
                              "directory. Preferred format is XLSX (or similar spreadsheet) following NFSI template.")
-    parser.add_argument('--logdelimiter', dest="log_delim", default=",",
+    parser.add_argument('--logdelimiter', dest="log_delim",
                         help="If the OBS log file is delimited text (other than comma-delimited), use this to specify "
                              "the column delimiter.")
-    parser.add_argument('--obsid', dest="obs_id", default="AQU-0000",
+    parser.add_argument('--obsid', dest="obs_id",
                         help="OBS identifier: station name or serial number")
-    parser.add_argument('--network', dest="network_id", default='XX',
+    parser.add_argument('--network', dest="network_id",
                         help="Network identifier assigned by FDSN for this project. Default 'XX' for test data.")
-    parser.add_argument('--outdir', dest="outdir", default=None,
+    parser.add_argument('--outdir', dest="outdir",
                         help="Output directory, if different from data directory")
     parser.add_argument('--channelmap', dest="channel_map",
                         help="File mapping as-recorded channel codes to their correct values.")
@@ -654,25 +661,19 @@ if __name__ == '__main__':
                              "instead.")
     parser.add_argument('--config', dest='config_path', help="Path to config file (if not using default).")
     parser.add_argument('--debug', dest='debug', action='store_true',
-                        help="Activate debug mode (more verbose logging).")
+                        help="Activate debug mode (more verbose logging). Command-line only.")
     # TODO: Implement a config file to replace most of these arguments (simplify terminal command to make it more user-friendly to run)
 
     try:
         start_time = datetime.now()
         t0 = timeit.default_timer()
         args = parser.parse_args()
+        # TODO: Handle when obs_id is only given in config...
         obs_id = args.obs_id
 
         g_log = logger.get_general_logger(start_time, obs_id, debug=args.debug)
         g_log.info("\n\n=====================================================================")
         g_log.info("Starting job: {0}".format(str(args)))
-
-        obs_identifier = args.obs_id
-        id_type = 'unknown'
-        if re.match(r'AQU-[0-9a-fA-F]{4}', obs_identifier):
-            id_type = 'serial'
-        elif re.match(r'D[aA][lL][_\-][0-9]{2,3}', obs_identifier):
-            id_type = 'obs_name'
 
         if args.base_dir:
             base_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.base_dir)))
@@ -680,6 +681,7 @@ if __name__ == '__main__':
             base_dir = None
 
         if args.config_path:
+            config_path = args.config_path
             if args.relative_paths:
                 if base_dir is not None:
                     config = config_handler.get_config(os.path.join(base_dir, args.config_path))
@@ -690,39 +692,88 @@ if __name__ == '__main__':
         else:
             config = config_handler.get_config()
 
+        # Copy existing config info and add/update from command line arguments
+        full_config = config_handler.copy_config(config)
+
         if base_dir is None:
-            base_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(config.get('dataset', 'base_dir', fallback=resource_dir))))
+            base_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(config.get('dataset', 'base_dir', fallback=os.path.join(resource_dir, 'test_data')))))
+        full_config['dataset']['base_dir'] = base_dir
+
         if args.relative_paths:
             relpath = True
         else:
-            relpath = config.get('dataset', 'relative_paths', fallback=False)
+            relpath = config.getboolean('dataset', 'relative_paths', fallback=False)
+        full_config['dataset']['relative_paths'] = str(relpath)
+
+        if args.obs_id:
+            obs_identifier = args.obs_id
+        else:
+            obs_identifier = config.get('dataset', 'obsid', fallback=None)
+        if obs_identifier is None:
+            warnings.warn('No valid OBS identifier given, using default AQU-0000.')
+            g_log.warn('No valid OBS identifier given, using default AQU-0000.')
+            obs_identifier = 'AQU-0000'
+        full_config['dataset']['obsid'] = obs_identifier
+        id_type = 'unknown'
+        if re.match(r'AQU-[0-9a-fA-F]{4}', obs_identifier):
+            id_type = 'serial'
+        elif re.match(r'D[aA][lL][_\-][0-9]{2,3}', obs_identifier):
+            id_type = 'obs_name'
 
         if args.data_dir:
-            if relpath:
-                data_dir = os.path.join(base_dir, args.data_dir)
-            else:
-                data_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.data_dir)))
+            data_path = args.data_dir
         else:
-            folder = config.get('dataset', 'data_dir', fallback='test_data')
-            data_dir = os.path.join(resource_dir, folder)
-
-        output_dir = None
-        if args.outdir is not None:
+            data_path = config.get('dataset', 'data_dir', fallback=None)
+        if data_path is not None:
+            full_config['dataset']['data_dir'] = data_path
             if relpath:
-                output_dir = os.path.join(base_dir, args.outdir)
+                data_dir = os.path.join(base_dir, data_path)
             else:
-                output_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.outdir)))
+                data_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(data_path)))
+        else:
+            data_dir = os.path.join(base_dir, 'AQU-0260')
+            if relpath:
+                full_config['dataset']['data_dir'] = 'AQU-0260'
+            else:
+                full_config['dataset']['data_dir'] = data_dir
+
+        output_dir, out_path = None, None
+        if args.outdir:
+            out_path = args.outdir
+        else:
+            out_path = config.get('dataset', 'outdir', fallback=None)
+        if out_path is not None:
+            full_config['dataset']['outdir'] = out_path
+            if relpath:
+                output_dir = os.path.join(base_dir, out_path)
+            else:
+                output_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(out_path)))
 
         if args.datalog:
+            datalog = args.datalog
+        else:
+            datalog = config.get('dataset', 'datalog', fallback=None)
+        if datalog is not None:
+            full_config['dataset']['datalog'] = datalog
             if relpath:
-                data_log_file = os.path.join(base_dir, args.datalog)
+                data_log_file = os.path.join(base_dir, datalog)
             else:
-                data_log_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.datalog)))
+                data_log_file = os.path.abspath(os.path.expanduser(os.path.expandvars(datalog)))
         else:
             data_log_file = os.path.join(base_dir, 'log.xlsx')
+            if relpath:
+                full_config['dataset']['datalog'] = 'log.xlsx'
+            else:
+                full_config['dataset']['datalog'] = data_log_file
+
+        if args.log_delim:
+            log_delim = args.log_delim
+        else:
+            log_delim = config.get('dataset', 'logdelimiter', fallback=',')
+        full_config['dataset']['logdelimiter'] = log_delim
 
         g_log.info('Reading project metadata from {0}...'.format(data_log_file))
-        obs_log_info = nf.io.parse_obs_log(data_log_file, args.log_delim)
+        obs_log_info = nf.io.parse_obs_log(data_log_file, log_delim)
         # Find this OBS in the basic, deployment, and recovery metadata tables
         base_meta, dep, rec = None, None, None
         if id_type == 'serial':
@@ -749,15 +800,25 @@ if __name__ == '__main__':
 
         channel_map = None
         if args.channel_map:
+            ch_map = args.channel_map
+        else:
+            ch_map = config.get('dataset', 'channelmap', fallback=None)
+        if ch_map is not None:
+            full_config['dataset']['channelmap'] = ch_map
             if relpath:
-                channel_map = nf.io.read_channel_map(os.path.join(base_dir, args.channel_map))
+                channel_map = nf.io.read_channel_map(os.path.join(base_dir, ch_map))
             else:
-                channel_map = nf.io.read_channel_map(args.channel_map)
+                channel_map = nf.io.read_channel_map(ch_map)
         else:
             g_log.info("No channel map provided. Channel IDs will be processed as they appear in the raw data files.")
 
         metadata_file = None
         if args.metadata_file:
+            meta_file = args.metadata_file
+        else:
+            meta_file = config.get('dataset', 'metadata', fallback=None)
+        if meta_file is not None:
+            full_config['dataset']['metadata'] = meta_file
             if relpath:
                 metadata_file = os.path.join(base_dir, args.metadata_file)
             else:
@@ -768,18 +829,28 @@ if __name__ == '__main__':
         # TODO: Replace with ST integration once we have an instance running
         # Search data_dir for project JSON (should have channel descriptions)
         if args.extra_meta:
+            json_file = args.extra_meta
+        else:
+            json_file = config.get('dataset', 'extra_meta', fallback=None)
+        if json_file is not None:
+            full_config['dataset']['extra_meta'] = json_file
             if relpath:
-                project_json = os.path.join(base_dir, args.extra_meta)
+                project_json = os.path.join(base_dir, json_file)
             else:
-                project_json = os.path.abspath(os.path.expanduser(os.path.expandvars(args.extra_meta)))
+                project_json = os.path.abspath(os.path.expanduser(os.path.expandvars(json_file)))
         else:
             project_json = os.path.join(base_dir, 'project_info.json')
+            if relpath:
+                full_config['dataset']['extra_meta'] = 'project_info.json'
+            else:
+                full_config['dataset']['extra_meta'] = project_json
         if os.path.isfile(project_json):
             g_log.info("Reading project metadata from {0}...".format(project_json))
             pj = open(project_json)
             project_meta = json.load(pj)
         else:
             g_log.info("No project metadata JSON found at {0}".format(project_json))
+            full_config.remove_option('dataset', 'extra_meta')
 
         station_meta = None
         if project_meta is not None:
@@ -788,12 +859,25 @@ if __name__ == '__main__':
             except (KeyError, IndexError):
                 g_log.info("No matching station information found in project metadata JSON.")
 
+        for flag, key in zip([args.function_check, args.detrend_seis, args.skip_backup, args.use_existing_plots, args.debug], ['function_check', 'detrend_seismic', 'skip_backup', 'use_existing_plots', 'debug']):
+            config_flag = config.getboolean('dataset', key, fallback=False)
+            # only overwrite existing flags if CL arguments are present and different from config
+            if flag and not config_flag:
+                full_config['dataset'][key] = str(flag)
+
+        if args.network_id:
+            network = args.network_id
+        else:
+            network = config.get('dataset', 'network', fallback='XX')
+        full_config['dataset']['network'] = network
+
         # Gather some basic information for report
         report_kwargs = {
             'today': datetime.now().strftime('%Y-%m-%d'),
         }
         if args.project_name:
             report_kwargs['projectName'] = args.project_name
+            full_config['dataset']['projectname'] = args.project_name
         elif project_meta is not None:
             report_kwargs['projectName'] = project_meta['project']
         else:
@@ -823,10 +907,8 @@ if __name__ == '__main__':
         g_log.info("Time spent parsing arguments and preparing to process data: {0} seconds".format(setup_time - t0))
 
         # Process data files to apply clock drift correction and update metadata
-        process(data_dir, base_meta, args.network_id, config, output_dir=output_dir, metadata=metadata_file,
-                channel_map=channel_map, project_meta=project_meta, full=(not args.function_check),
-                detrend=args.detrend_seis, backup=(not args.skip_backup), use_existing_plots=args.use_existing_plots,
-                **report_kwargs)
+        process(data_dir, base_meta, network, full_config, output_dir=output_dir, metadata=metadata_file,
+                channel_map=channel_map, project_meta=project_meta, flags_from_config=True, **report_kwargs)
 
         proc_time = timeit.default_timer()
         g_log.info("Time spent processing data: {0} seconds".format(proc_time - setup_time))
