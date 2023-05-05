@@ -47,6 +47,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     # Get flags from config if necessary
     if flags_from_config:
+        # False fallback value will default to same values as function definition
         full = not config.get('dataset', 'function_check', fallback=False)
         detrend = config.get('dataset', 'detrend_seismic', fallback=False)
         backup = not config.get('dataset', 'skip_backup', fallback=False)
