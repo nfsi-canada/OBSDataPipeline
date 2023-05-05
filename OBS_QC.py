@@ -62,12 +62,14 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     # Windowing parameters for seismic data
     win_len = 3600
-    overlap = 0.75
+    overlap = 0.5
     if 'psdWindowsSecs' in report_params:
         win_len = report_params['psdWindowSecs']
     if 'psdOverlapPercent' in report_params:
         overlap = report_params['psdOverlapPercent'] / 100
-    spec_win = int(config.get('seismic', 'spectrogram_window', fallback=60))
+    spec_win = config.getint('seismic', 'spectrogram_window', fallback=60)
+    for key, val in zip(['window_length', 'overlap_percent', 'spectrogram_window'], [win_len, overlap, spec_win]):
+        config['seismic'][key] = str(val)
 
     base_time = timeit.default_timer()
     g_log.debug("Basic processing setup time: {0} seconds".format((base_time - proc_start)))
@@ -910,8 +912,8 @@ if __name__ == '__main__':
         if station_meta is not None:
             if 'qc_intro' in station_meta:
                 report_kwargs['introText'] = station_meta['qc_intro']
-        report_kwargs['psdWindowSecs'] = int(config.get('seismic', 'window_length'))
-        report_kwargs['psdOverlapPercent'] = int(config.get('seismic', 'overlap_percent'))
+        report_kwargs['psdWindowSecs'] = config.getint('seismic', 'window_length')
+        report_kwargs['psdOverlapPercent'] = config.getint('seismic', 'overlap_percent')
 
         setup_time = timeit.default_timer()
         g_log.info("Time spent parsing arguments and preparing to process data: {0} seconds".format(setup_time - t0))
