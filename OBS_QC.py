@@ -45,6 +45,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     debug_info = {'timing': {}}
 
+    # Get flags from config if necessary
+    if flags_from_config:
+        full = not config.get('dataset', 'function_check', fallback=False)
+        detrend = config.get('dataset', 'detrend_seismic', fallback=False)
+        backup = not config.get('dataset', 'skip_backup', fallback=False)
+        use_existing_plots = config.get('dataset', 'use_existing_plots', fallback=False)
+
     # Initialize report parameters dictionary with input keywords
     report_params = {}
     report_params.update(kwargs)
@@ -820,9 +827,9 @@ if __name__ == '__main__':
         if meta_file is not None:
             full_config['dataset']['metadata'] = meta_file
             if relpath:
-                metadata_file = os.path.join(base_dir, args.metadata_file)
+                metadata_file = os.path.join(base_dir, meta_file)
             else:
-                metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.metadata_file)))
+                metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(meta_file)))
 
         # Read project metadata JSON file
         project_meta = None
@@ -877,11 +884,13 @@ if __name__ == '__main__':
         }
         if args.project_name:
             report_kwargs['projectName'] = args.project_name
-            full_config['dataset']['projectname'] = args.project_name
+        elif config.get('dataset', 'projectname', fallback=None) is not None:
+            report_kwargs['projectName'] = config.get('dataset', 'projectname')
         elif project_meta is not None:
             report_kwargs['projectName'] = project_meta['project']
         else:
             report_kwargs['projectName'] = 'Test Recording'
+        full_config['dataset']['projectname'] = report_kwargs['projectName']
         if project_meta['common_intro']:
             report_kwargs['intro_pt1'] = project_meta['common_intro']
         report_kwargs['stationName'] = base_meta['Station'].values[0]
