@@ -75,19 +75,23 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     g_log.debug("Basic processing setup time: {0} seconds".format((base_time - proc_start)))
     debug_info['timing']['base_setup'] = base_time - proc_start
 
-    # Start/end of time period to analyze: (1) on seafloor, (2) off-ship, (3) project start/end
+    # Start/end of time period to analyze: (1) on seafloor, (2) off-ship, (3) deployment start/end, (4) project start/end
     data_start, data_end = None, None
     if not pd.isnull(obs_log['Date/Time on Seafloor (UTC)'].values[0]):
         data_start = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time on Seafloor (UTC)'].values[0]))
     elif not pd.isnull(obs_log['Launch Date/Time (UTC)'].values[0]):
         data_start = obspy.UTCDateTime(pd.to_datetime(obs_log['Launch Date/Time (UTC)'].values[0]))
-    elif project_meta['start_date']:
+    elif 'start_date' in project_meta['this_deployment']:
+        data_start = obspy.UTCDateTime(project_meta['this_deployment']['start_date'])
+    elif 'start_date' in project_meta:
         data_start = obspy.UTCDateTime(project_meta['start_date'])
     if not pd.isnull(obs_log['Date/Time Released (UTC)'].values[0]):
         data_end = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time Released (UTC)'].values[0]))
     elif not pd.isnull(obs_log['Recovery Date/Time (UTC)'].values[0]):
         data_end = obspy.UTCDateTime(pd.to_datetime(obs_log['Recovery Date/Time (UTC)'].values[0]))
-    elif project_meta['end_date']:
+    elif 'end_date' in project_meta['this_deployment']:
+        data_end = obspy.UTCDateTime(project_meta['this_deployment']['end_date']) + 24 * 60 * 60
+    elif 'end_date' in project_meta:
         data_end = obspy.UTCDateTime(project_meta['end_date']) + 24 * 60 * 60
 
     # Read station metadata file
@@ -645,6 +649,7 @@ if __name__ == '__main__':
                              "the column delimiter.")
     parser.add_argument('--obsid', dest="obs_id",
                         help="OBS identifier: station name or serial number")
+    parser.add_argument('--start', dest="startdate", help="Start date of deployment to be analyzed, as YYYYMMDD")
     parser.add_argument('--network', dest="network_id",
                         help="Network identifier assigned by FDSN for this project. Default 'XX' for test data.")
     parser.add_argument('--outdir', dest="outdir",
@@ -862,12 +867,40 @@ if __name__ == '__main__':
             g_log.info("No project metadata JSON found at {0}".format(project_json))
             full_config.remove_option('dataset', 'extra_meta')
 
+        deploy_start = None
+        if args.startdate:
+            deploy_start = datetime.strptime(args.startdate, "%Y%m%d")
+        elif config.get('dataset', 'start'):
+            deploy_start = datetime.strptime(config.get('dataset', 'start'), "%Y%m%d")
+        if deploy_start is not None:
+            meta_start = min(base_meta['Launch Date/Time (UTC)'].values[0], base_meta['Date/Time on Seafloor (UTC)'].values[0])
+            if meta_start.date() != deploy_start.date():
+                g_log.warning("Start time in metadata file ({0}) is different from runtime/config argument ({1}).".format(meta_start.strftime('%Y-%m-%d'), deploy_start.strftime('%Y-%m-%d')))
+
         station_meta = None
         if project_meta is not None:
             try:
                 station_meta = list(filter(lambda x: x['name'] == base_meta['Station'].values[0], project_meta['stations']))[0]
             except (KeyError, IndexError):
                 g_log.info("No matching station information found in project metadata JSON.")
+            finally:
+                project_meta['this_deployment'] = {}
+        if station_meta is not None:
+            if 'deployments' in station_meta:
+                if len(station_meta['deployments']) > 1:
+                    if deploy_start is not None:
+                        deployment = list(filter(lambda x: x['start_date'] == deploy_start.strftime('%Y-%m-%d'), station_meta['deployments']))
+                        if len(deployment) > 0:
+                            project_meta['this_deployment'] = deployment[0]
+                        else:
+                            g_log.info("No deployment found for station {0} with start date {1}.".format(obs_identifier, deploy_start.strftime('%Y-%m-%d')))
+                    else:
+                        g_log.error("Multiple matching deployments found. Please specify start date.")
+                else:
+                    project_meta['this_deployment'] = station_meta['deployments'][0]
+            else:
+                deployment = station_meta
+                project_meta['this_deployment'] = deployment
 
         for flag, key in zip([args.function_check, args.detrend_seis, args.skip_backup, args.use_existing_plots, args.debug], ['function_check', 'detrend_seismic', 'skip_backup', 'use_existing_plots', 'debug']):
             config_flag = config.getboolean('dataset', key, fallback=False)
@@ -909,9 +942,8 @@ if __name__ == '__main__':
         report_kwargs['deploymentDays'] = (report_kwargs['recovered'] - report_kwargs['deployed']) / timedelta(days=1)
         report_kwargs['clockDrift'] = base_meta['Clock Offset on Deck (ms)'].values[0]
         report_kwargs['batteryLevel'] = rec['Battery SOC (%)'].values[0]
-        if station_meta is not None:
-            if 'qc_intro' in station_meta:
-                report_kwargs['introText'] = station_meta['qc_intro']
+        if 'qc_intro' in project_meta['this_deployment']:
+            report_kwargs['introText'] = project_meta['this_deployment']['qc_intro']
         report_kwargs['psdWindowSecs'] = config.getint('seismic', 'window_length')
         report_kwargs['psdOverlapPercent'] = config.getint('seismic', 'overlap_percent')
 
