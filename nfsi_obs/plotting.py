@@ -31,6 +31,8 @@ NHNM_B = [-17.23, -80.5, -23.87, 32.51, 18.08, -32.95, -127.18, -22.42, -163.98,
 NHNM_P = [0.1, 0.22, 0.32, 0.8, 3.8, 4.6, 6.3, 7.9, 15.4, 20., 354.8]
 NHNM = [[1./p for p in NHNM_P], [a + b * np.log10(p) for a, b, p in zip(NHNM_A, NHNM_B, NHNM_P)]]
 
+# TODO: Determine appropriate min/max values for colour scale of spectrograms
+
 
 def month_start_end(dttm):
     """
@@ -431,9 +433,9 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             return report_info
 
     # If no start/end information given, fallback to start/end dates from project metadata (JSON or [future] ST integration)
-    if start is None and project_meta['start_date']:
+    if start is None and 'start_date' in project_meta:
         start = obspy.UTCDateTime(project_meta['start_date'])
-    if end is None and project_meta['end_date']:
+    if end is None and 'end_date' in project_meta:
         end = obspy.UTCDateTime(project_meta['end_date']) + 24 * 60 * 60
 
     buffer_length = 2   # number of files to keep in memory at a given time; testing shows using more files per buffer loop does not improve performance

@@ -67,6 +67,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         win_len = report_params['psdWindowSecs']
     if 'psdOverlapPercent' in report_params:
         overlap = report_params['psdOverlapPercent'] / 100
+    if not config.has_section('seismic'):
+        config.add_section('seismic')
     spec_win = config.getint('seismic', 'spectrogram_window', fallback=60)
     for key, val in zip(['window_length', 'overlap_percent', 'spectrogram_window'], [win_len, overlap, spec_win]):
         config['seismic'][key] = str(val)
@@ -230,9 +232,17 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 startend = timeit.default_timer()
                 debug_info['timing']['long_series_check'] += startend - ch_start
 
+                plot_len = None
+                if (files_end - files_start) < timedelta(days=31).total_seconds():
+                    # Less than 1 month of data recorded, just make one plot
+                    plot_end = files_end + 24 * 60 * 60
+                    plot_days = plot_end.date - files_start.date
+                    plot_len = np.round(plot_days.total_seconds() / 60 / 60 / 24)
+
                 trace_info, gaps, buff_time = nf.plotting.buffer_seismic_data(files['path'].values, output_dir, g_log,
                                                                               network_id, station_info, channel_map,
                                                                               project_meta, win_len, spec_win, overlap,
+                                                                              plot_length=plot_len, start=data_start, end=data_end,
                                                                               use_existing_plots=use_existing_plots)
                 for key in buff_time:
                     if key in debug_info['timing']:
@@ -362,12 +372,20 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                         start_plots = timeit.default_timer()
                         # Spectrogram
-                        trace_info['specLoc'] = nf.plotting.spectrogram(tr, output_dir, spec_win, overlap, use_existing_plots)
+                        trace_info['specLoc'] = [{
+                            'image': nf.plotting.spectrogram(tr, output_dir, spec_win, overlap, use_existing_plots),
+                            'start': tr.stats.starttime.strftime('%Y-%m-%d'),
+                            'end': tr.stats.endtime.strftime('%Y-%m-%d')
+                        }]
                         done_spec = timeit.default_timer()
                         debug_info['timing']['spec_plot'] += done_spec - start_plots
 
                         # Plot PSDs of data
-                        trace_info['psdLoc'] = nf.plotting.psd_plot(tr, output_dir, win_len, overlap, use_existing_plots)
+                        trace_info['psdLoc'] = [{
+                            'image': nf.plotting.psd_plot(tr, output_dir, win_len, overlap, use_existing_plots),
+                            'start': tr.stats.starttime.strftime('%Y-%m-%d'),
+                            'end': tr.stats.endtime.strftime('%Y-%m-%d')
+                        }]
                         done_psd = timeit.default_timer()
                         debug_info['timing']['psd_plot'] += done_psd - done_spec
 
@@ -695,6 +713,7 @@ if __name__ == '__main__':
         else:
             base_dir = None
 
+        # TODO: Can't use relative path for config if base_dir is not a command line argument
         if args.config_path:
             config_path = args.config_path
             if args.relative_paths:
@@ -751,6 +770,7 @@ if __name__ == '__main__':
                 full_config['dataset']['data_dir'] = 'AQU-0260'
             else:
                 full_config['dataset']['data_dir'] = data_dir
+        data_dir = os.path.normpath(data_dir)
 
         output_dir, out_path = None, None
         if args.outdir:
@@ -763,6 +783,7 @@ if __name__ == '__main__':
                 output_dir = os.path.join(base_dir, out_path)
             else:
                 output_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(out_path)))
+            output_dir = os.path.normpath(output_dir)
 
         if args.datalog:
             datalog = args.datalog
@@ -774,12 +795,13 @@ if __name__ == '__main__':
                 data_log_file = os.path.join(base_dir, datalog)
             else:
                 data_log_file = os.path.abspath(os.path.expanduser(os.path.expandvars(datalog)))
+            data_log_file = os.path.normpath(data_log_file)
         else:
             data_log_file = os.path.join(base_dir, 'log.xlsx')
             if relpath:
                 full_config['dataset']['datalog'] = 'log.xlsx'
             else:
-                full_config['dataset']['datalog'] = data_log_file
+                full_config['dataset']['datalog'] = os.path.normpath(data_log_file)
 
         if args.log_delim:
             log_delim = args.log_delim
@@ -790,7 +812,7 @@ if __name__ == '__main__':
         deploy_start = None
         if args.startdate:
             deploy_start = datetime.strptime(args.startdate, "%Y%m%d")
-        elif config.get('dataset', 'start'):
+        elif config.get('dataset', 'start', fallback=False):
             deploy_start = datetime.strptime(config.get('dataset', 'start'), "%Y%m%d")
 
         g_log.info('Reading project metadata from {0}...'.format(data_log_file))
@@ -835,7 +857,7 @@ if __name__ == '__main__':
         else:
             ch_map = config.get('dataset', 'channelmap', fallback=None)
         if ch_map is not None:
-            full_config['dataset']['channelmap'] = ch_map
+            full_config['dataset']['channelmap'] = os.path.normpath(ch_map)
             if relpath:
                 channel_map = nf.io.read_channel_map(os.path.join(base_dir, ch_map))
             else:
@@ -849,7 +871,7 @@ if __name__ == '__main__':
         else:
             meta_file = config.get('dataset', 'metadata', fallback=None)
         if meta_file is not None:
-            full_config['dataset']['metadata'] = meta_file
+            full_config['dataset']['metadata'] = os.path.normpath(meta_file)
             if relpath:
                 metadata_file = os.path.join(base_dir, meta_file)
             else:
@@ -864,7 +886,7 @@ if __name__ == '__main__':
         else:
             json_file = config.get('dataset', 'extra_meta', fallback=None)
         if json_file is not None:
-            full_config['dataset']['extra_meta'] = json_file
+            full_config['dataset']['extra_meta'] = os.path.normpath(json_file)
             if relpath:
                 project_json = os.path.join(base_dir, json_file)
             else:
@@ -874,13 +896,13 @@ if __name__ == '__main__':
             if relpath:
                 full_config['dataset']['extra_meta'] = 'project_info.json'
             else:
-                full_config['dataset']['extra_meta'] = project_json
+                full_config['dataset']['extra_meta'] = os.path.normpath(project_json)
         if os.path.isfile(project_json):
-            g_log.info("Reading project metadata from {0}...".format(project_json))
+            g_log.info("Reading project metadata from {0}...".format(os.path.normpath(project_json)))
             pj = open(project_json)
             project_meta = json.load(pj)
         else:
-            g_log.info("No project metadata JSON found at {0}".format(project_json))
+            g_log.info("No project metadata JSON found at {0}".format(os.path.normpath(project_json)))
             full_config.remove_option('dataset', 'extra_meta')
 
         station_meta = None
@@ -926,7 +948,7 @@ if __name__ == '__main__':
         }
         if args.project_name:
             report_kwargs['projectName'] = args.project_name
-        elif config.get('dataset', 'projectname', fallback=None) is not None:
+        elif config.get('dataset', 'projectname', fallback=False):
             report_kwargs['projectName'] = config.get('dataset', 'projectname')
         elif project_meta is not None:
             report_kwargs['projectName'] = project_meta['project']
