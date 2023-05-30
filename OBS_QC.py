@@ -787,6 +787,12 @@ if __name__ == '__main__':
             log_delim = config.get('dataset', 'logdelimiter', fallback=',')
         full_config['dataset']['logdelimiter'] = log_delim
 
+        deploy_start = None
+        if args.startdate:
+            deploy_start = datetime.strptime(args.startdate, "%Y%m%d")
+        elif config.get('dataset', 'start'):
+            deploy_start = datetime.strptime(config.get('dataset', 'start'), "%Y%m%d")
+
         g_log.info('Reading project metadata from {0}...'.format(data_log_file))
         obs_log_info = nf.io.parse_obs_log(data_log_file, log_delim)
         # Find this OBS in the basic, deployment, and recovery metadata tables
@@ -810,8 +816,18 @@ if __name__ == '__main__':
 
         if base_meta is None or base_meta.empty:
             raise IndexError('OBS {0} not found in provided metadata.'.format(obs_identifier))
+        if deploy_start is not None:
+            base_meta = base_meta.loc[(base_meta['Launch Date/Time (UTC)'] >= deploy_start) & (base_meta['Launch Date/Time (UTC)'] < deploy_start + timedelta(days=1))]
         if base_meta.shape[0] > 1:
-            raise IndexError('Multiple entries found for OBS {0} in provided metadata. Please use a unique identifier.'.format(obs_identifier))
+            raise IndexError('Multiple entries found for OBS {0} in provided metadata. Please use a unique identifier or provide start date.'.format(obs_identifier))
+
+        if deploy_start is not None:
+            meta_start = min(base_meta['Launch Date/Time (UTC)'].values[0],
+                             base_meta['Date/Time on Seafloor (UTC)'].values[0])
+            if meta_start.date() != deploy_start.date():
+                g_log.warning(
+                    "Start time in metadata file ({0}) is different from runtime/config argument ({1}).".format(
+                        meta_start.strftime('%Y-%m-%d'), deploy_start.strftime('%Y-%m-%d')))
 
         channel_map = None
         if args.channel_map:
@@ -866,16 +882,6 @@ if __name__ == '__main__':
         else:
             g_log.info("No project metadata JSON found at {0}".format(project_json))
             full_config.remove_option('dataset', 'extra_meta')
-
-        deploy_start = None
-        if args.startdate:
-            deploy_start = datetime.strptime(args.startdate, "%Y%m%d")
-        elif config.get('dataset', 'start'):
-            deploy_start = datetime.strptime(config.get('dataset', 'start'), "%Y%m%d")
-        if deploy_start is not None:
-            meta_start = min(base_meta['Launch Date/Time (UTC)'].values[0], base_meta['Date/Time on Seafloor (UTC)'].values[0])
-            if meta_start.date() != deploy_start.date():
-                g_log.warning("Start time in metadata file ({0}) is different from runtime/config argument ({1}).".format(meta_start.strftime('%Y-%m-%d'), deploy_start.strftime('%Y-%m-%d')))
 
         station_meta = None
         if project_meta is not None:
