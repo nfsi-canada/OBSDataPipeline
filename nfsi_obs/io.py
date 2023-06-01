@@ -57,7 +57,7 @@ def parse_obs_log(log_file, delimiter=','):
 
         loc_info = locations[['Station', 'OBS Name', 'OBS ID', 'Launch Date/Time (UTC)', 'Date/Time on Seafloor (UTC)', 'Date/Time Released (UTC)', 'Recovery Date/Time (UTC)']].copy()
         rec_info = recovery[['Deployed Latitude', 'Deployed Longitude', 'Water Depth (m)', 'Clock Offset on Deck (ms)']].copy()
-        dm_info = pd.merge(loc_info, rec_info, left_index=True, right_index=True, how='outer')
+        dm_info = pd.concat([loc_info, rec_info], axis=1)
 
         log_info['locations'] = locations
         log_info['deployment'] = deployment

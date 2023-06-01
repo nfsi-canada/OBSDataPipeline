@@ -372,6 +372,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                         start_plots = timeit.default_timer()
                         # Spectrogram
+                        # TODO: Make x-axis labels for spectrogram meaningful (currently shows seconds starting from 0)
                         trace_info['specLoc'] = [{
                             'image': nf.plotting.spectrogram(tr, output_dir, spec_win, overlap, use_existing_plots),
                             'start': tr.stats.starttime.strftime('%Y-%m-%d'),
@@ -846,7 +847,7 @@ if __name__ == '__main__':
         if deploy_start is not None:
             meta_start = min(base_meta['Launch Date/Time (UTC)'].values[0],
                              base_meta['Date/Time on Seafloor (UTC)'].values[0])
-            if meta_start.date() != deploy_start.date():
+            if pd.Timestamp(meta_start).to_pydatetime().date() != deploy_start.date():
                 g_log.warning(
                     "Start time in metadata file ({0}) is different from runtime/config argument ({1}).".format(
                         meta_start.strftime('%Y-%m-%d'), deploy_start.strftime('%Y-%m-%d')))
