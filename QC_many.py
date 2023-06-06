@@ -1,3 +1,11 @@
+"""
+Run field data QC script (OBS_QC.py) for several instruments sequentially. This is especially useful for dry-land test
+deployments, when many instruments will be "recovered" in a short time and data volumes per instrument are relatively
+low (a few days to up to a few months normally).
+
+Author: K. Bosman
+June 1, 2023
+"""
 import subprocess
 import timeit
 
