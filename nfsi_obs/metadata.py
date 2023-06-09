@@ -79,9 +79,13 @@ def update_metadata(data, network_id, log=None, station_info=None, channel_map=N
         # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
         if channel_map is not None:
             ch_info = channel_map.loc[tr.id]
+            if ch_info.empty:   # channel not in map, leave unchanged
+                continue
             for code in ['Network', 'Station', 'Location', 'Channel', 'Description']:
                 if ch_info[code] is not None and ~check_nan(ch_info[code]):
                     tr.meta[code.lower()] = ch_info[code]
+                else:
+                    tr.meta[code.lower()] = ''
         if tr.meta.network != network_id:
             raise AssertionError('Channel {0} is not in network {1}'.format(tr.id, network_id))
 

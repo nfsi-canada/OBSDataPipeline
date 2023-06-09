@@ -220,13 +220,12 @@ if __name__ == '__main__':
             # Populate metadata from other files as necessary
             data = nf.metadata.update_metadata(data, network_id, station_info=station_info, channel_map=channel_map)
 
-            timestamp = str(data.stats.starttime.year).zfill(4) + '.' + str(data.stats.starttime.julday).zfill(3)
             no_writing = True
             if args.overwrite:
                 no_writing = False
             else:
                 for tr in data:
-                    filename = timestamp + '.' + data[0].id + '.SAC'
+                    filename = str(tr.stats.starttime.year).zfill(4) + '.' + str(tr.stats.starttime.julday).zfill(3) + '.' + tr.id + '.SAC'
                     if not os.path.isfile(os.path.join(dataout, filename)):
                         no_writing = False
 
@@ -237,14 +236,14 @@ if __name__ == '__main__':
             # Replicate data filtering/downsampling from OBStools atacr_download_data.py
             data.detrend('demean')
             data.detrend('linear')
-            data.filter('lowpass', freq=0.5*args.new_sampling_rate, corner=2, zerophase=True)
+            data.filter('lowpass', freq=0.5*args.new_sampling_rate, corners=2, zerophase=True)
             data.resample(args.new_sampling_rate)
 
             data.remove_response(pre_filt=args.pre_filt, output=args.units)
 
             for tr in data:
                 tr = utils.update_stats(tr, sta.latitude, sta.longitude, sta.elevation, tr.stats.channel)
-                tr.write(os.path.join(dataout, timestamp + '.' + tr.id + '.SAC'), format='SAC')
+                tr.write(os.path.join(dataout, str(tr.stats.starttime.year).zfill(4) + '.' + str(tr.stats.starttime.julday).zfill(3) + '.' + tr.id + '.SAC'), format='SAC')
 
         end_time = datetime.now()
         run_time = timeit.default_timer() - t0
