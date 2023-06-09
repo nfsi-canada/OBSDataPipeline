@@ -1,8 +1,10 @@
+import obspy
+from obspy.core.inventory import Network, Station, Operator, Person
 import os
 import pandas as pd
 
 
-def parse_obs_log(log_file, delimiter=','):
+def parse_obs_log(log_file, delimiter=',', network='XX'):
     """
 
     :param log_file: spreadsheet-like file with information logged during OBS deployment/recovery
@@ -68,11 +70,46 @@ def parse_obs_log(log_file, delimiter=','):
         dm_info = pd.read_csv(log_file, sep=delimiter, parse_dates=[4, 5], skipinitialspace=True)
 
     log_info['basic'] = dm_info
+
+    # Create obspy.Inventory object and add to return dictionary
+    nfsi = Operator(
+        'National Facility for Seismological Investigations',
+        contacts=[
+            Person(['NFSI'], ['National Facility for Seismological Investigations'], ['nfsi@nfsi.ca']),
+            Person(['Mladen Nedimovic'], ['National Facility for Seismological Investigations'], ['mladen@nfsi.ca']),
+        ],
+        website='https://www.nfsi.ca'
+    )
+    stations = []
+    for i in dm_info.index:
+        stations.append(Station(
+            dm_info.loc[i, 'Station'],
+            dm_info.loc[i, 'Deployed Latitude'],
+            dm_info.loc[i, 'Deployed Longitude'],
+            -dm_info.loc[i, 'Water Depth (m)'],
+            start_date=obspy.UTCDateTime(dm_info.loc[i, 'Date/Time on Seafloor (UTC)']),
+            end_date=obspy.UTCDateTime(dm_info.loc[i, 'Date/Time Released (UTC)']),
+            alternate_code=dm_info.loc[i, 'OBS ID'],
+            water_level=0,
+            operators=[nfsi]
+        ))
+    log_info['inventory'] = obspy.Inventory(
+        networks=[Network(
+            network,
+            stations=stations,
+            start_date=obspy.UTCDateTime(min(dm_info['Launch Date/Time (UTC)'])),
+            end_date=obspy.UTCDateTime(max(dm_info['Recovery Date/Time (UTC)'])),
+            operators=[nfsi]
+        )],
+        source='National Facility for Seismological Investigations',
+        sender='National Facility for Seismological Investigations'
+    )
+
     return log_info
 
 
 def read_channel_map(ch_map_file, delimiter=','):
-    """Read a spreadsheet or delimted text file mapping recorded channels to corrected channel codes"""
+    """Read a spreadsheet or delimited text file mapping recorded channels to corrected channel codes"""
     ch_map_path = os.path.abspath(os.path.expanduser(os.path.expandvars(ch_map_file)))
     filetype = os.path.splitext(ch_map_path)[-1][1:]   # remove '.' from beginning of file extension string
     ch_map = None
