@@ -12,8 +12,8 @@ import traceback
 
 channels_of_interest = ['SeisE', 'SeisN', 'SeisZ', 'SeisX']
 base_dir = 'L:/Data/Ischia test deployment'
-subfolders = ['AQU-4261', 'AQU-8263', 'AQU-B063', 'AQU-8063-time-corrected']
-#subfolders = ['AQU-8063-time-corrected']
+#subfolders = ['AQU-4261', 'AQU-8263', 'AQU-B063', 'AQU-8063-fixed']
+subfolders = ['AQU-8063-fixed']
 
 outdir = os.path.join(base_dir, 'Day-long mseed')
 if not os.path.exists(outdir):
@@ -29,7 +29,7 @@ for sf in subfolders:
         for df in data_files:
             print('Reading {}...'.format(df))
             try:
-                temp = obspy.read(df)
+                temp = obspy.read(df, header_byteorder='>')
                 for tr in temp:
                     full_data.append(tr)
             except Exception as e:
@@ -54,9 +54,10 @@ for sf in subfolders:
             cut = obspy.UTCDateTime(startday)
             while cut < endday:
                 temp = tr.slice(cut, cut + 24 * 60 * 60, nearest_sample=False)
-                print(temp)
+                stt = temp.split()  # deal with traces with gaps
+                print(stt)
 
                 outfile = os.path.join(output_dir, '{}.{}.{}.mseed'.format(cut.year, cut.julday, tr.id))
-                temp.write(outfile, format="MSEED")
+                stt.write(outfile, format="MSEED")
 
                 cut += 24 * 60 * 60
