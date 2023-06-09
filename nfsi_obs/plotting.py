@@ -624,12 +624,17 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     except (KeyError, IndexError):
                         pass
 
+            spec_lim = [None, None]
             if channel_info is not None:
                 if 'hide' in channel_info:
                     if channel_info['hide']:
                         g_log.info('Channel {0} hidden from report. Skipping analysis.'.format(this_channel.id))
                         timing['meta_admin'] += timeit.default_timer() - pull_time
                         return report_info, all_gaps, timing
+                if 'spec_min' in channel_info:
+                    spec_lim[0] = float(channel_info['spec_min'])
+                if 'spec_max' in channel_info:
+                    spec_lim[1] = float(channel_info['spec_max'])
                 if 'order' in channel_info:
                     report_info['order'] = int(channel_info['order'])
                 if 'qc_config' in channel_info:
@@ -783,7 +788,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     xmin, xmax = xextent
                     extent = xmin, xmax, sfrq[0], sfrq[-1]
 
-                    im = sax.imshow(spec_psds, cmap=None, extent=extent, vmin=None, vmax=None, origin='upper')
+                    im = sax.imshow(spec_psds, cmap=None, extent=extent, vmin=spec_lim[0], vmax=spec_lim[1], origin='upper')
                     sax.axis('auto')
                     sax._sci(im)
                     sax.set_yscale('log')
