@@ -34,7 +34,7 @@ if __name__ == '__main__':
     parser.add_argument('--network', dest="network_id",
                         help="Network identifier assigned by FDSN for this project. Default 'XX' for test data.")
     parser.add_argument('--outdir', dest="outdir",
-                        help="Output directory, if different from data directory")
+                        help="Output directory, if different from base directory.")
     parser.add_argument('--channelmap', dest="channel_map",
                         help="File mapping as-recorded channel codes to their correct values.")
     parser.add_argument('--datalog', dest="datalog",
@@ -115,9 +115,6 @@ if __name__ == '__main__':
             output_dir = os.path.normpath(output_dir)
         else:
             output_dir = base_dir
-        dataout = os.path.join(output_dir, 'DATA', obsid)
-        if not os.path.exists(dataout):
-            os.makedirs(dataout)
 
         # Deployment summary info (for station locations)
         if args.datalog:
@@ -211,6 +208,10 @@ if __name__ == '__main__':
             network_id = args.network_id
         else:
             network_id = 'XX'
+
+        dataout = os.path.join(output_dir, 'DATA', network_id + '.' + sta.code)
+        if not os.path.exists(dataout):
+            os.makedirs(dataout)
 
         datafiles = glob(os.path.join(data_dir, '**', '*.mseed'), recursive=True)
 
