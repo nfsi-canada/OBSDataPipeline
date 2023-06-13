@@ -239,12 +239,13 @@ if __name__ == '__main__':
             data.detrend('linear')
             data.filter('lowpass', freq=0.5*args.new_sampling_rate, corners=2, zerophase=True)
             data.resample(args.new_sampling_rate)
-
             data.remove_response(pre_filt=args.pre_filt, output=args.units)
 
+            data.merge()
             for tr in data:
                 tr = utils.update_stats(tr, sta.latitude, sta.longitude, sta.elevation, tr.stats.channel)
-                tr.write(os.path.join(dataout, str(tr.stats.starttime.year).zfill(4) + '.' + str(tr.stats.starttime.julday).zfill(3) + '.' + tr.id + '.SAC'), format='SAC')
+                ok = tr.split()
+                ok.write(os.path.join(dataout, str(tr.stats.starttime.year).zfill(4) + '.' + str(tr.stats.starttime.julday).zfill(3) + '.' + tr.id + '.SAC'), format='SAC')
 
         end_time = datetime.now()
         run_time = timeit.default_timer() - t0
