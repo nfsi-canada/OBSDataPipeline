@@ -35,7 +35,7 @@ if not os.path.isdir(resource_dir):
 
 
 def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, project_meta=None,
-            full=True, detrend=False, backup=True, use_existing_plots=False, flags_from_config=False, **kwargs):
+            full=True, detrend=False, backup=True, cmap=None, use_existing_plots=False, flags_from_config=False, **kwargs):
     """
     Extra keyword arguments are included as report parameters (must match variables in template file).
     """
@@ -242,7 +242,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 trace_info, gaps, buff_time = nf.plotting.buffer_seismic_data(files['path'].values, output_dir, g_log,
                                                                               network_id, station_info, channel_map,
                                                                               project_meta, win_len, spec_win, overlap,
-                                                                              plot_length=plot_len, start=data_start, end=data_end,
+                                                                              plot_length=plot_len, start=data_start,
+                                                                              end=data_end, spec_cmap=cmap,
                                                                               use_existing_plots=use_existing_plots)
                 for key in buff_time:
                     if key in debug_info['timing']:
@@ -693,6 +694,8 @@ if __name__ == '__main__':
     parser.add_argument('--projectname', dest="project_name",
                         help="Project name to be displayed in reports. If not specified, code looks in file extra_meta "
                              "instead.")
+    parser.add_argument('--colormap', dest="colormap", default=None,
+                        help="Name of matplotlib colormap to use for spectrogram plots.")
     parser.add_argument('--config', dest='config_path', help="Path to config file (if not using default).")
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help="Activate debug mode (more verbose logging). Command-line only.")
@@ -943,6 +946,12 @@ if __name__ == '__main__':
             network = config.get('dataset', 'network', fallback='XX')
         full_config['dataset']['network'] = network
 
+        if args.colormap is not None:
+            colormap = args.colormap
+        else:
+            colormap = config.get('dataset', 'colormap', fallback='viridis')
+        full_config['dataset']['colormap'] = colormap
+
         # Gather some basic information for report
         report_kwargs = {
             'today': datetime.now().strftime('%Y-%m-%d'),
@@ -981,7 +990,7 @@ if __name__ == '__main__':
 
         # Process data files to apply clock drift correction and update metadata
         process(data_dir, base_meta, network, full_config, output_dir=output_dir, metadata=metadata_file,
-                channel_map=channel_map, project_meta=project_meta, flags_from_config=True, **report_kwargs)
+                channel_map=channel_map, project_meta=project_meta, cmap=colormap, flags_from_config=True, **report_kwargs)
 
         proc_time = timeit.default_timer()
         g_log.info("Time spent processing data: {0} seconds".format(proc_time - setup_time))
