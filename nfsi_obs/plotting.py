@@ -786,7 +786,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     nover = int(overlap * npts)
 
                     spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
-                    spec_psds = 10. * np.log10(np.transpose(psd_temp_results['vpsd_array']))
+                    spec_psds = 10. * np.log10(np.transpose(psd_temp_results['psd_array']))
                     spec_psds = np.flipud(spec_psds)
 
                     pad_xextent = (npts - nover) / this_channel.stats.sampling_rate / 2
