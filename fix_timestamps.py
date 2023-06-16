@@ -8,6 +8,8 @@ from obspy.io.mseed.util import get_start_and_end_time
 import os
 from struct import unpack, pack
 
+# TODO: Make script callable with arguments (easier to reuse)
+
 base_dir = 'L:/Data/Ischia test deployment'
 subfolders = ['AQU-8063-time-corrected']
 

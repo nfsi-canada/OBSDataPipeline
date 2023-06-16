@@ -10,6 +10,8 @@ import obspy
 import os
 import traceback
 
+# TODO: Make script callable with arguments (easier to reuse)
+
 channels_of_interest = ['SeisE', 'SeisN', 'SeisZ', 'SeisX']
 base_dir = 'L:/Data/Ischia test deployment'
 #subfolders = ['AQU-4261', 'AQU-8263', 'AQU-B063', 'AQU-8063-fixed']
