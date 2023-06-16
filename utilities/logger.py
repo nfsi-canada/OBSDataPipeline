@@ -4,6 +4,7 @@ from datetime import datetime
 
 from . import config_handler
 
+# TODO: Make log directory actually user-configurable (this is restricted to specify in default config file)
 config = config_handler.get_config()
 logs_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(config.get('common', 'log_dir'))))
 if not os.path.exists(logs_dir):

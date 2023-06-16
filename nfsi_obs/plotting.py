@@ -373,7 +373,7 @@ def plot_filenames(outdir, ch_id, plot_start, plot_end):
 
 def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, channel_map=None, project_meta=None,
                         psd_win=3600, spec_win=3600, overlap=0.5, psd_over=0.75, plot_length=None, ch_id=None,
-                        start=None, end=None, detrend=False, use_existing_plots=False):
+                        start=None, end=None, detrend=False, spec_cmap=None, use_existing_plots=False):
     """
     Analyze seismic data stored in raw data files and create PSD and spectrogram plots. File paths in *files* should be
     listed in chronological order. Files must be readable by obspy.read()
@@ -395,6 +395,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     :param start: start time for data to be analyzed (e.g. when OBS reaches seafloor)
     :param end: end time for data to be analyzed (e.g. when OBS releases from anchor)
     :param detrend: if True, remove trend from trace data (RMS linear fit)
+    :param spec_cmap: colormap to use for spectrogram plot
     :param use_existing_plots: check if plots exist and do not re-create if present, False by default
 
     :return: dictionary of channel information for auto-report generation
@@ -431,10 +432,14 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             return report_info
 
     # If no start/end information given, fallback to start/end dates from project metadata (JSON or [future] ST integration)
-    if start is None and project_meta['start_date']:
+    if start is None and 'start_date' in project_meta:
         start = obspy.UTCDateTime(project_meta['start_date'])
-    if end is None and project_meta['end_date']:
+    if end is None and 'end_date' in project_meta:
         end = obspy.UTCDateTime(project_meta['end_date']) + 24 * 60 * 60
+
+    # Default colormap for spectrogram if none specified
+    if spec_cmap is None:
+        spec_cmap = 'viridis'
 
     buffer_length = 2   # number of files to keep in memory at a given time; testing shows using more files per buffer loop does not improve performance
     psd_a_plots, psd_v_plots, spec_plots = [], [], []
@@ -622,16 +627,24 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     except (KeyError, IndexError):
                         pass
 
+            spec_lim = [None, None]
             if channel_info is not None:
                 if 'hide' in channel_info:
                     if channel_info['hide']:
                         g_log.info('Channel {0} hidden from report. Skipping analysis.'.format(this_channel.id))
                         timing['meta_admin'] += timeit.default_timer() - pull_time
                         return report_info, all_gaps, timing
+                if 'spec_min' in channel_info:
+                    spec_lim[0] = float(channel_info['spec_min'])
+                if 'spec_max' in channel_info:
+                    spec_lim[1] = float(channel_info['spec_max'])
                 if 'order' in channel_info:
                     report_info['order'] = int(channel_info['order'])
                 if 'qc_config' in channel_info:
                     g_log.warn('QARTOD QC checks not yet implemented for buffered data, config ignored')
+                if 'shift' in channel_info:
+                    spec_shift = float(channel_info['shift'][this_channel.stats.station])
+                    spec_lim = [(x + spec_shift) for x in spec_lim]
 
             more_meta = timeit.default_timer()
             timing['meta_admin'] += more_meta - pull_time
@@ -781,7 +794,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     xmin, xmax = xextent
                     extent = xmin, xmax, sfrq[0], sfrq[-1]
 
-                    im = sax.imshow(spec_psds, cmap=None, extent=extent, vmin=None, vmax=None, origin='upper')
+                    im = sax.imshow(spec_psds, cmap=spec_cmap, extent=extent, vmin=spec_lim[0], vmax=spec_lim[1], origin='upper')
                     sax.axis('auto')
                     sax._sci(im)
                     sax.set_yscale('log')
