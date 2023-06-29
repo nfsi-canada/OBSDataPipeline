@@ -71,7 +71,8 @@ def parse_obs_log(log_file, delimiter=',', network='XX'):
 
     log_info['basic'] = dm_info
 
-    # Create obspy.Inventory object and add to return dictionary
+    """
+    # Create obspy.Inventory object and add to return dictionary -> needs debugging!
     nfsi = Operator(
         'National Facility for Seismological Investigations',
         contacts=[
@@ -82,13 +83,25 @@ def parse_obs_log(log_file, delimiter=',', network='XX'):
     )
     stations = []
     for i in dm_info.index:
+        if not pd.isnull(dm_info.loc[i, 'Date/Time on Seafloor (UTC)']):
+            data_start = obspy.UTCDateTime(dm_info.loc[i, 'Date/Time on Seafloor (UTC)'])
+        elif not pd.isnull(dm_info.loc[i, 'Launch Date/Time (UTC)']):
+            data_start = obspy.UTCDateTime(dm_info.loc[i, 'Launch Date/Time (UTC)'])
+        else:
+            data_start = obspy.UTCDateTime(1970, 1, 1)
+        if not pd.isnull(dm_info.loc[i, 'Date/Time Released (UTC)']):
+            data_end = obspy.UTCDateTime(dm_info.loc[i, 'Date/Time Released (UTC)'])
+        elif not pd.isnull(dm_info.loc[i, 'Recovery Date/Time (UTC)']):
+            data_end = obspy.UTCDateTime(dm_info.loc[i, 'Recovery Date/Time (UTC)'])
+        else:
+            data_end = obspy.UTCDateTime(2599, 12, 31)
         stations.append(Station(
             dm_info.loc[i, 'Station'],
             dm_info.loc[i, 'Deployed Latitude'],
             dm_info.loc[i, 'Deployed Longitude'],
             -dm_info.loc[i, 'Water Depth (m)'],
-            start_date=obspy.UTCDateTime(dm_info.loc[i, 'Date/Time on Seafloor (UTC)']),
-            end_date=obspy.UTCDateTime(dm_info.loc[i, 'Date/Time Released (UTC)']),
+            start_date=data_start,
+            end_date=data_end,
             alternate_code=dm_info.loc[i, 'OBS ID'],
             water_level=0,
             operators=[nfsi]
@@ -104,6 +117,7 @@ def parse_obs_log(log_file, delimiter=',', network='XX'):
         source='National Facility for Seismological Investigations',
         sender='National Facility for Seismological Investigations'
     )
+    """
 
     return log_info
 

@@ -771,8 +771,10 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     for f, v in zip(psd_temp_results['psd_freqs'], psd_temp_results['vpsd_array']):
                         vax.plot(f, 10. * np.log10(v), c='0.8', lw=0.5, marker=None)
                     vax.set_xscale('log')
+                    plt.grid(True, ls=':')
                     vax.set_xlabel('Frequency (Hz)')
                     vax.set_ylabel('Power Spectral Density (dB)')
+                    vax.set_xlim(xmin=1e-3)
                     plt.tight_layout()
                     psd_v_fig.savefig(psd_asis)
 
