@@ -6,69 +6,67 @@ low (a few days to up to a few months normally).
 Author: K. Bosman
 June 1, 2023
 """
+import argparse
+import json
+import os
 import subprocess
 import timeit
+import warnings
 
-full_start = timeit.default_timer()
 
-instruments = [
-    ['AQU-1B61'],
-    ['AQU-1F61'],
-    ['AQU-2A61'],
-    ['AQU-2B62'],
-    ['AQU-2C62'],
-    ['AQU-3B61', '20220715'],
-    ['AQU-0560'],
-    ['AQU-0660'],
-    ['AQU-755C', '20220715'],
-    ['AQU-1561', '20220715'],
-    ['AQU-2962'],
-    ['AQU-3661'],
-    ['AQU-BA5C'],
-    ['AQU-BA60', '20220715'],
-    ['AQU-BB60', '20220714'],
-    ['AQU-BC60', '20220715'],
-    ['AQU-BD60', '20220715'],
-    ['AQU-BE60', '20220714'],
-    ['AQU-C05E'],
-    ['AQU-C060', '20220714'],
-    ['AQU-C560', '20220714'],
-    ['AQU-C760', '20220714'],
-    ['AQU-CB5A'],
-    ['AQU-CB60', '20220715'],
-    ['AQU-CD60', '20220715'],
-    ['AQU-D261'],
-    ['AQU-D361'],
-    ['AQU-DA61'],
-    ['AQU-E361'],
-    ['AQU-E661', '20220715'],
-]
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Run field data QC script (OBS_QC.py) for several instruments sequentially.")
+    parser.add_argument('bulk_info', type=str,
+                        help="JSON file containing command-line options for QC script for all instruments as a "
+                             "dictionary.")
 
-time_info = []
+    full_start = timeit.default_timer()
+    args = parser.parse_args()
 
-for inst in instruments:
-    istart = timeit.default_timer()
 
-    args_list = [
-        'python',
-        'OBS_QC.py',
-        '--config=~/resource/OBSDataPipeline/configs/QC_config_Batch3-4_intake.ini',
-        '--data_dir={}'.format(inst[0]),
-        '--obsid={}'.format(inst[0]),
-        '--debug'
-    ]
-    if len(inst) > 1:
-        args_list.append('--start={}'.format(inst[1]))
+    # Read input JSON file
+    bulk_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.bulk_info)))
+    if not os.path.isfile(bulk_file):
+        raise IOError('Input JSON file does not exist: {}'.format(os.path.normpath(bulk_file)))
+    bf = open(bulk_file)
+    bulk = json.load(bf)
 
-    subprocess.run(args_list)
+    if 'instruments' in bulk:
+        instruments = bulk.pop('instruments')
+    else:
+        instruments = []
+        warnings.warn('No instruments specified in input JSON file.')
 
-    iend = timeit.default_timer()
-    time_info.append([inst[0], iend - istart])
+    flags = None
+    if 'flags' in bulk:
+        flags = bulk.pop('flags')
 
-full_end = timeit.default_timer()
+    time_info = []
 
-print('Runtime by instrument:')
-for ti in time_info:
-    print('{0}: {1:.3f} seconds ({2:.3f} minutes)'.format(ti[0], ti[1], ti[1] / 60))
+    for inst in instruments:
+        istart = timeit.default_timer()
 
-print('Total runtime: {0:.3f} seconds ({1:.3f} minutes)'.format(full_end - full_start, (full_end - full_start) / 60))
+        args_list = [
+            'python',
+            'OBS_QC.py',
+        ]
+        for bkey in bulk:
+            args_list.append('--{0}={1}'.format(bkey, bulk[bkey]))
+        for ikey in inst:
+            args_list.append('--{0}={1}'.format(ikey, inst[ikey]))
+        if flags is not None:
+            for f in flags:
+                args_list.append('--{0}'.format(f))
+
+        subprocess.run(args_list)
+
+        iend = timeit.default_timer()
+        time_info.append([inst['obsid'], iend - istart])
+
+    full_end = timeit.default_timer()
+
+    print('Runtime by instrument:')
+    for ti in time_info:
+        print('{0}: {1:.3f} seconds ({2:.3f} minutes)'.format(ti[0], ti[1], ti[1] / 60))
+
+    print('Total runtime: {0:.3f} seconds ({1:.3f} minutes)'.format(full_end - full_start, (full_end - full_start) / 60))
