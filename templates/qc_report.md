@@ -78,6 +78,19 @@ No recording gaps or overlaps were observed in the recorded data.
 
 {% endif %}
 
+{% if humid %}
+Abnormal changes in humidity were observed during this deployment.
+
+![Above normal changes in humidity data {{ humid.ch }} during deployment]({{ humid.plot }})
+
+| Start Time | End Time | Length (s) | Deviation (%Rh) |
+|:-|:-|-:|-:|
+{% for h in humid.triggers %}
+| {{ h.start }} | {{ h.end }} | {{ h.sec }} | {{ h.dev }} |
+{% endfor %}
+
+{% endif %}
+
 {% if centring %}
 {{ centring.text }}
 

@@ -17,6 +17,7 @@ import warnings
 
 from obspy.io.mseed.util import get_start_and_end_time
 from obspy.io.stationxml.core import validate_stationxml
+from obspy.signal.trigger import trigger_onset, plot_trigger
 from sklearn.linear_model import LinearRegression
 
 from ioos_qc import qartod
@@ -476,7 +477,57 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         done_power = timeit.default_timer()
                         debug_info['timing']['power_analysis'] += done_power - done_qartod
 
-                        # TODO: Analysis of state-of-health variables?
+                        # Check humidity data for blips (tested for Ischia 2023 deployment)
+                        if re.match(r'[A-Z]I[IO]', tr.meta.channel):
+                            hum = tr.copy()
+                            try:
+                                hum.detrend('demean')
+                                hum.detrend('linear')
+                            except Exception:
+                                pass
+
+                            hum.trigger('classicstalta', sta=60*60*3, lta=60*60*24)
+
+                            triggers = trigger_onset(hum.data, 3, 1.5)
+                            if len(triggers) > 0:
+                                plot_trigger(tr, hum.data, 3, 1.5, show=False)
+                                fig = plt.gcf()
+                                fig.savefig(os.path.join(output_dir, 'triggered_{0}.png'.format(tr.id)))
+
+                                trig_secs = triggers * hum.stats.delta
+                                trig_times = [[hum.stats.starttime + float(y) for y in x] for x in trig_secs]
+
+                                humidity_blips = []
+                                for tt in trig_times:
+                                    ht = tr.slice(tt[0], tt[1], nearest_sample=False)
+                                    back = tr.slice(tt[0] - 24 * 60 * 60, tt[0], nearest_sample=False)
+                                    bm = np.mean(back.data)
+                                    hx = ht.max()
+                                    hn = np.min(ht.data)
+                                    if abs(hx - bm) > abs(hn - bm):
+                                        dev = hx - bm
+                                    else:
+                                        dev = hn - bm
+
+                                    humidity_blips.append({
+                                        'start': tt[0].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                                        'end': tt[1].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                                        'sec': '{:.1f}'.format(tt[1] - tt[0]),
+                                        'dev': '{:.3f}'.format(dev)
+                                    })
+
+                                if 'humid' in report_params:
+                                    g_log.warn('Multiple humidity channels processed for instrument {}. Only first '
+                                               'plot will be included in report.'.format(obs_id))
+                                    report_params['humid']['triggers'].extend(humidity_blips)
+                                else:
+                                    report_params['humid'] = {
+                                        'ch': tr.id,
+                                        'plot': os.path.join(output_dir, 'triggered_{0}.png'.format(tr.id)),
+                                        'triggers': humidity_blips
+                                    }
+
+                        # TODO: Analysis of other state-of-health variables?
                         # TODO: Down-sample external pressure and temperature data (plot and save as netCDF)
 
                     tran_time = timeit.default_timer()
