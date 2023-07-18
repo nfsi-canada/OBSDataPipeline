@@ -41,7 +41,6 @@ for inst in instruments:
         'python',
         'OBS_QC.py',
         '--config=~/resource/OBSDataPipeline/configs/QC_config_Ischia2023.ini',
-        '--colormap=seismic',
         '--debug'
     ]
     for key in inst:

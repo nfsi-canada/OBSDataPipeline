@@ -82,7 +82,7 @@ def date_ticks(start, end, max_ticks=10):
     return tm_ticks, tm_ticklabels
 
 
-def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing_plots=False):
+def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing_plots=False, strict_lims=False):
     """
     Make time series plot(s) of an obspy.core.trace.Trace object, raw and corrected (if response information included).
 
@@ -92,6 +92,8 @@ def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing
     :param dmax: maximum data value for plot y-axis
     :param qc_config: dictionary of QC configuration in ioos_qc compatible format, optional
     :param use_existing_plots: check if plots exist and do not re-create if present, False by default
+    :param strict_lims: if True, y-axis plot limits `dmin` and `dmax` are used regardless of data range; False by
+    default, which will use automatic plot limits if smaller than range (dmin, dmax)
 
     :return: path to plot PNG file
     """
@@ -161,7 +163,14 @@ def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing
                         ax.axhspan(sus[0], sus[1], alpha=0.1, color='y')
             if hasattr(trace.meta, 'description'):
                 ax.set_ylabel("{0} ({1})".format(trace.meta.description, trace.meta.response.instrument_sensitivity.input_units))
-                ax.set_ylim(dmin, dmax)
+            # Set axis y-limits (if necessary)
+            if not strict_lims:
+                auto_y = ax.get_ylim()
+                if (dmin is None) or (dmin < auto_y[0]):
+                    dmin = auto_y[0]
+                if (dmax is None) or (dmax > auto_y[1]):
+                    dmax = auto_y[1]
+            ax.set_ylim(dmin, dmax)
             plt.grid(True, ls=':')
             fig.savefig(full_data_plot)
             plt.close(fig)
@@ -181,6 +190,15 @@ def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing
                 for sus in [low_sus, high_sus]:
                     if sus is not None:
                         ax.axhspan(sus[0], sus[1], alpha=0.1, color='y')
+                # Set axis y-limits (if necessary)
+                if not strict_lims:
+                    auto_y = ax.get_ylim()
+                    if (dmin is None) or (dmin < auto_y[0]):
+                        dmin = auto_y[0]
+                    if (dmax is None) or (dmax > auto_y[1]):
+                        dmax = auto_y[1]
+                ax.set_ylim(dmin, dmax)
+                # Save figure
                 fig.savefig(raw_data_plot)
                 plt.close(fig)
             else:

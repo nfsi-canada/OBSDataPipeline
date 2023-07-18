@@ -497,10 +497,12 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 trig_secs = triggers * hum.stats.delta
                                 trig_times = [[hum.stats.starttime + float(y) for y in x] for x in trig_secs]
 
+                                hum_filt = tr.copy()
+                                hum_filt.filter('lowpass', freq=1./(60*30))
                                 humidity_blips = []
                                 for tt in trig_times:
-                                    ht = tr.slice(tt[0], tt[1], nearest_sample=False)
-                                    back = tr.slice(tt[0] - 24 * 60 * 60, tt[0], nearest_sample=False)
+                                    ht = hum_filt.slice(tt[0], tt[1], nearest_sample=False)
+                                    back = hum_filt.slice(tt[0] - 24 * 60 * 60, tt[0], nearest_sample=False)
                                     bm = np.mean(back.data)
                                     hx = ht.max()
                                     hn = np.min(ht.data)
