@@ -666,11 +666,15 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         hib_thres = 6500
         latest_V = power_stats['Voltage_Min'].values[-1] * 1000
         latest_win = pd.to_datetime(power_stats['End'].values[-1])
-        days_to_hibernate = -(latest_V - hib_thres) / power_stats['Voltage_gradient'].values[-1]
-        const_grad = timedelta(days=days_to_hibernate) + latest_win
-        const_acc = pd.NaT
-        lookup = pd.NaT
-        min_hib = pd.Series([const_grad, const_acc, lookup]).min()
+        if latest_V > hib_thres:
+            days_to_hibernate = -(latest_V - hib_thres) / power_stats['Voltage_gradient'].values[-1]
+            const_grad = timedelta(days=days_to_hibernate) + latest_win
+            const_acc = pd.NaT
+            lookup = pd.NaT
+            min_hib = pd.Series([const_grad, const_acc, lookup]).min()
+        else:
+            # TODO: Return actual hibernation time if instrument is already below 6.5V
+            min_hib = latest_win
         report_params['batteryStats']['HibernateEstimate'] = min_hib.strftime('%Y-%m-%d')
 
     battery_time = timeit.default_timer()
@@ -1030,11 +1034,12 @@ if __name__ == '__main__':
         report_kwargs['waterDepth'] = base_meta['Water Depth (m)'].values[0]
         report_kwargs['deployed'] = pd.to_datetime(base_meta['Launch Date/Time (UTC)'].values[0])
         report_kwargs['deployComments'] = dep['Comments'].values[0]
+        # TODO: Handle case of intermediate download (no "recovery" time yet)
         report_kwargs['recovered'] = pd.to_datetime(base_meta['Recovery Date/Time (UTC)'].values[0])
         report_kwargs['recoverComments'] = rec['Comments'].values[0]
-        report_kwargs['deploymentDays'] = (report_kwargs['recovered'] - report_kwargs['deployed']) / timedelta(days=1)
-        report_kwargs['clockDrift'] = base_meta['Clock Offset on Deck (ms)'].values[0]
-        report_kwargs['batteryLevel'] = rec['Battery SOC (%)'].values[0]
+        report_kwargs['deploymentDays'] = '{:.3f}'.format((report_kwargs['recovered'] - report_kwargs['deployed']) / timedelta(days=1))
+        report_kwargs['clockDrift'] = '{:.0f}'.format(base_meta['Clock Offset on Deck (ms)'].values[0])
+        report_kwargs['batteryLevel'] = '{:.0f}'.format(rec['Battery SOC (%)'].values[0])
         if 'qc_intro' in project_meta['this_deployment']:
             report_kwargs['introText'] = project_meta['this_deployment']['qc_intro']
         report_kwargs['psdWindowSecs'] = config.getint('seismic', 'window_length')
