@@ -169,6 +169,11 @@ This instrument would be expected to enter low-power hibernate mode on or about 
 ![Average voltage, calculated for a 3-day rolling window]({{ batteryStats.meanVoltPlot }})
 
 ![Voltage gradient, calculated for a 3-day rolling window]({{ batteryStats.gradVoltPlot }})
+
+{% if batteryStats.currentPlot %}
+![Average current draw, calculated from recorded voltage and power consumption, for a 3-day rolling window]({{ batteryStats.currentPlot }})
+
+{% endif %}
 {% endif %}
 
 {% for ch in power_channels %}

@@ -1,5 +1,6 @@
 from ioos_qc import utils as iq_utils
 import numpy as np
+import obspy
 import pandas as pd
 
 from . import io, metadata, mseed, plotting, waveform
@@ -56,3 +57,47 @@ def get_true_periods(data, times=None):
             npt = 1
 
     return np.array(periods)
+
+
+def rolling_window_stats(trace, window_length=3*24*60*60, window_offset=24*60*60, full=False):
+    """
+
+    :param trace: obspy.core.trace.Trace object
+    :param window_length: length of window for averaging in seconds
+    :param window_offset: offset between adjacent windows in seconds
+    :param full: if True, calculate all possible statistics
+    :return:
+    """
+    from sklearn.linear_model import LinearRegression
+
+    trace_start = trace.meta.starttime
+    trace_end = trace.meta.endtime
+    first_window = obspy.UTCDateTime(trace_start.year, trace_start.month, trace_start.day)
+    last_window = obspy.UTCDateTime(trace_end.year, trace_end.month, trace_end.day - 1)
+
+    window_stats = []
+    window_start = first_window
+    while window_start < last_window:
+        center = window_start + window_length / 2
+        end = window_start + window_length
+        window = trace.slice(window_start, end)
+        if (not np.ma.isMaskedArray(window.data) and len(window.data) > 0) or window.data.count() > 0:
+            stats = [window_start.datetime, end.datetime, center.datetime, window.data.min(), window.max(), window.data.mean()]
+            if full:
+                days = (center - trace_start) / 60 / 60 / 24
+                secs = np.array(window.times(type='relative'))
+                if isinstance(window.data, np.ma.MaskedArray):
+                    mask = np.ma.getmaskarray(window.data)
+                    secs_valid = secs[mask == False].reshape(-1, 1)
+                    valid_data = window.data[mask == False]
+                    reg = LinearRegression().fit(secs_valid, valid_data)
+                    r2 = reg.score(secs_valid, valid_data)  # R^2 coefficient of linear fit (should be very close to 1)
+                else:
+                    reg = LinearRegression().fit(secs.reshape(-1, 1), window.data)
+                    r2 = reg.score(secs.reshape(-1, 1), window.data)
+                gradient = reg.coef_[0] * 1000 * 60 * 60 * 24  # convert V/s to mV/day for voltage gradient
+                stats.extend([gradient, r2, days])
+            window_stats.append(stats)
+        window_start += window_offset
+
+    return window_stats

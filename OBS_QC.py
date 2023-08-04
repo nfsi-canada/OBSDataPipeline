@@ -189,6 +189,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     power_stats = pd.DataFrame()
     avg_power = []
     voltage_stats = []
+    power_data = {}
 
     arr_time = timeit.default_timer()
     g_log.debug("Time spent setting up arrays for stats: {0} seconds".format((arr_time - sort_time)))
@@ -439,42 +440,22 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                             num_windows = int(round((last_window - first_window) / window_offset))
 
                             if tr.meta.channel == 'LE3':
+                                power_data[tr.meta.channel] = tr.copy()
                                 # TODO: Show power consumption as positive rather than negative (as recorded)
                                 # Power consumption
                                 report_params['meanPower'] = '{:.3f}'.format(np.mean(tr.data))
 
                                 # 3-day rolling window of average power consumption
-                                window_start = first_window
-                                while window_start < last_window:
-                                    window = tr.slice(window_start, window_start + window_length)
-                                    if (not np.ma.isMaskedArray(window.data) and len(window.data) > 0) or window.data.count() > 0:
-                                        avg_power.append([window_start.datetime, window.data.mean()])
-                                    window_start += window_offset
+                                avg_power.extend(nf.rolling_window_stats(tr, full=False))
 
                                 # TODO: Get times of data writes (spikes 45 minutes apart)
                                 if (qc_config is not None) and ('qartod' in qc_config) and ('spike_test' in qc_config['qartod']):
                                     spikes = qartod.spike_test(tr.data, **qc_config['qartod']['spike_test'])
                             if tr.meta.channel == 'ME4':
+                                power_data[tr.meta.channel] = tr.copy()
                                 # Battery voltage
                                 # 3-day rolling window for stats
-                                window_start = first_window
-                                while window_start < last_window:
-                                    window = tr.slice(window_start, window_start + window_length)
-                                    days = ((window_start + window_length / 2) - trace_start) / 60 / 60 / 24
-                                    if (not np.ma.isMaskedArray(window.data) and len(window.data) > 0) or window.data.count() > 0:
-                                        secs = np.array(window.times(type='relative'))
-                                        if isinstance(window.data, np.ma.MaskedArray):
-                                            mask = np.ma.getmaskarray(window.data)
-                                            secs_valid = secs[mask == False].reshape(-1, 1)
-                                            valid_data = window.data[mask == False]
-                                            reg = LinearRegression().fit(secs_valid, valid_data)
-                                            r2 = reg.score(secs_valid, valid_data)   # R^2 coefficient of linear fit (should be very close to 1)
-                                        else:
-                                            reg = LinearRegression().fit(secs.reshape(-1, 1), window.data)
-                                            r2 = reg.score(secs.reshape(-1, 1), window.data)
-                                        gradient = reg.coef_[0] * 1000 * 60 * 60 * 24   # convert V/s to mV/day for voltage gradient
-                                        voltage_stats.append([window_start.datetime, window.data.min(), window.max(), window.data.mean(), gradient, r2, days])
-                                    window_start += window_offset
+                                voltage_stats.extend(nf.rolling_window_stats(tr, full=True))
                         done_power = timeit.default_timer()
                         debug_info['timing']['power_analysis'] += done_power - done_qartod
 
@@ -606,13 +587,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     # Combine voltage/power statistics and make plots
     if len(avg_power) > 0 or len(voltage_stats) > 0:
-        pwr = pd.DataFrame(avg_power, columns=['Start', 'Avg_Power'])
+        pwr = pd.DataFrame(avg_power, columns=['Start', 'End', 'Center', 'Min_Power', 'Max_Power', 'Avg_Power'])
         pwr.set_index('Start', drop=False)
-        vlt = pd.DataFrame(voltage_stats, columns=['Start', 'Min_Volts', 'Max_Volts', 'Avg_Volts', 'Gradient', 'R2_coef', 'Days_Deployed'])
+        vlt = pd.DataFrame(voltage_stats, columns=['Start', 'End', 'Center', 'Min_Volts', 'Max_Volts', 'Avg_Volts', 'Gradient', 'R2_coef', 'Days_Deployed'])
         vlt.set_index('Start', drop=True)
 
         power_stats['Start'] = pwr['Start']
-        power_stats['End'] = power_stats['Start'] + timedelta(days=3)
+        power_stats['End'] = pwr['End']
         power_stats['Voltage_Min'] = vlt['Min_Volts']
         power_stats['Voltage_Max'] = vlt['Max_Volts']
         power_stats['Voltage_Mean'] = vlt['Avg_Volts']
@@ -621,7 +602,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         power_stats['Power_Mean'] = pwr['Avg_Power']
         power_stats = power_stats.assign(Aquarius_ID=report_params['obsId'])
         # TODO: Add deployment ID from Sensor Tracker integration (for combining stats with other deployments)
-        power_stats['Plot_Time'] = power_stats['Start'] + (power_stats['End'] - power_stats['Start']) / 2
+        power_stats['Plot_Time'] = pwr['Center']
         power_stats['Days_Deployed'] = vlt['Days_Deployed']
 
         # Save statistics to CSV for further analysis
@@ -676,6 +657,36 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             # TODO: Return actual hibernation time if instrument is already below 6.5V
             min_hib = latest_win
         report_params['batteryStats']['HibernateEstimate'] = min_hib.strftime('%Y-%m-%d')
+
+    if ('LE3' in power_data) and ('ME4' in power_data):
+        curr_stats = power_data['LE3'].stats.copy()
+        curr_stats.channel = 'LZ9'
+        curr_stats.description = 'Current Draw (A)'
+        if 'response' in curr_stats:
+            curr_stats.__delitem__('response')
+
+        if power_data['ME4'].stats.sampling_rate != power_data['LE3'].stats.sampling_rate:
+            factor = power_data['ME4'].stats.sampling_rate / power_data['LE3'].stats.sampling_rate
+            if (factor % 1) > 1e-5:
+                g_log.warning('Cannot resample voltage data to match power data, non-integer factor {}.'.format(factor))
+            else:
+                factor = int(factor)
+                power_data['ME4'].decimate(factor, no_filter=True, strict_length=False)
+                curr_data = -power_data['LE3'].data / power_data['ME4'].data
+                tr_curr = obspy.Trace(curr_data, curr_stats)
+                tr_curr.write(os.path.join(output_dir, 'calculated_current.mseed'), format='MSEED')
+                curr_windowed = nf.rolling_window_stats(tr_curr, full=False)
+                crnt = pd.DataFrame(curr_windowed, columns=['Start', 'End', 'Center', 'Min_Amps', 'Max_Amps', 'Avg_Amps'])
+                # Time series plot (applies instrument sensitivity in-place if response present in tr.meta)
+                current_plot = os.path.join(output_dir, 'current_{0}.png'.format(obs_log['OBS ID'].values[0]))
+                if not (use_existing_plots and os.path.isfile(current_plot)):
+                    fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
+                    crnt.plot(x='Center', y='Avg_Amps', kind='line', ax=ax, xlabel='Date/Time',
+                                     ylabel='Current Draw (A)', legend=False)
+                    fig.tight_layout()
+                    fig.savefig(current_plot)
+                    plt.close(fig)
+                report_params['batteryStats']['currentPlot'] = current_plot
 
     battery_time = timeit.default_timer()
     g_log.debug("Time spent checking battery stats: {0} seconds".format((battery_time - gap_time)))
