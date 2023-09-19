@@ -261,7 +261,7 @@ def spectrogram(trace, outdir, spec_win, overlap, use_existing_plots=False):
     return spectrogram_plot
 
 
-def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False, calc_acc=False):
+def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False, calc_acc=False, seg_len=pow(2, 17)):
     """
     Calculate PSDs of seismic data (as obspy.core.trace.Trace object)
 
@@ -272,10 +272,12 @@ def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False
     :param float sub_overlap: fractional overlap for sub-windows used in PSD calculation (Welch's average periodogram method)
     :param endtime: end time for calculation window (will analyze windows which include `endtime`), obspy.UTCDateTime
     :param bool buffered: whether the input data is being processed as part of a buffer or not
+    :param calc_acc: if True, assume input data is velocity (seismometer) and convert to acceleration
+    :param seg_len: length of PSD segment for average periodogram method (see matplotlib.mlab.psd) in data points
 
-    :returns: Calculated PSD curves in acceleration and velocity, corresponding frequencies, start of next window (if buffered is True)
+    :returns: Calculated PSD curves in acceleration (if seismometer) and data units, corresponding frequencies, start of next window (if buffered is True)
     """
-    seg_len = pow(2, 17)
+    #seg_len = pow(2, 17)
     freqs, vel_psds, times = [], [], []
     next_win_start = None
     if buffered:
@@ -289,7 +291,7 @@ def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False
                 hit_end = True
                 continue    # skip windows which start after `endtime` and reset next start to include last window in next section of buffer
         psd, frq = mlab.psd(sect.data, NFFT=seg_len, Fs=trace.meta.sampling_rate,
-                            noverlap=sub_overlap*trace.meta.sampling_rate,
+                            noverlap=int(sub_overlap*seg_len),
                             window=signal.get_window('hann', seg_len, False), detrend='linear')
         freqs.append(frq)
         vel_psds.append(psd)

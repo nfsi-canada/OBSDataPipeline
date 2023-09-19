@@ -241,7 +241,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     plot_days = plot_end.date - files_start.date
                     plot_len = np.round(plot_days.total_seconds() / 60 / 60 / 24)
 
-                trace_info, gaps, buff_time = nf.plotting.buffer_seismic_data(files['path'].values, output_dir, g_log,
+                # Ensure files are sorted alphabetically (should be same as chronological order)
+                data_files = sorted(files['path'].values)
+                trace_info, gaps, buff_time = nf.plotting.buffer_seismic_data(data_files, output_dir, g_log,
                                                                               network_id, station_info, channel_map,
                                                                               project_meta, win_len, spec_win, overlap,
                                                                               plot_length=plot_len, start=data_start,
@@ -672,6 +674,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             else:
                 factor = int(factor)
                 power_data['ME4'].decimate(factor, no_filter=True, strict_length=False)
+                power_data['ME4'].trim(starttime=power_data['LE3'].stats.starttime, endtime=power_data['LE3'].stats.endtime, nearest_sample=False)
                 curr_data = -power_data['LE3'].data / power_data['ME4'].data
                 tr_curr = obspy.Trace(curr_data, curr_stats)
                 tr_curr.write(os.path.join(output_dir, 'calculated_current.mseed'), format='MSEED')

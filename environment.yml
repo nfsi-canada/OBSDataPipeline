@@ -15,6 +15,7 @@ dependencies:
   - pip
   - pip:
     - scikit-learn
+    - seaborn
     - stdb
     - obstools
     - git+https://github.com/kaelbos/ioos_qc@high_sample_rate
