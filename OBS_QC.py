@@ -139,6 +139,14 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     # Find data files and backup if necessary
     # TODO: Remove file backup here once it has been copied to pre-processing script (QC doesn't change miniSEED files)
     raw_files = glob(os.path.join(data_dir, '**/*.mseed'), recursive=True)
+    try:
+        check_dir = output_dir
+        if check_dir is None:
+            check_dir = data_dir
+        raw_files.remove(os.path.join(check_dir, 'calculated_current.mseed'))
+    except ValueError:
+        pass
+    
     g_log.info("Found {0} miniSEED file(s) in data directory and sub-folders".format(len(raw_files)))
     debug_info['num_files'] = len(raw_files)
     backup_exists = False
@@ -674,7 +682,18 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             else:
                 factor = int(factor)
                 power_data['ME4'].decimate(factor, no_filter=True, strict_length=False)
-                power_data['ME4'].trim(starttime=power_data['LE3'].stats.starttime, endtime=power_data['LE3'].stats.endtime, nearest_sample=False)
+                power_data['ME4'].trim(starttime=power_data['LE3'].stats.starttime,
+                                       endtime=power_data['LE3'].stats.endtime, nearest_sample=True)
+                """
+                if len(power_data['LE3'].data) != len(power_data['ME4'].data):
+                    curr_len = min([len(power_data['LE3'].data), len(power_data['ME4'].data)])
+                    offset = abs(power_data['LE3'].stats.starttime - power_data['ME4'].stats.starttime) / power_data['LE3'].stats.sampling_rate
+                    if offset <= 0.5:
+                        curr_data = -power_data['LE3'].data[:curr_len] / power_data['ME4'].data[:curr_len]
+                    else:
+                        curr_data = -power_data['LE3'].data[-curr_len:] / power_data['ME4'].data[-curr_len:]
+                else:
+                """
                 curr_data = -power_data['LE3'].data / power_data['ME4'].data
                 tr_curr = obspy.Trace(curr_data, curr_stats)
                 tr_curr.write(os.path.join(output_dir, 'calculated_current.mseed'), format='MSEED')
