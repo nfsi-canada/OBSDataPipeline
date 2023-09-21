@@ -146,7 +146,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         raw_files.remove(os.path.join(check_dir, 'calculated_current.mseed'))
     except ValueError:
         pass
-    
+
     g_log.info("Found {0} miniSEED file(s) in data directory and sub-folders".format(len(raw_files)))
     debug_info['num_files'] = len(raw_files)
     backup_exists = False
@@ -490,14 +490,17 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 trig_times = [[hum.stats.starttime + float(y) for y in x] for x in trig_secs]
 
                                 hum_filt = tr.copy()
-                                hum_filt.filter('lowpass', freq=1./(60*30))
+                                hfs = hum_filt.split()
+                                hfs.filter('lowpass', freq=1./(60*30))
+                                hfs.merge()
+                                hum_filt = hfs.traces[0]
                                 humidity_blips = []
                                 for tt in trig_times:
                                     ht = hum_filt.slice(tt[0], tt[1], nearest_sample=False)
                                     back = hum_filt.slice(tt[0] - 24 * 60 * 60, tt[0], nearest_sample=False)
-                                    bm = np.mean(back.data)
+                                    bm = back.data.mean()
                                     hx = ht.max()
-                                    hn = np.min(ht.data)
+                                    hn = ht.data.min()
                                     if abs(hx - bm) > abs(hn - bm):
                                         dev = hx - bm
                                     else:
@@ -680,10 +683,10 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             if (factor % 1) > 1e-5:
                 g_log.warning('Cannot resample voltage data to match power data, non-integer factor {}.'.format(factor))
             else:
-                factor = int(factor)
-                power_data['ME4'].decimate(factor, no_filter=True, strict_length=False)
                 power_data['ME4'].trim(starttime=power_data['LE3'].stats.starttime,
                                        endtime=power_data['LE3'].stats.endtime, nearest_sample=True)
+                factor = int(factor)
+                power_data['ME4'].decimate(factor, no_filter=True, strict_length=False)
                 """
                 if len(power_data['LE3'].data) != len(power_data['ME4'].data):
                     curr_len = min([len(power_data['LE3'].data), len(power_data['ME4'].data)])
@@ -696,7 +699,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 """
                 curr_data = -power_data['LE3'].data / power_data['ME4'].data
                 tr_curr = obspy.Trace(curr_data, curr_stats)
-                tr_curr.write(os.path.join(output_dir, 'calculated_current.mseed'), format='MSEED')
+                st_curr = tr_curr.split()
+                st_curr.write(os.path.join(output_dir, 'calculated_current.mseed'), format='MSEED')
                 curr_windowed = nf.rolling_window_stats(tr_curr, full=False)
                 crnt = pd.DataFrame(curr_windowed, columns=['Start', 'End', 'Center', 'Min_Amps', 'Max_Amps', 'Avg_Amps'])
                 # Time series plot (applies instrument sensitivity in-place if response present in tr.meta)
