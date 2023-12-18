@@ -4,6 +4,7 @@ from glob import glob
 import gc
 import json
 import matplotlib.pyplot as plt
+import multiprocessing
 import numpy as np
 import obspy
 import os
@@ -747,6 +748,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
 
 if __name__ == '__main__':
+    multiprocessing.set_start_method('spawn')
+    num_cores = multiprocessing.cpu_count()
+
     parser = argparse.ArgumentParser(description='Perform basic QC for OBS data. Will correct channel identifiers if '
                                                  'optional --channelmap argument is provided. Does not require clock '
                                                  'drift correction to have been applied. For most parameters, command '
