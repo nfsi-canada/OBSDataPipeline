@@ -1,7 +1,12 @@
+from datetime import datetime, timedelta
 import obspy
 from obspy.core.inventory import Network, Station, Operator, Person
 import os
 import pandas as pd
+from pynmeagps import NMEAReader
+import warnings
+
+from sonardyne import SonardyneReader
 
 
 def parse_obs_log(log_file, delimiter=',', network='XX'):
@@ -137,3 +142,72 @@ def read_channel_map(ch_map_file, delimiter=','):
     if ch_map is not None:
         ch_map.set_index('Recorded channel ID', drop=False, inplace=True)
     return ch_map
+
+
+def parse_usbl_log(comms_log_filepath):
+    """
+    Parse communications log file from Ranger 2 USBL system
+
+    :param comms_log_filepath: Full path to communications log file
+
+    :return pandas.DataFrame of all data read from log file
+    """
+    filename = str(os.path.basename(comms_log_filepath))
+    info = filename.split('.')[0].split('_')
+    starttime = datetime.strptime(info[1], '%H%M%S')
+    startdate = datetime.strptime(info[0], '%Y%m%d')
+    sensorcat = info[2]
+    sensornumber = info[3]
+    sensortype = info[4]
+    if sensorcat not in ['Transceiver', 'TOD', 'GNSS']:
+        raise NotImplementedError('Unrecognized sensor category: {}'.format(sensorcat))
+
+    # Read file contents
+    f = open(comms_log_filepath)
+    prev_time = starttime
+    days = 0
+    log_data = []
+    while True:
+        temp = f.readline()
+        if not temp:
+            # Empty line returned for end of file
+            break
+
+        bits = temp.split()
+        if len(bits) < 1:
+            # Filter out blank lines from file (whitespace only)
+            warnings.warn('No information in line: {}'.format(temp))
+
+        clocktime = datetime.strptime(bits[1], '%H:%M:%S.%f')
+        if clocktime < prev_time:
+            days += 1
+        # TODO: Error checking for end of month
+        timestamp = datetime(startdate.year, startdate.month, startdate.day + days, clocktime.hour, clocktime.minute,
+                             clocktime.second, clocktime.microsecond)
+
+        params = {
+            'sensor_category': sensorcat,
+            'sensor_number': sensornumber,
+            'sensor_type': sensortype,
+            'clock_time': timestamp,
+        }
+        msg = bits[3]
+        msgtype = ''
+        if sensorcat == 'Transceiver':
+            info = SonardyneReader.parse(msg)
+            params.update(info)
+        elif sensorcat in ['TOD', 'GNSS']:
+            info = NMEAReader.parse(msg)
+            msgtype = info.talker + info.msgID
+            for key in info.__dict__:
+                if key[0] != '_':
+                    params.update({key: info.__dict__[key]})
+        else:
+            raise Exception('Unrecognized sensor category (uninterpretable): {}'.format(sensorcat))
+
+        params.update({'message_type': msgtype})
+        log_data.append(params)
+        prev_time = clocktime
+
+    df = pd.DataFrame(log_data)
+    return df
