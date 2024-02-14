@@ -7,6 +7,7 @@ June 6, 2023
 import argparse
 from datetime import datetime, timedelta
 from glob import glob
+import json
 import numpy as np
 import obspy
 import os
@@ -61,6 +62,37 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
     labeled_files = pd.DataFrame(labels)
     g_log.info("Files contain data for {0} unique set(s) of channels".format(len(np.unique(labeled_files['channel'].values))))
 
+    # Read metadata files (if necessary)
+    station_info, ch_map, proj_meta = None, None, None
+    net_id = 'XX'
+    if correct_meta:
+        if not isinstance(metadata_args, dict):
+            raise TypeError('Unrecognized type for metadata arguments (should be dict): {}'.format(type(metadata_args)))
+
+        if 'metadata_file' in metadata_args:
+            g_log.info("Reading metadata from file {0}".format(metadata_args['metadata_file']))
+            filetype = os.path.splitext(metadata_args['metadata_file'])[-1]
+            if filetype in ['.dataless', '.metadata']:
+                station_info = nf.metadata.read_dataless(metadata_args['metadata_file'])
+            elif filetype == '.xml':
+                # read as StationXML format
+                station_info = obspy.read_inventory(metadata_args['metadata_file'])
+            else:
+                g_log.error("Unrecognized file format. Unable to read metadata.")
+
+        if 'channel_map' in metadata_args:
+            g_log.info("Reading channel ID mapping from file {0}".format(metadata_args['channel_map']))
+            ch_map = nf.io.read_channel_map(metadata_args['channel_map'])
+
+        if 'extra_meta' in metadata_args:
+            if os.path.isfile(metadata_args['extra_meta']):
+                g_log.info("Reading project metadata from {0}...".format(os.path.normpath(metadata_args['extra_meta'])))
+                pj = open(metadata_args['extra_meta'])
+                proj_meta = json.load(pj)
+
+        if 'network_id' in metadata_args:
+            net_id = metadata_args['network_id']
+
     # Process data files by channel
     for label, files in labeled_files.groupby('channel'):
         g_log.info('Processing channel {}...'.format(label))
@@ -83,30 +115,7 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
 
         # Correct metadata (if applicable)
         if correct_meta:
-            if not isinstance(metadata_args, dict):
-                raise TypeError('Unrecognized type for metadata arguments (should be dict): {}'.format(type(metadata_args)))
-
-            station_info, channel_map = None, None
-            if 'metadata_file' in metadata_args:
-                g_log.info("Reading metadata from file {0}".format(metadata_args['metadata_file']))
-                filetype = os.path.splitext(metadata_args['metadata_file'])[-1]
-                if filetype in ['.dataless', '.metadata']:
-                    station_info = nf.metadata.read_dataless(metadata_args['metadata_file'])
-                elif filetype == '.xml':
-                    # read as StationXML format
-                    station_info = obspy.read_inventory(metadata_args['metadata_file'])
-                else:
-                    g_log.error("Unrecognized file format. Unable to read metadata.")
-
-            if 'channel_map' in metadata_args:
-                g_log.info("Reading channel ID mapping from file {0}".format(metadata_args['channel_map']))
-                channel_map = nf.io.read_channel_map(metadata_args['channel_map'])
-
-            net_id = 'XX'
-            if 'network_id' in metadata_args:
-                net_id = metadata_args['network_id']
-
-            full_data = nf.metadata.update_metadata(full_data, net_id, g_log, station_info, channel_map)
+            full_data = nf.metadata.update_metadata(full_data, net_id, g_log, station_info, ch_map, proj_meta)
 
         # Cut and save day-long miniSEED files in SDS archive structure
         for tr in full_data:
@@ -137,18 +146,22 @@ if __name__ == '__main__':
     parser.add_argument('--archive_dir', dest="arc_dir",
                         help="Directory where corrected day-long miniSEED data files are to be stored.")
     parser.add_argument('--subfolders', dest="subfolders",
-                        help="Comma-separated list of subfolders to be processed (optional).")
+                        help="Comma-separated list of subfolders to be processed (optional). These must be immediate "
+                             "children of data_dir.")
     parser.add_argument('--channels', dest="channels",
                         help="Comma-separated list of channel names to process (optional).")
     parser.add_argument('--correct_metadata', dest="correct_metadata", action='store_true',
                         help="Flag to correct channel ID(s) in output data.")
     parser.add_argument('--network', dest="network_id", default='XX',
                         help="Network identifier assigned by FDSN for this project. Default 'XX' for test data.")
-    parser.add_argument('--channelmap', dest="channel_map",
-                        help="File mapping as-recorded channel codes to their correct values.")
     parser.add_argument('--metadata', dest="metadata_file",
                         help="Path to metadata file (dataless SEED or StationXML). Channel IDs should match the raw "
                              "data (not corrected by channel_map).")
+    parser.add_argument('--channelmap', dest="channel_map",
+                        help="File mapping as-recorded channel codes to their correct values.")
+    parser.add_argument('--extra_meta', dest="extra_meta",
+                        help="Optional JSON file with extra description and QC information. Station/channel codes "
+                             "should match the corrected trace IDs in channel_map, if applicable.")
 
     try:
         args = parser.parse_args()
@@ -159,6 +172,7 @@ if __name__ == '__main__':
         g_log.info("\n\n=====================================================================")
         g_log.info("Starting job: {0}".format(str(args)))
 
+        # Base directories
         if args.data_dir:
             data_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.data_dir)))
         else:
@@ -168,27 +182,38 @@ if __name__ == '__main__':
         if args.arc_dir:
             arc_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.arc_dir)))
 
+        # Filtering by subfolder/channel
         subfolders, channels = None, None
         if args.subfolders:
             subfolders = args.subfolders.split(',')
         if args.channels:
             channels = args.channels.split(',')
 
+        # Metadata files
         meta_args = None
         if args.correct_metadata:
             channel_map = None
             if args.channel_map:
-                channel_map = nf.io.read_channel_map(args.channel_map)
+                channel_map = os.path.abspath(os.path.expanduser(os.path.expandvars(args.channel_map)))
 
             metadata_file = None
             if args.metadata_file:
                 metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.metadata_file)))
 
+            project_meta = None
+            # TODO: Replace with ST integration once we have an instance running
+            if args.extra_meta:
+                json_file = args.extra_meta
+                if json_file is not None:
+                    project_json = os.path.abspath(os.path.expanduser(os.path.expandvars(json_file)))
+
             meta_args = {
                 'channel_map': channel_map,
                 'metadata_file': metadata_file,
+                'extra_meta': project_meta,
                 'network': args.network_id
             }
+
 
         # Split data into day-long miniSEED files saved in archive_dir (SDS folder structure)
         make_daily_miniseed_files(data_dir, arc_dir, subfolders=subfolders, channels=channels,
