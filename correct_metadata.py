@@ -12,6 +12,8 @@ from datetime import datetime
 import nfsi_obs as nf
 from utilities import config_handler, logger
 
+# TODO: Update for StationXML created on Aquarius
+
 # Ensure resource directory exists
 resource_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'resource/OBSDataPipeline')
 if not os.path.isdir(resource_dir):
