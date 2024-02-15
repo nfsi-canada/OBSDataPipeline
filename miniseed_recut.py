@@ -154,6 +154,8 @@ if __name__ == '__main__':
                         help="Flag to correct channel ID(s) in output data.")
     parser.add_argument('--network', dest="network_id", default='XX',
                         help="Network identifier assigned by FDSN for this project. Default 'XX' for test data.")
+    parser.add_argument('--relative_paths', dest="relative_paths", action="store_true",
+                        help="Specify all file paths relative to data_dir (excluding archive_dir).")
     parser.add_argument('--metadata', dest="metadata_file",
                         help="Path to metadata file (dataless SEED or StationXML). Channel IDs should match the raw "
                              "data (not corrected by channel_map).")
@@ -194,18 +196,25 @@ if __name__ == '__main__':
         if args.correct_metadata:
             channel_map = None
             if args.channel_map:
-                channel_map = os.path.abspath(os.path.expanduser(os.path.expandvars(args.channel_map)))
+                if args.relative_paths:
+                    channel_map = os.path.abspath(os.path.expanduser(os.path.expandvars(os.path.join(data_dir, args.channel_map))))
+                else:
+                    channel_map = os.path.abspath(os.path.expanduser(os.path.expandvars(args.channel_map)))
 
             metadata_file = None
             if args.metadata_file:
-                metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.metadata_file)))
+                if args.relative_paths:
+                    metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(os.path.join(data_dir, args.metadata_file))))
+                else:
+                    metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.metadata_file)))
 
             project_meta = None
-            # TODO: Replace with ST integration once we have an instance running
+            # TODO: Replace with ST integration once we have an instance running and populated
             if args.extra_meta:
-                json_file = args.extra_meta
-                if json_file is not None:
-                    project_json = os.path.abspath(os.path.expanduser(os.path.expandvars(json_file)))
+                if args.relative_paths:
+                    project_meta = os.path.abspath(os.path.expanduser(os.path.expandvars(os.path.join(data_dir, args.extra_meta))))
+                else:
+                    project_meta = os.path.abspath(os.path.expanduser(os.path.expandvars(args.extra_meta)))
 
             meta_args = {
                 'channel_map': channel_map,
