@@ -3,7 +3,7 @@ import numpy as np
 import obspy
 import pandas as pd
 
-from . import io, metadata, mseed, plotting, waveform
+from . import io, metadata, mseed, plotting, sonardyne, waveform
 
 
 def get_true_periods(data, times=None):

@@ -6,7 +6,7 @@ import pandas as pd
 from pynmeagps import NMEAReader
 import warnings
 
-from sonardyne import SonardyneReader
+from .sonardyne import SonardyneReader
 
 
 def parse_obs_log(log_file, delimiter=',', network='XX'):

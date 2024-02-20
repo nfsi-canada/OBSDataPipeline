@@ -24,7 +24,8 @@ from utilities import logger
 DEFAULT_ARCHIVE = 'L:/Data/SDS'
 DEFAULT_CHANNELS = ['S1SeisEFR', 'S1SeisNFR', 'S1SeisZFR', 'S1SeisXFR']
 
-def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=None, correct_meta=False, metadata_args=None):
+def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=None, start=None, end=None,
+                              correct_meta=False, metadata_args=None):
     if channels is None:
         channels = DEFAULT_CHANNELS
 
@@ -52,6 +53,8 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
                 raise TypeError('Unrecognized value of input `channels`: {}'.format(channels))
     else:
         raise TypeError('Unrecognized value of input `subfolders`: {}'.format(subfolders))
+
+    g_log.info('Found {} miniSEED data files to process.'.format(len(data_files)))
 
     # Label data files by channel name
     labels = []
@@ -98,10 +101,11 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
         g_log.info('Processing channel {}...'.format(label))
 
         full_data = obspy.Stream()
-        for df in files:
+        for df in files['path'].values:
             g_log.info('Reading {}...'.format(df))
             try:
                 temp = obspy.read(df, header_byteorder='>')
+                temp.trim(start, end)
                 for tr in temp:
                     full_data.append(tr)
             except Exception as e:
@@ -115,27 +119,29 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
 
         # Correct metadata (if applicable)
         if correct_meta:
+            g_log.info('Updating metadata...')
             full_data = nf.metadata.update_metadata(full_data, net_id, g_log, station_info, ch_map, proj_meta)
 
         # Cut and save day-long miniSEED files in SDS archive structure
         for tr in full_data:
-            start = tr.stats.starttime.datetime
-            end = tr.stats.endtime.datetime + timedelta(days=1)
-            startday = start.date()
-            endday = end.date()
+            start_time = tr.stats.starttime.datetime
+            end_time = tr.stats.endtime.datetime + timedelta(days=1)
+            start_day = start_time.date()
+            end_day = end_time.date()
 
-            cut = obspy.UTCDateTime(startday)
-            while cut < endday:
+            cut = obspy.UTCDateTime(start_day)
+            while cut < end_day:
                 temp = tr.slice(cut, cut + 24 * 60 * 60, nearest_sample=False)
                 stt = temp.split()  # deal with traces with gaps
                 g_log.info(stt)
 
-                output_dir = os.path.join(archive_dir, str(cut.year), tr.stats.network, tr.stats.station, tr.stats.channel)
-                if not os.path.exists(output_dir):
-                    os.makedirs(output_dir)
+                if len(stt) > 0:
+                    output_dir = os.path.join(archive_dir, str(cut.year), tr.stats.network, tr.stats.station, tr.stats.channel)
+                    if not os.path.exists(output_dir):
+                        os.makedirs(output_dir)
 
-                outfile = os.path.join(output_dir, '{}.{}.{}.mseed'.format(tr.id, cut.year, cut.julday))
-                stt.write(outfile, format="MSEED")
+                    outfile = os.path.join(output_dir, '{}.{}.{}.mseed'.format(tr.id, cut.year, cut.julday))
+                    stt.write(outfile, format="MSEED")
 
                 cut += 24 * 60 * 60
 
@@ -150,6 +156,9 @@ if __name__ == '__main__':
                              "children of data_dir.")
     parser.add_argument('--channels', dest="channels",
                         help="Comma-separated list of channel names to process (optional).")
+    # TODO: Allow start/end times to include time of day (hhmmss)
+    parser.add_argument('--start', dest="start", default=None, help="Start date for output data, as YYYYMMDD.")
+    parser.add_argument('--end', dest="end", default=None, help="End date for output data (inclusive), as YYYYMMDD.")
     parser.add_argument('--correct_metadata', dest="correct_metadata", action='store_true',
                         help="Flag to correct channel ID(s) in output data.")
     parser.add_argument('--network', dest="network_id", default='XX',
@@ -168,9 +177,8 @@ if __name__ == '__main__':
     try:
         args = parser.parse_args()
         start_time = datetime.now()
-        obs_id = args.obs_id
 
-        g_log = logger.get_general_logger(start_time, obs_id)
+        g_log = logger.get_general_logger(start_time, 'SDS')
         g_log.info("\n\n=====================================================================")
         g_log.info("Starting job: {0}".format(str(args)))
 
@@ -189,7 +197,25 @@ if __name__ == '__main__':
         if args.subfolders:
             subfolders = args.subfolders.split(',')
         if args.channels:
-            channels = args.channels.split(',')
+            if args.channels == 'all':
+                channels = 'all'
+            else:
+                channels = args.channels.split(',')
+
+        # Start and end dates
+        start, end = None, None
+        if args.start is not None:
+            try:
+                start = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d'))
+            except Exception:
+                start = None
+                pass
+        if args.end is not None:
+            try:
+                end = obspy.UTCDateTime(datetime.strptime(args.end, '%Y%m%d') + timedelta(days=1))
+            except Exception:
+                end = None
+                pass
 
         # Metadata files
         meta_args = None
@@ -225,7 +251,7 @@ if __name__ == '__main__':
 
 
         # Split data into day-long miniSEED files saved in archive_dir (SDS folder structure)
-        make_daily_miniseed_files(data_dir, arc_dir, subfolders=subfolders, channels=channels,
+        make_daily_miniseed_files(data_dir, arc_dir, subfolders=subfolders, channels=channels, start=start, end=end,
                                   correct_meta=args.correct_metadata, metadata_args=meta_args)
 
         g_log.info("Processing complete!")
