@@ -46,7 +46,7 @@ Total clock drift (ms): {{ clockDrift }}
 
 Average power consumption (W): {{ meanPower }}
 
-Remaining battery SOC: {{ batteryLevel }}%
+Battery SOC: At deployment: {{ batteryLevel.start }}% | Remaining: {{ batteryLevel.end }}%
 
 Power spectral density curves are calculated using {{ psdWindowLength }} Hann windows, with {{ psdOverlapPercent }}% overlap.
 
