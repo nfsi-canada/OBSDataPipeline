@@ -591,16 +591,21 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     # Parse gap information for report
     # TODO: Include check for duplicates (may come out of buffered seismic data)
+    # TODO: Sort all gaps by start time (rather than separate by channel)
     if len(all_gaps) > 0:
-        report_params['gapList'] = []
+        gap_list = []
         for gap in all_gaps:
-            report_params['gapList'].append({
+            gap_list.append({
                 'id': '.'.join(gap[0:4]),
                 'start': gap[4].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
                 'end': gap[5].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
                 'sec': '{:.3f}'.format(gap[6]),
                 'samp': gap[7]
             })
+
+        report_params['gapList'] = sorted(gap_list, key=lambda p: p['start'])
+        gaps_df = pd.DataFrame(gap_list)
+        gaps_df.to_csv(os.path.join(output_dir, 'gaps_{}.csv'.format(report_params['stationName'])))
 
     gap_time = timeit.default_timer()
     g_log.debug("Time spent formatting gap information: {0} seconds".format((gap_time - centre_time)))
@@ -1088,8 +1093,10 @@ if __name__ == '__main__':
         report_kwargs['recovered'] = pd.to_datetime(base_meta['Recovery Date/Time (UTC)'].values[0])
         report_kwargs['recoverComments'] = rec['Comments'].values[0]
         # TODO: Make deployment length actual time on seafloor, if applicable
-        report_kwargs['deploymentDays'] = '{:.3f}'.format((report_kwargs['recovered'] - report_kwargs['deployed']) / timedelta(days=1))
+        deployed_days = (report_kwargs['recovered'] - report_kwargs['deployed']) / timedelta(days=1)
+        report_kwargs['deploymentDays'] = '{:.3f}'.format(deployed_days)
         report_kwargs['clockDrift'] = '{:.0f}'.format(base_meta['Clock Offset on Deck (ms)'].values[0])
+        report_kwargs['clockDriftPerDay'] = '{:.3f}'.format(base_meta['Clock Offset on Deck (ms)'].values[0] / deployed_days)
         report_kwargs['batteryLevel'] = {'start': '{:.0f}'.format(dep['Battery SOC at Deployment (%)'].values[0]),
                                          'end': '{:.0f}'.format(rec['Battery SOC at Recovery (%)'].values[0])}
         if 'qc_intro' in project_meta['this_deployment']:

@@ -42,7 +42,7 @@ Recovery comments: {{ recoverComments }}
 
 Length of deployment (days): {{ deploymentDays }}
 
-Total clock drift (ms): {{ clockDrift }}
+Total clock drift (ms): {{ clockDrift }} ({{ clockDriftPerDay }} ms/day)
 
 Average power consumption (W): {{ meanPower }}
 
