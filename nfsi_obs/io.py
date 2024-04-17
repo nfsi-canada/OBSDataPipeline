@@ -6,10 +6,10 @@ import pandas as pd
 from pynmeagps import NMEAReader
 import warnings
 
-from sonardyne import SonardyneReader
+from .sonardyne import SonardyneReader
 
 
-def parse_obs_log(log_file, delimiter=',', network='XX'):
+def parse_obs_log(log_file, delimiter=',', network='XX', names_in_file=False):
     """
 
     :param log_file: spreadsheet-like file with information logged during OBS deployment/recovery
@@ -36,7 +36,7 @@ def parse_obs_log(log_file, delimiter=',', network='XX'):
                    'Launch Date/Time (UTC)', 'Date/Time on Seafloor (UTC)', 'Survey Start Date/Time (UTC)',
                    'Survey End Date/Time (UTC)', 'Programmed Release Date/Time (UTC)', 'OBS Name', 'OBS ID',
                    'Minimus Firmware', 'Femtomus Firmware', 'Acoustic Modem Address', 'Acoustic Modem UID',
-                   'Apollo S/N', 'XMB S/N', 'Radio beacon frequency (MHz)', 'Battery SOC at Deployment',
+                   'Apollo S/N', 'XMB S/N', 'Radio beacon frequency (MHz)', 'Battery SOC at Deployment (%)',
                    'Burn-wire Batch', 'Burn-wire Widget Test Voltage', 'Burn-wire Dunker Test Voltage', 'Comments']
     recover_cols = ['Station', 'Deployed Latitude', 'Deployed Longitude', 'Water Depth (m)', 'OBS Name', 'OBS ID',
                     'Acoustic Modem Address', 'Acoustic Modem UID', 'Date/Time Acoustic Contact Established (UTC)',
@@ -44,7 +44,7 @@ def parse_obs_log(log_file, delimiter=',', network='XX'):
                     'Date/Time Recording Stopped (UTC)', 'Surfacing Latitude', 'Surfacing Longitude',
                     'Horizontal Drift during Rise (km)', 'Recovery Latitude', 'Recovery Longitude',
                     'Drift on Surface (km)', 'Clock Offset at Seabed (ms)', 'Clock Offset on Deck (ms)',
-                    'Battery SOC (%)', 'Backup hard drive IDs', 'Comments']
+                    'Battery SOC at Recovery (%)', 'Backup hard drive IDs', 'Comments']
 
     log_info = {}
     dm_info = None
@@ -53,13 +53,23 @@ def parse_obs_log(log_file, delimiter=',', network='XX'):
     if filetype in ['xls', 'xlsx', 'xlsm', 'xlsb', 'odf', 'ods', 'odt']:
         # If file is an Excel/ODS format (standard template used)
         # index is station name (must be unique within each project)
-        locations = pd.read_excel(log_file, sheet_name='Locations', header=None, names=location_cols, skiprows=2,
-                                  parse_dates=[3, 4, 5, 6])
-        deployment = pd.read_excel(log_file, sheet_name='Deployment Log', header=None, names=deploy_cols, skiprows=2,
-                                   parse_dates=[8, 9, 10, 11, 12])
-        recovery = pd.read_excel(log_file, sheet_name='Recovery Log', header=None, names=recover_cols, skiprows=2,
-                                 parse_dates=[8, 9, 10, 11])
+        if names_in_file:
+            # TODO: General way to specify parse_dates? Column numbers may change over time.
+            locations = pd.read_excel(log_file, sheet_name='Locations', header=0, skiprows=2,
+                                      parse_dates=[3, 4, 5, 6, 7, 8])
+            deployment = pd.read_excel(log_file, sheet_name='Deployment Log', header=0, skiprows=2,
+                                       parse_dates=[8, 9, 10, 11, 12, 13])
+            recovery = pd.read_excel(log_file, sheet_name='Recovery Log', header=0, skiprows=2,
+                                     parse_dates=[8, 9, 10, 11])
+        else:
+            locations = pd.read_excel(log_file, sheet_name='Locations', header=None, names=location_cols, skiprows=2,
+                                      parse_dates=[3, 4, 5, 6, 7, 8])
+            deployment = pd.read_excel(log_file, sheet_name='Deployment Log', header=None, names=deploy_cols, skiprows=2,
+                                       parse_dates=[8, 9, 10, 11, 12, 13])
+            recovery = pd.read_excel(log_file, sheet_name='Recovery Log', header=None, names=recover_cols, skiprows=2,
+                                     parse_dates=[8, 9, 10, 11])
         for df in [locations, deployment, recovery]:
+            df.dropna(subset=['Station', 'OBS Name'], inplace=True)     # Remove blank lines and stations not launched if present
             df.set_index('Station', drop=False, inplace=True)
 
         loc_info = locations[['Station', 'OBS Name', 'OBS ID', 'Launch Date/Time (UTC)', 'Date/Time on Seafloor (UTC)', 'Date/Time Released (UTC)', 'Recovery Date/Time (UTC)']].copy()
@@ -211,3 +221,39 @@ def parse_usbl_log(comms_log_filepath):
 
     df = pd.DataFrame(log_data)
     return df
+
+
+def parse_btr(btr_file_path, out=False):
+    parsed = []
+    data = open(btr_file_path)
+    for line in data.readlines():
+        if line[0] == '#':
+            continue    # comment line
+        elif not line.strip():
+            continue    # blank line
+        elif line[0] == 'D':
+            continue    # header line
+        else:
+            # data line
+            parts = line.split()
+            dttm = datetime.strptime(' '.join(parts[:2]), '%d-%m-%Y %H:%M:%S')
+            coords = parts[2].split(',')
+            lat = float(coords[0])
+            lon = float(coords[1])
+            parsed.append({
+                'datetime': dttm,
+                'latitude': lat,
+                'longitude': lon
+            })
+
+    track = pd.DataFrame(parsed)
+    track.set_index('datetime', drop=False, inplace=True)
+    track.sort_index(inplace=True)
+
+    if out:
+        out_most, extension = os.path.splitext(btr_file_path)
+        outfile = out_most + '_reparse' + extension
+
+        track.to_csv(outfile, index=False)
+
+    return track

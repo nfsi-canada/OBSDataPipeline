@@ -4,6 +4,7 @@ from glob import glob
 import gc
 import json
 import matplotlib.pyplot as plt
+import multiprocessing
 import numpy as np
 import obspy
 import os
@@ -79,6 +80,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     debug_info['timing']['base_setup'] = base_time - proc_start
 
     # Start/end of time period to analyze: (1) on seafloor, (2) off-ship, (3) deployment start/end, (4) project start/end
+    # TODO: Only apply this to external or seismic channels? Analyze full battery/power, for example.
     data_start, data_end = None, None
     if not pd.isnull(obs_log['Date/Time on Seafloor (UTC)'].values[0]):
         data_start = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time on Seafloor (UTC)'].values[0]))
@@ -243,6 +245,12 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 debug_info['timing']['long_series_check'] += startend - ch_start
 
                 plot_len = None
+                """
+                if (data_end - data_start) < timedelta(days=29).total_seconds():
+                    # 4 weeks or less to analyze, make 10-day plots
+                    plot_len = 10
+                elif (files_end - files_start) < timedelta(days=31).total_seconds():
+                """
                 if (files_end - files_start) < timedelta(days=31).total_seconds():
                     # Less than 1 month of data recorded, just make one plot
                     plot_end = files_end + 24 * 60 * 60
@@ -584,15 +592,19 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     # Parse gap information for report
     # TODO: Include check for duplicates (may come out of buffered seismic data)
     if len(all_gaps) > 0:
-        report_params['gapList'] = []
+        gap_list = []
         for gap in all_gaps:
-            report_params['gapList'].append({
+            gap_list.append({
                 'id': '.'.join(gap[0:4]),
                 'start': gap[4].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
                 'end': gap[5].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
                 'sec': '{:.3f}'.format(gap[6]),
                 'samp': gap[7]
             })
+
+        report_params['gapList'] = sorted(gap_list, key=lambda p: p['start'])
+        gaps_df = pd.DataFrame(gap_list)
+        gaps_df.to_csv(os.path.join(output_dir, 'gaps_{}.csv'.format(report_params['stationName'])))
 
     gap_time = timeit.default_timer()
     g_log.debug("Time spent formatting gap information: {0} seconds".format((gap_time - centre_time)))
@@ -747,6 +759,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
 
 if __name__ == '__main__':
+    multiprocessing.set_start_method('spawn')
+    num_cores = multiprocessing.cpu_count()
+
     parser = argparse.ArgumentParser(description='Perform basic QC for OBS data. Will correct channel identifiers if '
                                                  'optional --channelmap argument is provided. Does not require clock '
                                                  'drift correction to have been applied. For most parameters, command '
@@ -763,6 +778,8 @@ if __name__ == '__main__':
     parser.add_argument('--logdelimiter', dest="log_delim",
                         help="If the OBS log file is delimited text (other than comma-delimited), use this to specify "
                              "the column delimiter.")
+    parser.add_argument('--logcolnames', dest="obslog_column_names", action="store_true",
+                        help="Use column names from OBS deployment log file.")
     parser.add_argument('--obsid', dest="obs_id",
                         help="OBS identifier: station name or serial number")
     parser.add_argument('--start', dest="startdate", help="Start date of deployment to be analyzed, as YYYYMMDD")
@@ -795,7 +812,6 @@ if __name__ == '__main__':
     parser.add_argument('--config', dest='config_path', help="Path to config file (if not using default).")
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help="Activate debug mode (more verbose logging). Command-line only.")
-    # TODO: Implement a config file to replace most of these arguments (simplify terminal command to make it more user-friendly to run)
 
     try:
         start_time = datetime.now()
@@ -916,7 +932,7 @@ if __name__ == '__main__':
             deploy_start = datetime.strptime(config.get('dataset', 'start'), "%Y%m%d")
 
         g_log.info('Reading project metadata from {0}...'.format(data_log_file))
-        obs_log_info = nf.io.parse_obs_log(data_log_file, log_delim)
+        obs_log_info = nf.io.parse_obs_log(data_log_file, log_delim, names_in_file=args.obslog_column_names)
         # Find this OBS in the basic, deployment, and recovery metadata tables
         base_meta, dep, rec = None, None, None
         if id_type == 'serial':
@@ -1074,9 +1090,13 @@ if __name__ == '__main__':
         # TODO: Handle case of intermediate download (no "recovery" time yet)
         report_kwargs['recovered'] = pd.to_datetime(base_meta['Recovery Date/Time (UTC)'].values[0])
         report_kwargs['recoverComments'] = rec['Comments'].values[0]
-        report_kwargs['deploymentDays'] = '{:.3f}'.format((report_kwargs['recovered'] - report_kwargs['deployed']) / timedelta(days=1))
+        # TODO: Make deployment length actual time on seafloor, if applicable
+        deployed_days = (report_kwargs['recovered'] - report_kwargs['deployed']) / timedelta(days=1)
+        report_kwargs['deploymentDays'] = '{:.3f}'.format(deployed_days)
         report_kwargs['clockDrift'] = '{:.0f}'.format(base_meta['Clock Offset on Deck (ms)'].values[0])
-        report_kwargs['batteryLevel'] = '{:.0f}'.format(rec['Battery SOC (%)'].values[0])
+        report_kwargs['clockDriftPerDay'] = '{:.3f}'.format(base_meta['Clock Offset on Deck (ms)'].values[0] / deployed_days)
+        report_kwargs['batteryLevel'] = {'start': '{:.0f}'.format(dep['Battery SOC at Deployment (%)'].values[0]),
+                                         'end': '{:.0f}'.format(rec['Battery SOC at Recovery (%)'].values[0])}
         if 'qc_intro' in project_meta['this_deployment']:
             report_kwargs['introText'] = project_meta['this_deployment']['qc_intro']
         report_kwargs['psdWindowSecs'] = config.getint('seismic', 'window_length')

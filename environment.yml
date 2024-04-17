@@ -18,4 +18,5 @@ dependencies:
     - seaborn
     - stdb
     - obstools
+    - pynmeagps
     - git+https://github.com/kaelbos/ioos_qc@high_sample_rate
