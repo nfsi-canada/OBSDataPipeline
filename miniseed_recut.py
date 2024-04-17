@@ -17,9 +17,6 @@ import traceback
 import nfsi_obs as nf
 from utilities import logger
 
-# TODO: Make script callable with arguments (easier to reuse)
-# TODO: Include metadata correction (trace IDs)
-
 # Default SDS archive folder.
 DEFAULT_ARCHIVE = 'L:/Data/SDS'
 DEFAULT_CHANNELS = ['S1SeisEFR', 'S1SeisNFR', 'S1SeisZFR', 'S1SeisXFR']
@@ -76,12 +73,13 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
             g_log.info("Reading metadata from file {0}".format(metadata_args['metadata_file']))
             filetype = os.path.splitext(metadata_args['metadata_file'])[-1]
             if filetype in ['.dataless', '.metadata']:
+                # read as dataless SEED format
                 station_info = nf.metadata.read_dataless(metadata_args['metadata_file'])
             elif filetype == '.xml':
                 # read as StationXML format
                 station_info = obspy.read_inventory(metadata_args['metadata_file'])
             else:
-                g_log.error("Unrecognized file format. Unable to read metadata.")
+                raise TypeError("Unrecognized file type. Unable to read metadata.")
 
         if 'channel_map' in metadata_args:
             g_log.info("Reading channel ID mapping from file {0}".format(metadata_args['channel_map']))
@@ -100,6 +98,7 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
     for label, files in labeled_files.groupby('channel'):
         g_log.info('Processing channel {}...'.format(label))
 
+        # TODO: Allow buffering for high-volume channels (long duration and/or high sample rate)
         full_data = obspy.Stream()
         for df in files['path'].values:
             g_log.info('Reading {}...'.format(df))

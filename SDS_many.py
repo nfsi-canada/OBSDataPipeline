@@ -15,12 +15,10 @@ import warnings
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run SDS archive script (miniseed_recut.py) for several instruments sequentially.")
     parser.add_argument('bulk_info', type=str,
-                        help="JSON file containing command-line options for QC script for all instruments as a "
-                             "dictionary.")
+                        help="JSON file containing command-line options for QC script for all instruments.")
 
     full_start = timeit.default_timer()
     args = parser.parse_args()
-
 
     # Read input JSON file
     bulk_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.bulk_info)))

@@ -54,6 +54,7 @@ def parse_obs_log(log_file, delimiter=',', network='XX', names_in_file=False):
         # If file is an Excel/ODS format (standard template used)
         # index is station name (must be unique within each project)
         if names_in_file:
+            # TODO: General way to specify parse_dates? Column numbers may change over time.
             locations = pd.read_excel(log_file, sheet_name='Locations', header=0, skiprows=2,
                                       parse_dates=[3, 4, 5, 6, 7, 8])
             deployment = pd.read_excel(log_file, sheet_name='Deployment Log', header=0, skiprows=2,

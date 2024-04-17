@@ -591,7 +591,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     # Parse gap information for report
     # TODO: Include check for duplicates (may come out of buffered seismic data)
-    # TODO: Sort all gaps by start time (rather than separate by channel)
     if len(all_gaps) > 0:
         gap_list = []
         for gap in all_gaps:
@@ -813,7 +812,6 @@ if __name__ == '__main__':
     parser.add_argument('--config', dest='config_path', help="Path to config file (if not using default).")
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help="Activate debug mode (more verbose logging). Command-line only.")
-    # TODO: Implement a config file to replace most of these arguments (simplify terminal command to make it more user-friendly to run)
 
     try:
         start_time = datetime.now()
