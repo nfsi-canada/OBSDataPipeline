@@ -232,7 +232,7 @@ def qartod_plot(trace, outdir, check='gross_range_check', use_existing_plots=Fal
     return qc_plot
 
 
-def spectrogram(trace, outdir, spec_win, overlap, use_existing_plots=False):
+def spectrogram(trace, outdir, spec_win, overlap, sub_overlap=0.75, cmap=None, slim=[None, None], use_existing_plots=False):
     """
     Plot spectrogram of seismic data (as obspy.core.trace.Trace object)
 
@@ -244,19 +244,42 @@ def spectrogram(trace, outdir, spec_win, overlap, use_existing_plots=False):
 
     :return: path to plot PNG file
     """
-    # TODO: Convert spectrogram to acceleration if channel is a seismometer
+    seismometer = False
+    if re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', trace.stats.channel):
+        seismometer = True
+
+    # Calculate all PSDs
+    apsds, vpsds, freqs, times = calc_psds(trace, spec_win, overlap, sub_overlap, calc_acc=seismometer)
+
+    # Spectrogram plot from PSDs
     spectrogram_plot = os.path.join(outdir, 'spec_{0}.png'.format(trace.id))
+    # TODO: Set appropriate x-ticks for time span
     if not (use_existing_plots and os.path.isfile(spectrogram_plot)):
-        # Alternate spectrogram method (lower memory usage than through obspy)
-        npts = int(spec_win * trace.meta.sampling_rate)
+        if cmap is None:
+            cmap = 'viridis'
+        npts = int(spec_win * trace.stats.sampling_rate)
         nover = int(overlap * npts)
-        sfig, sax = plt.subplots(1, 1, num=1, clear=True)
-        plt.specgram(trace.data, NFFT=npts, Fs=trace.meta.sampling_rate, window=signal.get_window('hann', npts, False),
-                     noverlap=nover, detrend='linear', scale='dB')
+
+        spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
+        if seismometer:
+            spec_psds = 10. * np.log10(np.transpose(apsds))
+        else:
+            spec_psds = 10. * np.log10(np.transpose(vpsds))
+        spec_psds = np.flipud(spec_psds)
+
+        pad_xextent = (npts - nover) / trace.stats.sampling_rate / 2
+        xextent = np.min(times) - pad_xextent, np.max(times) + pad_xextent
+        xmin, xmax = xextent
+        extent = xmin, xmax, freqs[0], freqs[-1]
+
+        im = sax.imshow(spec_psds, cmap=cmap, extent=extent, vmin=slim[0], vmax=slim[1], origin='upper')
+        sax.axis('auto')
+        sax._sci(im)
         sax.set_yscale('log')
-        sax.set_ylim(ymin=1e-3, ymax=trace.meta.sampling_rate / 2)
+        sax.set_ylim(ymin=8e-3, ymax=trace.stats.sampling_rate / 2)
         sax.set_ylabel('Frequency (Hz)')
-        sfig.savefig(spectrogram_plot)
+        plt.tight_layout()
+        spec_fig.savefig(spectrogram_plot)
 
     return spectrogram_plot
 
@@ -316,7 +339,7 @@ def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False
         return acc_psds, vel_psds, freqs, times
 
 
-def psd_plot(trace, outdir, win_len, overlap, sub_overlap, use_existing_plots=False):
+def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, use_existing_plots=False):
     """
     Plot PSDs of seismic data (as obspy.core.trace.Trace object). If the input trace is from a seismometer (channel code
     "H"), the returned plot will be in acceleration. Otherwise, the plot will be in sensor units (e.g. pressure).

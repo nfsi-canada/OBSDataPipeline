@@ -154,7 +154,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     backup_exists = False
     if output_dir is None:
         if backup:
-            # Make a backup copy of as-recorded raw data if no separate output directory is specified (files will be modified in-place)
+            # Make a backup copy of as-recorded raw data if no separate output directory is specified
             raw_dir = os.path.join(data_dir, 'raw_recorded')
             if not os.path.exists(raw_dir):
                 g_log.info("Copying raw data to backup directory {0}".format(raw_dir))
@@ -354,6 +354,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                     dmin, dmax = None, None
                     qc_config = None
+                    spec_lim = [None, None]
                     if channel_info is not None:
                         if 'hide' in channel_info:
                             if channel_info['hide']:
@@ -366,6 +367,10 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                             trace_info['order'] = int(channel_info['order'])
                         if 'qc_config' in channel_info:
                             qc_config = channel_info['qc_config']
+                        if 'spec_min' in channel_info:
+                            spec_lim[0] = float(channel_info['spec_min'])
+                        if 'spec_max' in channel_info:
+                            spec_lim[1] = float(channel_info['spec_max'])
 
                     more_meta_time = timeit.default_timer()
                     g_log.debug("Time spent with other metadata admin: {0} seconds".format((more_meta_time - cg_time)))
@@ -392,8 +397,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 data.plot(outfile=demean_data_plot)
 
                         start_plots = timeit.default_timer()
+                        # TODO: Combine spectrogram and PSD creation to save runtime and memory (like when buffering)
                         # Spectrogram
-                        # TODO: Make x-axis labels for spectrogram meaningful (currently shows seconds starting from 0)
                         trace_info['specLoc'] = [{
                             'image': nf.plotting.spectrogram(tr, output_dir, spec_win, overlap, use_existing_plots),
                             'start': tr.stats.starttime.strftime('%Y-%m-%d'),
@@ -421,7 +426,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     else:
                         # Analysis of auxiliary data
                         timestamps = pd.to_datetime(tr.times(type='timestamp'), unit='s').values
-                        # maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
+                        # TODO: maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
                         start_tran = timeit.default_timer()
                         if qc_config is not None:
                             if 'qartod' in qc_config:
@@ -699,16 +704,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                        endtime=power_data['LE3'].stats.endtime, nearest_sample=True)
                 factor = int(factor)
                 power_data['ME4'].decimate(factor, no_filter=True, strict_length=False)
-                """
-                if len(power_data['LE3'].data) != len(power_data['ME4'].data):
-                    curr_len = min([len(power_data['LE3'].data), len(power_data['ME4'].data)])
-                    offset = abs(power_data['LE3'].stats.starttime - power_data['ME4'].stats.starttime) / power_data['LE3'].stats.sampling_rate
-                    if offset <= 0.5:
-                        curr_data = -power_data['LE3'].data[:curr_len] / power_data['ME4'].data[:curr_len]
-                    else:
-                        curr_data = -power_data['LE3'].data[-curr_len:] / power_data['ME4'].data[-curr_len:]
-                else:
-                """
                 curr_data = -power_data['LE3'].data / power_data['ME4'].data
                 tr_curr = obspy.Trace(curr_data, curr_stats)
                 st_curr = tr_curr.split()
@@ -829,14 +824,14 @@ if __name__ == '__main__':
         else:
             base_dir = None
 
-        # TODO: Can't use relative path for config if base_dir is not a command line argument
         if args.config_path:
             config_path = args.config_path
             if args.relative_paths:
                 if base_dir is not None:
                     config = config_handler.get_config(os.path.join(base_dir, args.config_path))
                 else:
-                    raise RuntimeError('Missing command-line argument: Cannot use relative paths if no base_dir specified.')
+                    raise RuntimeError('Missing command-line argument: Cannot use relative path for config file if no '
+                                       'base_dir specified.')
             else:
                 config = config_handler.get_config(os.path.abspath(os.path.expanduser(os.path.expandvars(args.config_path))))
         else:
@@ -955,9 +950,11 @@ if __name__ == '__main__':
         if base_meta is None or base_meta.empty:
             raise IndexError('OBS {0} not found in provided metadata.'.format(obs_identifier))
         if deploy_start is not None:
-            base_meta = base_meta.loc[(base_meta['Launch Date/Time (UTC)'] >= deploy_start) & (base_meta['Launch Date/Time (UTC)'] < deploy_start + timedelta(days=1))]
+            base_meta = base_meta.loc[(base_meta['Launch Date/Time (UTC)'] >= deploy_start) &
+                                      (base_meta['Launch Date/Time (UTC)'] < deploy_start + timedelta(days=1))]
         if base_meta.shape[0] > 1:
-            raise IndexError('Multiple entries found for OBS {0} in provided metadata. Please use a unique identifier or provide start date.'.format(obs_identifier))
+            raise IndexError('Multiple entries found for OBS {0} in provided metadata. Please use a unique identifier '
+                             'or provide start date.'.format(obs_identifier))
 
         if deploy_start is not None:
             meta_start = min(base_meta['Launch Date/Time (UTC)'].values[0],

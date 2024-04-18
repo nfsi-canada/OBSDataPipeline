@@ -20,6 +20,64 @@ from utilities import logger
 # Default SDS archive folder.
 DEFAULT_ARCHIVE = 'L:/Data/SDS'
 DEFAULT_CHANNELS = ['S1SeisEFR', 'S1SeisNFR', 'S1SeisZFR', 'S1SeisXFR']
+BUFFER_MAX = 10
+
+
+def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None, correct_meta=False, net_id='XX',
+                   station_info=None, ch_map=None, proj_meta=None):
+    full_data = obspy.Stream()
+    for df in file_list:
+        g_log.info('Reading {}...'.format(df))
+        try:
+            temp = obspy.read(df, header_byteorder='>')
+            temp.trim(start, end)
+            for tr in temp:
+                full_data.append(tr)
+        except Exception as e:
+            # print(traceback.print_exc())
+            print(str(e))
+            continue
+
+    full_data.merge()
+    g_log.info(full_data)
+    full_data.print_gaps()
+
+    # Correct metadata (if applicable)
+    if correct_meta:
+        g_log.info('Updating metadata...')
+        full_data = nf.metadata.update_metadata(full_data, net_id, g_log, station_info, ch_map, proj_meta)
+
+    # Cut and save day-long miniSEED files in SDS archive structure
+    for tr in full_data:
+        start_time = tr.stats.starttime.datetime
+        end_time = tr.stats.endtime.datetime + timedelta(days=1)
+        start_day = start_time.date()
+        end_day = end_time.date()
+
+        cut = obspy.UTCDateTime(start_day)
+        while cut < end_day:
+            temp = tr.slice(cut, cut + 24 * 60 * 60, nearest_sample=False)
+            stt = temp.split()  # deal with traces with gaps
+            g_log.info(stt)
+
+            if len(stt) > 0:
+                output_dir = os.path.join(archive_dir, str(cut.year), tr.stats.network, tr.stats.station,
+                                          tr.stats.channel)
+                if not os.path.exists(output_dir):
+                    os.makedirs(output_dir)
+
+                outfile = os.path.join(output_dir, '{}.{}.{}.mseed'.format(tr.id, cut.year, cut.julday))
+                if os.path.isfile(outfile):
+                    existing = obspy.read(outfile)
+                    for et in existing:
+                        stt.append(et)
+                    stt.merge()
+                    stt = stt.split()
+
+                stt.write(outfile, format="MSEED")
+
+            cut += 24 * 60 * 60
+
 
 def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=None, start=None, end=None,
                               correct_meta=False, metadata_args=None):
@@ -98,51 +156,24 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
     for label, files in labeled_files.groupby('channel'):
         g_log.info('Processing channel {}...'.format(label))
 
-        # TODO: Allow buffering for high-volume channels (long duration and/or high sample rate)
-        full_data = obspy.Stream()
-        for df in files['path'].values:
-            g_log.info('Reading {}...'.format(df))
-            try:
-                temp = obspy.read(df, header_byteorder='>')
-                temp.trim(start, end)
-                for tr in temp:
-                    full_data.append(tr)
-            except Exception as e:
-                #print(traceback.print_exc())
-                print(str(e))
-                continue
+        all_files = sorted(files['path'].values)
+        if len(all_files) > BUFFER_MAX:
+            done_read = False
+            idf = 0
+            while not done_read:
+                if idf+BUFFER_MAX > len(all_files):
+                    buffer_files = all_files[idf:]
+                    idf = len(all_files) + 1
+                else:
+                    buffer_files = all_files[idf:idf+BUFFER_MAX]
+                    idf += BUFFER_MAX
 
-        full_data.merge()
-        g_log.info(full_data)
-        full_data.print_gaps()
+                read_and_recut(buffer_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta)
 
-        # Correct metadata (if applicable)
-        if correct_meta:
-            g_log.info('Updating metadata...')
-            full_data = nf.metadata.update_metadata(full_data, net_id, g_log, station_info, ch_map, proj_meta)
-
-        # Cut and save day-long miniSEED files in SDS archive structure
-        for tr in full_data:
-            start_time = tr.stats.starttime.datetime
-            end_time = tr.stats.endtime.datetime + timedelta(days=1)
-            start_day = start_time.date()
-            end_day = end_time.date()
-
-            cut = obspy.UTCDateTime(start_day)
-            while cut < end_day:
-                temp = tr.slice(cut, cut + 24 * 60 * 60, nearest_sample=False)
-                stt = temp.split()  # deal with traces with gaps
-                g_log.info(stt)
-
-                if len(stt) > 0:
-                    output_dir = os.path.join(archive_dir, str(cut.year), tr.stats.network, tr.stats.station, tr.stats.channel)
-                    if not os.path.exists(output_dir):
-                        os.makedirs(output_dir)
-
-                    outfile = os.path.join(output_dir, '{}.{}.{}.mseed'.format(tr.id, cut.year, cut.julday))
-                    stt.write(outfile, format="MSEED")
-
-                cut += 24 * 60 * 60
+                if idf > len(all_files):
+                    done_read = True
+        else:
+            read_and_recut(all_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta)
 
 
 if __name__ == '__main__':
@@ -175,9 +206,9 @@ if __name__ == '__main__':
 
     try:
         args = parser.parse_args()
-        start_time = datetime.now()
+        run_start = datetime.now()
 
-        g_log = logger.get_general_logger(start_time, 'SDS')
+        g_log = logger.get_general_logger(run_start, 'SDS')
         g_log.info("\n\n=====================================================================")
         g_log.info("Starting job: {0}".format(str(args)))
 
@@ -202,18 +233,18 @@ if __name__ == '__main__':
                 channels = args.channels.split(',')
 
         # Start and end dates
-        start, end = None, None
+        startdate, enddate = None, None
         if args.start is not None:
             try:
-                start = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d'))
-            except Exception:
-                start = None
+                startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d'))
+            except Exception as e:
+                startdate = None
                 pass
         if args.end is not None:
             try:
-                end = obspy.UTCDateTime(datetime.strptime(args.end, '%Y%m%d') + timedelta(days=1))
-            except Exception:
-                end = None
+                enddate = obspy.UTCDateTime(datetime.strptime(args.end, '%Y%m%d') + timedelta(days=1))
+            except Exception as e:
+                enddate = None
                 pass
 
         # Metadata files
@@ -248,10 +279,9 @@ if __name__ == '__main__':
                 'network': args.network_id
             }
 
-
         # Split data into day-long miniSEED files saved in archive_dir (SDS folder structure)
-        make_daily_miniseed_files(data_dir, arc_dir, subfolders=subfolders, channels=channels, start=start, end=end,
-                                  correct_meta=args.correct_metadata, metadata_args=meta_args)
+        make_daily_miniseed_files(data_dir, arc_dir, subfolders=subfolders, channels=channels, start=startdate,
+                                  end=enddate, correct_meta=args.correct_metadata, metadata_args=meta_args)
 
         g_log.info("Processing complete!")
         logger.close_logs()
