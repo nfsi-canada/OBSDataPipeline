@@ -965,22 +965,16 @@ if __name__ == '__main__':
         g_log.info('Reading project metadata from {0}...'.format(data_log_file))
         obs_log_info = nf.io.parse_obs_log(data_log_file, log_delim, names_in_file=args.obslog_column_names)
         # Find this OBS in the basic, deployment, and recovery metadata tables
-        base_meta, dep, rec = None, None, None
+        base_meta = None
         if id_type == 'serial':
             base_meta = obs_log_info['basic'].loc[obs_log_info['basic']['OBS ID'] == obs_identifier]
-            dep = obs_log_info['deployment'].loc[obs_log_info['deployment']['OBS ID'] == obs_identifier]
-            rec = obs_log_info['recovery'].loc[obs_log_info['recovery']['OBS ID'] == obs_identifier]
         elif id_type == 'obs_name':
             base_meta = obs_log_info['basic'].loc[obs_log_info['basic']['OBS Name'] == obs_identifier]
-            dep = obs_log_info['deployment'].loc[obs_log_info['deployment']['OBS Name'] == obs_identifier]
-            rec = obs_log_info['recovery'].loc[obs_log_info['recovery']['OBS Name'] == obs_identifier]
         else:
             id_columns = ['Station', 'OBS Name', 'OBS ID']
             for col in id_columns:
                 if obs_identifier in obs_log_info['basic'][col].values:
                     base_meta = obs_log_info['basic'].loc[obs_log_info['basic'][col] == obs_identifier]
-                    dep = obs_log_info['deployment'].loc[obs_log_info['deployment'][col] == obs_identifier]
-                    rec = obs_log_info['recovery'].loc[obs_log_info['recovery'][col] == obs_identifier]
                     break
 
         if base_meta is None or base_meta.empty:
@@ -1119,17 +1113,17 @@ if __name__ == '__main__':
         report_kwargs['longitude'] = base_meta['Deployed Longitude'].values[0]
         report_kwargs['waterDepth'] = base_meta['Water Depth (m)'].values[0]
         report_kwargs['deployed'] = pd.to_datetime(base_meta['Launch Date/Time (UTC)'].values[0])
-        report_kwargs['deployComments'] = dep['Comments'].values[0]
+        report_kwargs['deployComments'] = base_meta['Deployment Comments'].values[0]
         # TODO: Handle case of intermediate download (no "recovery" time yet)
         report_kwargs['recovered'] = pd.to_datetime(base_meta['Recovery Date/Time (UTC)'].values[0])
-        report_kwargs['recoverComments'] = rec['Comments'].values[0]
+        report_kwargs['recoverComments'] = base_meta['Recovery Comments'].values[0]
         # TODO: Make deployment length actual time on seafloor, if applicable
         deployed_days = (report_kwargs['recovered'] - report_kwargs['deployed']) / timedelta(days=1)
         report_kwargs['deploymentDays'] = '{:.3f}'.format(deployed_days)
         report_kwargs['clockDrift'] = '{:.0f}'.format(base_meta['Clock Offset on Deck (ms)'].values[0])
         report_kwargs['clockDriftPerDay'] = '{:.3f}'.format(base_meta['Clock Offset on Deck (ms)'].values[0] / deployed_days)
-        report_kwargs['batteryLevel'] = {'start': '{:.0f}'.format(dep['Battery SOC at Deployment (%)'].values[0]),
-                                         'end': '{:.0f}'.format(rec['Battery SOC at Recovery (%)'].values[0])}
+        report_kwargs['batteryLevel'] = {'start': '{:.0f}'.format(base_meta['Battery SOC at Deployment (%)'].values[0]),
+                                         'end': '{:.0f}'.format(base_meta['Battery SOC at Recovery (%)'].values[0])}
         if 'qc_intro' in project_meta['this_deployment']:
             report_kwargs['introText'] = project_meta['this_deployment']['qc_intro']
         report_kwargs['psdWindowSecs'] = config.getint('seismic', 'window_length')

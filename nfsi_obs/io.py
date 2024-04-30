@@ -37,14 +37,14 @@ def parse_obs_log(log_file, delimiter=',', network='XX', names_in_file=False):
                    'Survey End Date/Time (UTC)', 'Programmed Release Date/Time (UTC)', 'OBS Name', 'OBS ID',
                    'Minimus Firmware', 'Femtomus Firmware', 'Acoustic Modem Address', 'Acoustic Modem UID',
                    'Apollo S/N', 'XMB S/N', 'Radio beacon frequency (MHz)', 'Battery SOC at Deployment (%)',
-                   'Burn-wire Batch', 'Burn-wire Widget Test Voltage', 'Burn-wire Dunker Test Voltage', 'Comments']
+                   'Burn-wire Batch', 'Burn-wire Widget Test Voltage', 'Burn-wire Dunker Test Voltage', 'Deployment Comments']
     recover_cols = ['Station', 'Deployed Latitude', 'Deployed Longitude', 'Water Depth (m)', 'OBS Name', 'OBS ID',
                     'Acoustic Modem Address', 'Acoustic Modem UID', 'Date/Time Acoustic Contact Established (UTC)',
                     'Date/Time Released from Anchor (UTC)', 'Surfacing Date/Time (UTC)', 'On-Deck Date/Time (UTC)',
                     'Date/Time Recording Stopped (UTC)', 'Surfacing Latitude', 'Surfacing Longitude',
                     'Horizontal Drift during Rise (km)', 'Recovery Latitude', 'Recovery Longitude',
                     'Drift on Surface (km)', 'Clock Offset at Seabed (ms)', 'Clock Offset on Deck (ms)',
-                    'Battery SOC at Recovery (%)', 'Backup hard drive IDs', 'Comments']
+                    'Battery SOC at Recovery (%)', 'Backup hard drive IDs', 'Recovery Comments']
 
     log_info = {}
     dm_info = None
@@ -72,9 +72,12 @@ def parse_obs_log(log_file, delimiter=',', network='XX', names_in_file=False):
             df.dropna(subset=['Station', 'OBS Name'], inplace=True)     # Remove blank lines and stations not launched if present
             df.set_index('Station', drop=False, inplace=True)
 
-        loc_info = locations[['Station', 'OBS Name', 'OBS ID', 'Launch Date/Time (UTC)', 'Date/Time on Seafloor (UTC)', 'Date/Time Released (UTC)', 'Recovery Date/Time (UTC)']].copy()
-        rec_info = recovery[['Deployed Latitude', 'Deployed Longitude', 'Water Depth (m)', 'Clock Offset on Deck (ms)']].copy()
-        dm_info = pd.concat([loc_info, rec_info], axis=1)
+        loc_info = locations[['Station', 'OBS Name', 'OBS ID', 'Launch Date/Time (UTC)', 'Date/Time on Seafloor (UTC)',
+                              'Date/Time Released (UTC)', 'Recovery Date/Time (UTC)']].copy()
+        dep_info = deployment[['Battery SOC at Deployment (%)', 'Deployment Comments']].copy()
+        rec_info = recovery[['Deployed Latitude', 'Deployed Longitude', 'Water Depth (m)', 'Clock Offset on Deck (ms)',
+                             'Battery SOC at Recovery (%)', 'Recovery Comments']].copy()
+        dm_info = pd.concat([loc_info, dep_info, rec_info], axis=1)
 
         log_info['locations'] = locations
         log_info['deployment'] = deployment
