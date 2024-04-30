@@ -928,6 +928,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     add_to_report = timeit.default_timer()
     report_info['psdLoc'] = psd_a_plots
     report_info['specLoc'] = spec_plots
+    report_info['hydrophone'] = hydrophone
     timing['report_info'] += timeit.default_timer() - add_to_report
     timing['trace_analysis'] = timeit.default_timer() - func_start
     return report_info, all_gaps, timing

@@ -120,7 +120,11 @@ Orientation: {{ ch.azimuth }} / {{ ch.dip }}
 ### Spectrogram
 
 {% for spec in ch.specLoc %}
+{% if ch.hydrophone %}
+![PSD spectrogram of channel {{ ch.seedID }} for {{ spec.start }} to {{ spec.end }}]({{ spec.image }})
+{% else %}
 ![Acceleration PSD spectrogram of channel {{ ch.seedID }} for {{ spec.start }} to {{ spec.end }}]({{ spec.image }})
+{% endif %}
 
 {% endfor %}
 {% endif %}
@@ -129,7 +133,11 @@ Orientation: {{ ch.azimuth }} / {{ ch.dip }}
 ### Power Spectral Density
 
 {% for psd in ch.psdLoc %}
+{% if ch.hydrophone %}
+![Power spectral density curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
+{% else %}
 ![Acceleration power spectral density curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
+{% endif %}
 
 {% endfor %}
 {% endif %}
