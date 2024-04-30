@@ -171,7 +171,7 @@ def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing
                 if (dmax is None) or (dmax > auto_y[1]):
                     dmax = auto_y[1]
             ax.set_ylim(dmin, dmax)
-            plt.grid(True, ls=':')
+            ax.grid(True, ls=':')
             fig.savefig(full_data_plot)
             plt.close(fig)
         return full_data_plot
@@ -198,6 +198,7 @@ def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing
                     if (dmax is None) or (dmax > auto_y[1]):
                         dmax = auto_y[1]
                 ax.set_ylim(dmin, dmax)
+                ax.grid(True, ls=':')
                 # Save figure
                 fig.savefig(raw_data_plot)
                 plt.close(fig)
@@ -270,7 +271,7 @@ def spectrogram(trace, outdir, spec_win, overlap, sub_overlap=0.75, cmap=None, s
         pad_xextent = (npts - nover) / trace.stats.sampling_rate / 2
         xextent = np.min(times) - pad_xextent, np.max(times) + pad_xextent
         xmin, xmax = xextent
-        extent = xmin, xmax, freqs[0], freqs[-1]
+        extent = xmin, xmax, freqs[0][0], freqs[0][-1]
 
         im = sax.imshow(spec_psds, cmap=cmap, extent=extent, vmin=slim[0], vmax=slim[1], origin='upper')
         sax.axis('auto')
@@ -382,12 +383,15 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, use_existing_plo
     if seismometer:
         if not (use_existing_plots and os.path.isfile(psd_a_plot)):
             psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True)
+            aax.plot(NLNM[0], NLNM[1], c='k', lw=0.5, marker=None)
+            aax.plot(NHNM[0], NHNM[1], c='k', lw=0.5, marker=None)
             for f, a in zip(freqs, apsds):
                 aax.plot(f, 10 * np.log10(a), c='0.8', lw=0.5, marker=None)
             aax.set_xscale('log')
             plt.grid(True, ls=':')
             aax.set_xlabel('Frequency (Hz)')
             aax.set_ylabel('Power Spectral Density (dB)')
+            aax.set_xlim(xmin=1e-3)
             psd_a_fig.savefig(psd_a_plot)
 
         return psd_a_plot
