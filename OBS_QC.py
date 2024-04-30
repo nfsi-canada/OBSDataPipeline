@@ -454,13 +454,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                         if channel_type == 'power':
                             # Voltage and power consumption channels
-                            trace_start = tr.meta.starttime
-                            trace_end = tr.meta.endtime
-                            first_window = obspy.UTCDateTime(trace_start.year, trace_start.month, trace_start.day)
-                            last_window = obspy.UTCDateTime(trace_end.year, trace_end.month, trace_end.day - 1)
-                            window_length = 3 * 24 * 60 * 60    # 3 days in seconds
-                            window_offset = 24 * 60 * 60        # 1 day in seconds
-                            num_windows = int(round((last_window - first_window) / window_offset))
+                            trace_length = tr.meta.endtime - tr.meta.starttime
 
                             if tr.meta.channel == 'LE3':
                                 power_data[tr.meta.channel] = tr.copy()
@@ -469,7 +463,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 report_params['meanPower'] = '{:.3f}'.format(np.mean(tr.data))
 
                                 # 3-day rolling window of average power consumption
-                                avg_power.extend(nf.rolling_window_stats(tr, full=False))
+                                if trace_length > 5*24*60*60:
+                                    avg_power.extend(nf.rolling_window_stats(tr, full=False))
+                                else:
+                                    stat_window = trace_length * 0.6
+                                    if 'battery_stats_window' not in report_params:
+                                        report_params['battery_stats_window'] = stat_window
+                                    avg_power.extend(nf.rolling_window_stats(tr, window_length=stat_window, window_offset=stat_window/3, full=False))
 
                                 # TODO: Get times of data writes (spikes 45 minutes apart)
                                 if (qc_config is not None) and ('qartod' in qc_config) and ('spike_test' in qc_config['qartod']):
@@ -478,7 +478,14 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 power_data[tr.meta.channel] = tr.copy()
                                 # Battery voltage
                                 # 3-day rolling window for stats
-                                voltage_stats.extend(nf.rolling_window_stats(tr, full=True))
+                                if trace_length > 5*24*60*60:
+                                    voltage_stats.extend(nf.rolling_window_stats(tr, full=True))
+                                else:
+                                    stat_window = trace_length * 0.6
+                                    if 'battery_stats_window' not in report_params:
+                                        report_params['battery_stats_window'] = stat_window
+                                    voltage_stats.extend(nf.rolling_window_stats(tr, window_length=stat_window, window_offset=stat_window/3, full=True))
+
                         done_power = timeit.default_timer()
                         debug_info['timing']['power_analysis'] += done_power - done_qartod
 
@@ -491,9 +498,14 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                             except Exception:
                                 pass
 
-                            hum.trigger('classicstalta', sta=60*60*3, lta=60*60*24)
+                            try:
+                                hum.trigger('classicstalta', sta=60*60*3, lta=60*60*24)
+                                triggers = trigger_onset(hum.data, 3, 1.5)
+                            except Exception as ex:
+                                # Raised if humidity data shorter than LTA window (1 day)
+                                print(ex)
+                                triggers = []
 
-                            triggers = trigger_onset(hum.data, 3, 1.5)
                             if len(triggers) > 0:
                                 plot_trigger(tr, hum.data, 3, 1.5, show=False)
                                 fig = plt.gcf()
@@ -646,6 +658,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         if not (use_existing_plots and os.path.isfile(avgpow_plot)):
             fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
             power_stats.plot(x='Plot_Time', y='Power_Mean', kind='line', ax=ax, xlabel='Date/Time', ylabel='Average Power Consumption (W)', legend=False)
+            ax.grid(True, ls=':')
             fig.tight_layout()
             fig.savefig(avgpow_plot)
             plt.close(fig)
@@ -655,6 +668,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         if not (use_existing_plots and os.path.isfile(avgvlt_plot)):
             fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
             power_stats.plot(x='Plot_Time', y='Voltage_Mean', kind='line', ax=ax, xlabel='Date/Time', ylabel='Average Voltage (V)', legend=False)
+            ax.grid(True, ls=':')
             fig.tight_layout()
             fig.savefig(avgvlt_plot)
             plt.close(fig)
@@ -664,6 +678,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         if not (use_existing_plots and os.path.isfile(vltgrd_plot)):
             fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
             power_stats.plot(x='Plot_Time', y='Voltage_gradient', kind='line', ax=ax, xlabel='Date/Time', ylabel='Voltage Gradient (mV/day)', legend=False)
+            ax.set_ylim(ymax=0)
+            ax.grid(True, ls=':')
             fig.tight_layout()
             fig.savefig(vltgrd_plot)
             plt.close(fig)
@@ -675,10 +691,11 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
         # TODO: Calculate expected hibernate date/time (6500mV)
         hib_thres = 6500
-        latest_V = power_stats['Voltage_Min'].values[-1] * 1000
-        latest_win = pd.to_datetime(power_stats['End'].values[-1])
+        valid_gradient = power_stats.loc[power_stats['Voltage_gradient'] < 0]
+        latest_V = valid_gradient['Voltage_Min'].values[-1] * 1000
+        latest_win = pd.to_datetime(valid_gradient['End'].values[-1])
         if latest_V > hib_thres:
-            days_to_hibernate = -(latest_V - hib_thres) / power_stats['Voltage_gradient'].values[-1]
+            days_to_hibernate = -(latest_V - hib_thres) / valid_gradient['Voltage_gradient'].values[-1]
             const_grad = timedelta(days=days_to_hibernate) + latest_win
             const_acc = pd.NaT
             lookup = pd.NaT
@@ -708,7 +725,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 tr_curr = obspy.Trace(curr_data, curr_stats)
                 st_curr = tr_curr.split()
                 st_curr.write(os.path.join(output_dir, 'calculated_current.mseed'), format='MSEED')
-                curr_windowed = nf.rolling_window_stats(tr_curr, full=False)
+                if (tr_curr.stats.endtime - tr_curr.stats.starttime) > 5*24*60*60:
+                    curr_windowed = nf.rolling_window_stats(tr_curr, full=False)
+                else:
+                    stat_window = (tr_curr.stats.endtime - tr_curr.stats.starttime) * 0.6
+                    if 'battery_stats_window' not in report_params:
+                        report_params['battery_stats_window'] = stat_window
+                    curr_windowed = nf.rolling_window_stats(tr_curr, window_length=stat_window, window_offset=stat_window/3, full=False)
                 crnt = pd.DataFrame(curr_windowed, columns=['Start', 'End', 'Center', 'Min_Amps', 'Max_Amps', 'Avg_Amps'])
                 # Time series plot (applies instrument sensitivity in-place if response present in tr.meta)
                 current_plot = os.path.join(output_dir, 'current_{0}.png'.format(obs_log['OBS ID'].values[0]))
@@ -716,10 +739,23 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
                     crnt.plot(x='Center', y='Avg_Amps', kind='line', ax=ax, xlabel='Date/Time',
                                      ylabel='Current Draw (A)', legend=False)
+                    ax.grid(True, ls=':')
                     fig.tight_layout()
                     fig.savefig(current_plot)
                     plt.close(fig)
                 report_params['batteryStats']['currentPlot'] = current_plot
+
+    if 'battery_stats_window' in report_params:
+        if report_params['battery_stats_window'] > 24*60*60:
+            report_params['batteryStats']['window_str'] = '{:.1f}-day'.format(report_params['battery_stats_window'] / 60 / 60 / 24)
+        elif report_params['battery_stats_window'] > 60*60:
+            report_params['batteryStats']['window_str'] = '{:.1f}-hour'.format(report_params['battery_stats_window'] / 60 / 60)
+        elif report_params['battery_stats_window'] > 60:
+            report_params['batteryStats']['window_str'] = '{:.1f}-minute'.format(report_params['battery_stats_window'] / 60)
+        else:
+            report_params['batteryStats']['window_str'] = '{:.1f}-second'.format(report_params['battery_stats_window'])
+    else:
+        report_params['batteryStats']['window_str'] = '3-day'
 
     battery_time = timeit.default_timer()
     g_log.debug("Time spent checking battery stats: {0} seconds".format((battery_time - gap_time)))

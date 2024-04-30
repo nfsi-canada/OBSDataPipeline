@@ -96,9 +96,6 @@ Abnormal change(s) in humidity were observed during this deployment.
 
 ![Centring behaviour of OBS {{ obsId }} during deployment]({{ centring.plot }})
 
-{% else %}
-Unable to evaluate centring behaviour with available data.
-
 {% endif %}
 
 \newpage{}
@@ -160,18 +157,18 @@ SEED ID: {{ ch.seedID }}
 # Battery Condition
 
 {% if batteryStats %}
-Battery life statistics are calculated from the recorded power consumption and voltage channels. A 3-day rolling window is used, with offset of 1 day between consecutive windows (66% overlap).
+Battery life statistics are calculated from the recorded power consumption and voltage channels. A {{ batteryStats.window_str }} rolling window is used, with 66% overlap between consecutive windows.
 
 This instrument would be expected to enter low-power hibernate mode on or about {{ batteryStats.HibernateEstimate }}.
 
-![Average power consumption, calculated for a 3-day rolling window]({{ batteryStats.meanPowerPlot }})
+![Average power consumption, calculated for a {{ batteryStats.window_str }} rolling window]({{ batteryStats.meanPowerPlot }})
 
-![Average voltage, calculated for a 3-day rolling window]({{ batteryStats.meanVoltPlot }})
+![Average voltage, calculated for a {{ batteryStats.window_str }} rolling window]({{ batteryStats.meanVoltPlot }})
 
-![Voltage gradient, calculated for a 3-day rolling window]({{ batteryStats.gradVoltPlot }})
+![Voltage gradient, calculated for a {{ batteryStats.window_str }} rolling window]({{ batteryStats.gradVoltPlot }})
 
 {% if batteryStats.currentPlot %}
-![Average current draw, calculated from recorded voltage and power consumption, for a 3-day rolling window]({{ batteryStats.currentPlot }})
+![Average current draw, calculated from recorded voltage and power consumption, for a {{ batteryStats.window_str }} rolling window]({{ batteryStats.currentPlot }})
 
 {% endif %}
 {% endif %}
