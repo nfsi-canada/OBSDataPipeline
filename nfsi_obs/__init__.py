@@ -73,7 +73,7 @@ def rolling_window_stats(trace, window_length=3*24*60*60, window_offset=24*60*60
     trace_start = trace.meta.starttime
     trace_end = trace.meta.endtime
     first_window = obspy.UTCDateTime(trace_start.year, trace_start.month, trace_start.day)
-    last_window = obspy.UTCDateTime(trace_end.year, trace_end.month, trace_end.day - 1)
+    last_window = obspy.UTCDateTime(trace_end.year, trace_end.month, trace_end.day + 1) - window_offset
 
     window_stats = []
     window_start = first_window
@@ -81,7 +81,8 @@ def rolling_window_stats(trace, window_length=3*24*60*60, window_offset=24*60*60
         center = window_start + window_length / 2
         end = window_start + window_length
         window = trace.slice(window_start, end)
-        if (not np.ma.isMaskedArray(window.data) and len(window.data) > 0) or window.data.count() > 0:
+
+        if window.stats.npts > 0:
             stats = [window_start.datetime, end.datetime, center.datetime, window.data.min(), window.max(), window.data.mean()]
             if full:
                 days = (center - trace_start) / 60 / 60 / 24
