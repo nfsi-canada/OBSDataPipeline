@@ -68,11 +68,14 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
 
                 outfile = os.path.join(output_dir, '{}.{}.{}.mseed'.format(tr.id, cut.year, cut.julday))
                 if os.path.isfile(outfile):
+                    g_log.info('Found existing SDS format data for date {0:04d}/{1:02d}/{2:02d}. Combining...'.format(
+                        cut.year, cut.month, cut.day))
                     existing = obspy.read(outfile)
                     for et in existing:
                         stt.append(et)
                     stt.merge()
                     stt = stt.split()
+                    g_log.info(stt)
 
                 stt.write(outfile, format="MSEED")
 

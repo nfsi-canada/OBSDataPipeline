@@ -198,7 +198,7 @@ def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing
                     if (dmax is None) or (dmax > auto_y[1]):
                         dmax = auto_y[1]
                 ax.set_ylim(dmin, dmax)
-                ax.grid(True, ls=':')
+                ax.grid(True, ls=':')   # TODO: Grid not plotting...
                 # Save figure
                 fig.savefig(raw_data_plot)
                 plt.close(fig)

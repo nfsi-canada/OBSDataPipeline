@@ -606,6 +606,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     g_log.debug("Time spent checking centring behaviour: {0} seconds".format((centre_time - loop_time)))
     debug_info['timing']['centring_summary'] = centre_time - loop_time
 
+    # TODO: Add list of all channels at beginning of report
+
     # Parse gap information for report
     # TODO: Include check for duplicates (may come out of buffered seismic data)
     if len(all_gaps) > 0:
