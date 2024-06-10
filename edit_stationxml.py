@@ -32,6 +32,8 @@ if __name__ == '__main__':
     parser.add_argument('--datalog', dest="datalog",
                         help="Log file from deployment/recovery. Must include station identifiers and locations. "
                              "Preferred format is XLSX (or similar spreadsheet) following NFSI template.")
+    parser.add_argument('--defaultlogcols', dest="obslog_column_names_default", action="store_true",
+                        help="Use column names from OBS deployment log file.")
     parser.add_argument('--channelmap', dest="channel_map",
                         help="File mapping as-recorded channel codes to their correct values.")
     parser.add_argument('--out_channels', dest="out_channels", default=None,
@@ -90,40 +92,16 @@ if __name__ == '__main__':
                 pass
 
         # Metadata files
-        meta_args = None
-        if args.correct_metadata:
-            channel_map = None
-            if args.channel_map:
-                if args.relative_paths:
-                    channel_map = os.path.abspath(os.path.expanduser(os.path.expandvars(os.path.join(data_dir, args.channel_map))))
-                else:
-                    channel_map = os.path.abspath(os.path.expanduser(os.path.expandvars(args.channel_map)))
+        if args.datalog:
+            data_log_file = os.path.normpath(os.path.abspath(os.path.expanduser(os.path.expandvars(args.datalog))))
+            g_log.info('Reading project metadata from {0}...'.format(data_log_file))
+            obs_log_info = nf.io.parse_obs_log(data_log_file, names_in_file=not args.obslog_column_names_default)
 
-            metadata_file = None
-            if args.metadata_file:
-                if args.relative_paths:
-                    metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(os.path.join(data_dir, args.metadata_file))))
-                else:
-                    metadata_file = os.path.abspath(os.path.expanduser(os.path.expandvars(args.metadata_file)))
+        channel_map = None
+        if args.channel_map:
+            channel_map = os.path.abspath(os.path.expanduser(os.path.expandvars(args.channel_map)))
 
-            project_meta = None
-            # TODO: Replace with ST integration once we have an instance running and populated
-            if args.extra_meta:
-                if args.relative_paths:
-                    project_meta = os.path.abspath(os.path.expanduser(os.path.expandvars(os.path.join(data_dir, args.extra_meta))))
-                else:
-                    project_meta = os.path.abspath(os.path.expanduser(os.path.expandvars(args.extra_meta)))
-
-            meta_args = {
-                'channel_map': channel_map,
-                'metadata_file': metadata_file,
-                'extra_meta': project_meta,
-                'network': args.network_id
-            }
-
-        # Split data into day-long miniSEED files saved in archive_dir (SDS folder structure)
-        make_daily_miniseed_files(data_dir, arc_dir, subfolders=subfolders, channels=channels, start=startdate,
-                                  end=enddate, correct_meta=args.correct_metadata, metadata_args=meta_args)
+        # TODO: Filter and correct each StationXML file in list `xml_files`
 
         g_log.info("Processing complete!")
         logger.close_logs()
