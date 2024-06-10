@@ -8,6 +8,8 @@ import re
 import timeit
 import warnings
 
+# TODO: Clean up and/or combine with digest_sonardyne_logs.py. Determine actual usefulness.
+
 
 class SonardyneParseError(Exception):
     """

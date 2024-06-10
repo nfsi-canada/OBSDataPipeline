@@ -8,6 +8,8 @@ import warnings
 
 from nfsi_obs.io import parse_usbl_log
 
+# TODO: Clean up and/or combine with parse_sonardyne_logs_aio.py. Determine actual usefulness.
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Digest log files from Ranger 2 USBL system.")
