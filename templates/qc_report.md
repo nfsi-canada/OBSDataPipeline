@@ -42,11 +42,11 @@ Recovery comments: {{ recoverComments }}
 
 Length of deployment (days): {{ deploymentDays }}
 
-Total clock drift (ms): {{ clockDrift }}
+Total clock drift (ms): {{ clockDrift }} ({{ clockDriftPerDay }} ms/day)
 
 Average power consumption (W): {{ meanPower }}
 
-Remaining battery SOC: {{ batteryLevel }}%
+Battery SOC: At deployment: {{ batteryLevel.start }}% | Remaining: {{ batteryLevel.end }}%
 
 Power spectral density curves are calculated using {{ psdWindowLength }} Hann windows, with {{ psdOverlapPercent }}% overlap.
 
@@ -78,13 +78,23 @@ No recording gaps or overlaps were observed in the recorded data.
 
 {% endif %}
 
+{% if humid %}
+Abnormal change(s) in humidity were observed during this deployment.
+
+![Above normal changes in humidity data {{ humid.ch }} during deployment]({{ humid.plot }})
+
+| Start Time | End Time | Length (s) | Deviation (%Rh) |
+|:-|:-|-:|-:|
+{% for h in humid.triggers %}
+| {{ h.start }} | {{ h.end }} | {{ h.sec }} | {{ h.dev }} |
+{% endfor %}
+
+{% endif %}
+
 {% if centring %}
 {{ centring.text }}
 
 ![Centring behaviour of OBS {{ obsId }} during deployment]({{ centring.plot }})
-
-{% else %}
-Unable to evaluate centring behaviour with available data.
 
 {% endif %}
 
@@ -110,7 +120,11 @@ Orientation: {{ ch.azimuth }} / {{ ch.dip }}
 ### Spectrogram
 
 {% for spec in ch.specLoc %}
-![Spectrogram of channel {{ ch.seedID }} for {{ spec.start }} to {{ spec.end }}]({{ spec.image }})
+{% if ch.hydrophone %}
+![PSD spectrogram of channel {{ ch.seedID }} for {{ spec.start }} to {{ spec.end }}]({{ spec.image }})
+{% else %}
+![Acceleration PSD spectrogram of channel {{ ch.seedID }} for {{ spec.start }} to {{ spec.end }}]({{ spec.image }})
+{% endif %}
 
 {% endfor %}
 {% endif %}
@@ -119,7 +133,11 @@ Orientation: {{ ch.azimuth }} / {{ ch.dip }}
 ### Power Spectral Density
 
 {% for psd in ch.psdLoc %}
+{% if ch.hydrophone %}
 ![Power spectral density curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
+{% else %}
+![Acceleration power spectral density curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
+{% endif %}
 
 {% endfor %}
 {% endif %}
@@ -147,15 +165,20 @@ SEED ID: {{ ch.seedID }}
 # Battery Condition
 
 {% if batteryStats %}
-Battery life statistics are calculated from the recorded power consumption and voltage channels. A 3-day rolling window is used, with offset of 1 day between consecutive windows (66% overlap).
+Battery life statistics are calculated from the recorded power consumption and voltage channels. A {{ batteryStats.window_str }} rolling window is used, with 66% overlap between consecutive windows.
 
 This instrument would be expected to enter low-power hibernate mode on or about {{ batteryStats.HibernateEstimate }}.
 
-![Average power consumption, calculated for a 3-day rolling window]({{ batteryStats.meanPowerPlot }})
+![Average power consumption, calculated for a {{ batteryStats.window_str }} rolling window]({{ batteryStats.meanPowerPlot }})
 
-![Average voltage, calculated for a 3-day rolling window]({{ batteryStats.meanVoltPlot }})
+![Average voltage, calculated for a {{ batteryStats.window_str }} rolling window]({{ batteryStats.meanVoltPlot }})
 
-![Voltage gradient, calculated for a 3-day rolling window]({{ batteryStats.gradVoltPlot }})
+![Voltage gradient, calculated for a {{ batteryStats.window_str }} rolling window]({{ batteryStats.gradVoltPlot }})
+
+{% if batteryStats.currentPlot %}
+![Average current draw, calculated from recorded voltage and power consumption, for a {{ batteryStats.window_str }} rolling window]({{ batteryStats.currentPlot }})
+
+{% endif %}
 {% endif %}
 
 {% for ch in power_channels %}

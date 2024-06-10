@@ -23,4 +23,13 @@ def get_config(config_path=None):
     # Load info from the config file
     config = configparser.ConfigParser()
     config.read(config_path)
+    if not config.has_section('dataset'):
+        config.add_section('dataset')
+    config.set('dataset', 'config_path', config_path)
     return config
+
+
+def copy_config(old_config):
+    new_config = configparser.ConfigParser()
+    new_config.read_dict(old_config)
+    return new_config

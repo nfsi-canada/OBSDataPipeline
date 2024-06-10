@@ -4,6 +4,7 @@ from matplotlib import mlab
 import numpy as np
 import obspy
 import os
+import re
 from scipy import signal
 import timeit
 
@@ -81,7 +82,7 @@ def date_ticks(start, end, max_ticks=10):
     return tm_ticks, tm_ticklabels
 
 
-def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing_plots=False):
+def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing_plots=False, strict_lims=False):
     """
     Make time series plot(s) of an obspy.core.trace.Trace object, raw and corrected (if response information included).
 
@@ -91,6 +92,8 @@ def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing
     :param dmax: maximum data value for plot y-axis
     :param qc_config: dictionary of QC configuration in ioos_qc compatible format, optional
     :param use_existing_plots: check if plots exist and do not re-create if present, False by default
+    :param strict_lims: if True, y-axis plot limits `dmin` and `dmax` are used regardless of data range; False by
+    default, which will use automatic plot limits if smaller than range (dmin, dmax)
 
     :return: path to plot PNG file
     """
@@ -160,8 +163,15 @@ def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing
                         ax.axhspan(sus[0], sus[1], alpha=0.1, color='y')
             if hasattr(trace.meta, 'description'):
                 ax.set_ylabel("{0} ({1})".format(trace.meta.description, trace.meta.response.instrument_sensitivity.input_units))
-                ax.set_ylim(dmin, dmax)
-            plt.grid(True, ls=':')
+            # Set axis y-limits (if necessary)
+            if not strict_lims:
+                auto_y = ax.get_ylim()
+                if (dmin is None) or (dmin < auto_y[0]):
+                    dmin = auto_y[0]
+                if (dmax is None) or (dmax > auto_y[1]):
+                    dmax = auto_y[1]
+            ax.set_ylim(dmin, dmax)
+            ax.grid(True, ls=':')
             fig.savefig(full_data_plot)
             plt.close(fig)
         return full_data_plot
@@ -180,6 +190,16 @@ def trace_plot(trace, outdir, dmin=None, dmax=None, qc_config=None, use_existing
                 for sus in [low_sus, high_sus]:
                     if sus is not None:
                         ax.axhspan(sus[0], sus[1], alpha=0.1, color='y')
+                # Set axis y-limits (if necessary)
+                if not strict_lims:
+                    auto_y = ax.get_ylim()
+                    if (dmin is None) or (dmin < auto_y[0]):
+                        dmin = auto_y[0]
+                    if (dmax is None) or (dmax > auto_y[1]):
+                        dmax = auto_y[1]
+                ax.set_ylim(dmin, dmax)
+                ax.grid(True, ls=':')   # TODO: Grid not plotting...
+                # Save figure
                 fig.savefig(raw_data_plot)
                 plt.close(fig)
             else:
@@ -213,7 +233,7 @@ def qartod_plot(trace, outdir, check='gross_range_check', use_existing_plots=Fal
     return qc_plot
 
 
-def spectrogram(trace, outdir, spec_win, overlap, use_existing_plots=False):
+def spectrogram(trace, outdir, spec_win, overlap, sub_overlap=0.75, cmap=None, slim=[None, None], use_existing_plots=False):
     """
     Plot spectrogram of seismic data (as obspy.core.trace.Trace object)
 
@@ -225,23 +245,47 @@ def spectrogram(trace, outdir, spec_win, overlap, use_existing_plots=False):
 
     :return: path to plot PNG file
     """
+    seismometer = False
+    if re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', trace.stats.channel):
+        seismometer = True
+
+    # Calculate all PSDs
+    apsds, vpsds, freqs, times = calc_psds(trace, spec_win, overlap, sub_overlap, calc_acc=seismometer)
+
+    # Spectrogram plot from PSDs
     spectrogram_plot = os.path.join(outdir, 'spec_{0}.png'.format(trace.id))
+    # TODO: Set appropriate x-ticks for time span
     if not (use_existing_plots and os.path.isfile(spectrogram_plot)):
-        # Alternate spectrogram method (lower memory usage than through obspy)
-        npts = int(spec_win * trace.meta.sampling_rate)
+        if cmap is None:
+            cmap = 'viridis'
+        npts = int(spec_win * trace.stats.sampling_rate)
         nover = int(overlap * npts)
-        sfig, sax = plt.subplots(1, 1, num=1, clear=True)
-        plt.specgram(trace.data, NFFT=npts, Fs=trace.meta.sampling_rate, window=signal.get_window('hann', npts, False),
-                     noverlap=nover, detrend='linear', scale='dB')
+
+        spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
+        if seismometer:
+            spec_psds = 10. * np.log10(np.transpose(apsds))
+        else:
+            spec_psds = 10. * np.log10(np.transpose(vpsds))
+        spec_psds = np.flipud(spec_psds)
+
+        pad_xextent = (npts - nover) / trace.stats.sampling_rate / 2
+        xextent = np.min(times) - pad_xextent, np.max(times) + pad_xextent
+        xmin, xmax = xextent
+        extent = xmin, xmax, freqs[0][0], freqs[0][-1]
+
+        im = sax.imshow(spec_psds, cmap=cmap, extent=extent, vmin=slim[0], vmax=slim[1], origin='upper')
+        sax.axis('auto')
+        sax._sci(im)
         sax.set_yscale('log')
-        sax.set_ylim(ymin=1e-3, ymax=trace.meta.sampling_rate / 2)
+        sax.set_ylim(ymin=8e-3, ymax=trace.stats.sampling_rate / 2)
         sax.set_ylabel('Frequency (Hz)')
-        sfig.savefig(spectrogram_plot)
+        plt.tight_layout()
+        spec_fig.savefig(spectrogram_plot)
 
     return spectrogram_plot
 
 
-def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False):
+def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False, calc_acc=False, seg_len=pow(2, 17)):
     """
     Calculate PSDs of seismic data (as obspy.core.trace.Trace object)
 
@@ -252,10 +296,12 @@ def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False
     :param float sub_overlap: fractional overlap for sub-windows used in PSD calculation (Welch's average periodogram method)
     :param endtime: end time for calculation window (will analyze windows which include `endtime`), obspy.UTCDateTime
     :param bool buffered: whether the input data is being processed as part of a buffer or not
+    :param calc_acc: if True, assume input data is velocity (seismometer) and convert to acceleration
+    :param seg_len: length of PSD segment for average periodogram method (see matplotlib.mlab.psd) in data points
 
-    :returns: Calculated PSD curves in acceleration and velocity, corresponding frequencies, start of next window (if buffered is True)
+    :returns: Calculated PSD curves in acceleration (if seismometer) and data units, corresponding frequencies, start of next window (if buffered is True)
     """
-    seg_len = pow(2, 17)
+    #seg_len = pow(2, 17)
     freqs, vel_psds, times = [], [], []
     next_win_start = None
     if buffered:
@@ -269,7 +315,7 @@ def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False
                 hit_end = True
                 continue    # skip windows which start after `endtime` and reset next start to include last window in next section of buffer
         psd, frq = mlab.psd(sect.data, NFFT=seg_len, Fs=trace.meta.sampling_rate,
-                            noverlap=sub_overlap*trace.meta.sampling_rate,
+                            noverlap=int(sub_overlap*seg_len),
                             window=signal.get_window('hann', seg_len, False), detrend='linear')
         freqs.append(frq)
         vel_psds.append(psd)
@@ -281,11 +327,12 @@ def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False
     if hit_end:
         next_win_start = next_win_start - win_len * (1 - overlap)
 
-    # Convert PSDs to acceleration
+    # Convert PSDs to acceleration (if necessary)
     acc_psds = []
-    for f, p in zip(freqs, vel_psds):
-        apsd = p * (2 * np.pi * f) * (2 * np.pi * f)
-        acc_psds.append(apsd)
+    if calc_acc:
+        for f, p in zip(freqs, vel_psds):
+            apsd = p * (2 * np.pi * f) * (2 * np.pi * f)
+            acc_psds.append(apsd)
 
     if buffered:
         return acc_psds, vel_psds, freqs, times, next_win_start
@@ -293,9 +340,10 @@ def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False
         return acc_psds, vel_psds, freqs, times
 
 
-def psd_plot(trace, outdir, win_len, overlap, sub_overlap, use_existing_plots=False):
+def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, use_existing_plots=False):
     """
-    Plot PSDs of seismic data (as obspy.core.trace.Trace object)
+    Plot PSDs of seismic data (as obspy.core.trace.Trace object). If the input trace is from a seismometer (channel code
+    "H"), the returned plot will be in acceleration. Otherwise, the plot will be in sensor units (e.g. pressure).
 
     :param trace: obspy.core.trace.Trace object
     :param outdir: path to output directory
@@ -306,36 +354,49 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap, use_existing_plots=Fa
 
     :return: path to plot PNG file
     """
-    psd_v_plot = os.path.join(outdir, 'psd_seismic_vel_{0}.png'.format(trace.id))
-    psd_a_plot = os.path.join(outdir, 'psd_seismic_acc_{0}.png'.format(trace.id))
-    if use_existing_plots and os.path.isfile(psd_v_plot) and os.path.isfile(psd_a_plot):
-        return psd_a_plot
+    seismometer = False
+    if re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', trace.stats.channel):
+        seismometer = True
+        psd_asis = os.path.join(outdir, 'psd_seismic_vel_{0}.png'.format(trace.id))
+        psd_a_plot = os.path.join(outdir, 'psd_seismic_acc_{0}.png'.format(trace.id))
+        if use_existing_plots and os.path.isfile(psd_asis) and os.path.isfile(psd_a_plot):
+            return psd_a_plot
+    else:
+        psd_asis = os.path.join(outdir, 'psd_{0}.png'.format(trace.id))
+        if use_existing_plots and os.path.isfile(psd_asis):
+            return psd_asis
 
     # Calculate all PSDs
-    apsds, vpsds, freqs, times = calc_psds(trace, win_len, overlap, sub_overlap)
+    apsds, vpsds, freqs, times = calc_psds(trace, win_len, overlap, sub_overlap, calc_acc=seismometer)
 
-    # Plot velocity PSDs
-    if not (use_existing_plots and os.path.isfile(psd_v_plot)):
+    # Plot PSDs in sensor units (velocity or pressure)
+    if not (use_existing_plots and os.path.isfile(psd_asis)):
         psd_v_fig, vax = plt.subplots(1, 1, num=1, clear=True)
         for f, v in zip(freqs, vpsds):
             vax.plot(f, 10 * np.log10(v), c='0.7', lw=0.5, marker=None)
         vax.set_xscale('log')
         vax.set_xlabel('Frequency (Hz)')
         vax.set_ylabel('Power Spectral Density (dB)')
-        psd_v_fig.savefig(psd_v_plot)
+        psd_v_fig.savefig(psd_asis)
 
-    # Plot acceleration PSDs
-    if not (use_existing_plots and os.path.isfile(psd_a_plot)):
-        psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True)
-        for f, a in zip(freqs, apsds):
-            aax.plot(f, 10 * np.log10(a), c='0.8', lw=0.5, marker=None)
-        aax.set_xscale('log')
-        plt.grid(True, ls=':')
-        aax.set_xlabel('Frequency (Hz)')
-        aax.set_ylabel('Power Spectral Density (dB)')
-        psd_a_fig.savefig(psd_a_plot)
+    # Plot acceleration PSDs (if channel is a seismometer)
+    if seismometer:
+        if not (use_existing_plots and os.path.isfile(psd_a_plot)):
+            psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True)
+            aax.plot(NLNM[0], NLNM[1], c='k', lw=0.5, marker=None)
+            aax.plot(NHNM[0], NHNM[1], c='k', lw=0.5, marker=None)
+            for f, a in zip(freqs, apsds):
+                aax.plot(f, 10 * np.log10(a), c='0.8', lw=0.5, marker=None)
+            aax.set_xscale('log')
+            plt.grid(True, ls=':')
+            aax.set_xlabel('Frequency (Hz)')
+            aax.set_ylabel('Power Spectral Density (dB)')
+            aax.set_xlim(xmin=1e-3)
+            psd_a_fig.savefig(psd_a_plot)
 
-    return psd_a_plot
+        return psd_a_plot
+
+    return psd_asis
 
 
 def next_plot_window(prev_end, plot_length=None):
@@ -355,25 +416,26 @@ def next_plot_window(prev_end, plot_length=None):
     return plot_start, plot_end
 
 
-def plot_filenames(outdir, ch_id, plot_start, plot_end):
-    psd_v_plot = os.path.join(outdir, 'psd_vel_{0}_{1}_to_{2}.png'.format(ch_id,
-                                                                          plot_start.strftime('%Y-%m-%d'),
-                                                                          (plot_end - 1).strftime('%Y-%m-%d')))
-    psd_a_plot = os.path.join(outdir, 'psd_acc_{0}_{1}_to_{2}.png'.format(ch_id,
-                                                                          plot_start.strftime('%Y-%m-%d'),
-                                                                          (plot_end - 1).strftime('%Y-%m-%d')))
-    spec_psd_plot = os.path.join(outdir, 'spec_psd_{0}_{1}_to_{2}.png'.format(ch_id,
-                                                                              plot_start.strftime('%Y-%m-%d'),
+def plot_filenames(outdir, ch_id, plot_start, plot_end, asis=False):
+    spec_psd_plot = os.path.join(outdir, 'spec_psd_{0}_{1}_to_{2}.png'.format(ch_id, plot_start.strftime('%Y-%m-%d'),
                                                                               (plot_end - 1).strftime('%Y-%m-%d')))
-    spectrogram_plot = os.path.join(outdir, 'spec_{0}_{1}_to_{2}.png'.format(ch_id,
-                                                                             plot_start.strftime('%Y-%m-%d'),
+    spectrogram_plot = os.path.join(outdir, 'spec_{0}_{1}_to_{2}.png'.format(ch_id, plot_start.strftime('%Y-%m-%d'),
                                                                              (plot_end - 1).strftime('%Y-%m-%d')))
-    return psd_v_plot, psd_a_plot, spec_psd_plot, spectrogram_plot
+    if asis:
+        psd_asis = os.path.join(outdir, 'psd_{0}_{1}_to_{2}.png'.format(ch_id, plot_start.strftime('%Y-%m-%d'),
+                                                                        (plot_end - 1).strftime('%Y-%m-%d')))
+        return psd_asis, spec_psd_plot, spectrogram_plot
+    else:
+        psd_v_plot = os.path.join(outdir, 'psd_vel_{0}_{1}_to_{2}.png'.format(ch_id, plot_start.strftime('%Y-%m-%d'),
+                                                                              (plot_end - 1).strftime('%Y-%m-%d')))
+        psd_a_plot = os.path.join(outdir, 'psd_acc_{0}_{1}_to_{2}.png'.format(ch_id, plot_start.strftime('%Y-%m-%d'),
+                                                                              (plot_end - 1).strftime('%Y-%m-%d')))
+        return psd_a_plot, spec_psd_plot, spectrogram_plot, psd_v_plot
 
 
 def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, channel_map=None, project_meta=None,
                         psd_win=3600, spec_win=3600, overlap=0.5, psd_over=0.75, plot_length=None, ch_id=None,
-                        start=None, end=None, detrend=False, use_existing_plots=False):
+                        start=None, end=None, detrend=False, spec_cmap=None, use_existing_plots=False):
     """
     Analyze seismic data stored in raw data files and create PSD and spectrogram plots. File paths in *files* should be
     listed in chronological order. Files must be readable by obspy.read()
@@ -395,6 +457,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     :param start: start time for data to be analyzed (e.g. when OBS reaches seafloor)
     :param end: end time for data to be analyzed (e.g. when OBS releases from anchor)
     :param detrend: if True, remove trend from trace data (RMS linear fit)
+    :param spec_cmap: colormap to use for spectrogram plot
     :param use_existing_plots: check if plots exist and do not re-create if present, False by default
 
     :return: dictionary of channel information for auto-report generation
@@ -423,6 +486,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     }
     report_info = {'order': 100}
     channel_info = None
+    hydrophone = False
     if ch_id is not None:
         input_type = get_channel_type(ch_id.split('.')[-1])
         report_info['channelType'] = input_type
@@ -430,11 +494,18 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             g_log.warn('Data buffering not yet implemented for non-seismic channel {0} of type {1}'.format(ch_id, input_type))
             return report_info
 
+        if re.match(r'[A-Z]D[HF]', ch_id.split('.')[-1]):
+            hydrophone = True
+
     # If no start/end information given, fallback to start/end dates from project metadata (JSON or [future] ST integration)
-    if start is None and project_meta['start_date']:
+    if start is None and 'start_date' in project_meta:
         start = obspy.UTCDateTime(project_meta['start_date'])
-    if end is None and project_meta['end_date']:
+    if end is None and 'end_date' in project_meta:
         end = obspy.UTCDateTime(project_meta['end_date']) + 24 * 60 * 60
+
+    # Default colormap for spectrogram if none specified
+    if spec_cmap is None:
+        spec_cmap = 'viridis'
 
     buffer_length = 2   # number of files to keep in memory at a given time; testing shows using more files per buffer loop does not improve performance
     psd_a_plots, psd_v_plots, spec_plots = [], [], []
@@ -508,24 +579,25 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
             # Check for existing plots with current plot start/end, skip if use_existing_plots == True
             if ch_id is not None:
-                psd_v_plot, psd_a_plot, spec_psd_plot, spectrogram_plot = plot_filenames(outdir, ch_id, plot_start,
-                                                                                         plot_end)
-                while use_existing_plots and os.path.isfile(psd_v_plot) and os.path.isfile(psd_a_plot) and os.path.isfile(spec_psd_plot) and os.path.isfile(spectrogram_plot):
-                    psd_v_plots.append(psd_v_plot)
+                plot_files = plot_filenames(outdir, ch_id, plot_start, plot_end, asis=hydrophone)
+                files_exist = [os.path.isfile(fn) for fn in plot_files]
+                while use_existing_plots and all(files_exist):
+                    if len(plot_files) > 3:
+                        psd_v_plots.append(plot_files[3])
                     psd_a_plots.append({
-                        'image': psd_a_plot,
+                        'image': plot_files[0],
                         'start': plot_start.strftime('%Y-%m-%d'),
                         'end': (plot_end - 1).strftime('%Y-%m-%d')
                     })
                     spec_plots.append({
-                        'image': spectrogram_plot,
+                        'image': plot_files[1],
                         'start': plot_start.strftime('%Y-%m-%d'),
                         'end': (plot_end - 1).strftime('%Y-%m-%d')
                     })
 
                     plot_start, plot_end = next_plot_window(plot_end, plot_length=plot_length)
-                    psd_v_plot, psd_a_plot, spec_psd_plot, spectrogram_plot = plot_filenames(outdir, ch_id, plot_start,
-                                                                                             plot_end)
+                    plot_files = plot_filenames(outdir, ch_id, plot_start, plot_end, asis=hydrophone)
+                    files_exist = [os.path.isfile(fn) for fn in plot_files]
             plot_setup = timeit.default_timer()
             timing['plot_admin'] += plot_setup - trim_time
 
@@ -588,6 +660,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
             if ch_id is None:
                 ch_id = buffer[0].id    # channel ID before correction (use to ensure same channel analyzed throughout)
+                if re.match(r'[A-Z]D[HF]', ch_id.split('.')[-1]):
+                    hydrophone = True
 
             buffer_full = timeit.default_timer()
             # Update metadata from other sources
@@ -622,16 +696,24 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     except (KeyError, IndexError):
                         pass
 
+            spec_lim = [None, None]
             if channel_info is not None:
                 if 'hide' in channel_info:
                     if channel_info['hide']:
                         g_log.info('Channel {0} hidden from report. Skipping analysis.'.format(this_channel.id))
                         timing['meta_admin'] += timeit.default_timer() - pull_time
                         return report_info, all_gaps, timing
+                if 'spec_min' in channel_info:
+                    spec_lim[0] = float(channel_info['spec_min'])
+                if 'spec_max' in channel_info:
+                    spec_lim[1] = float(channel_info['spec_max'])
                 if 'order' in channel_info:
                     report_info['order'] = int(channel_info['order'])
                 if 'qc_config' in channel_info:
                     g_log.warn('QARTOD QC checks not yet implemented for buffered data, config ignored')
+                if 'shift' in channel_info:
+                    spec_shift = float(channel_info['shift'][this_channel.stats.station])
+                    spec_lim = [(x + spec_shift) for x in spec_lim]
 
             more_meta = timeit.default_timer()
             timing['meta_admin'] += more_meta - pull_time
@@ -691,7 +773,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             # Calculate PSDs and save to running lists
             psd_start = first_psd_start
             new_data = cut_trace(this_channel, psd_start, None, nearest_sample=True, pad=True)
-            apsds, vpsds, freqs, times, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True)
+            apsds, vpsds, freqs, times, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone))
             psd_calc_time = timeit.default_timer()
             timing['psd_calc'] += psd_calc_time - plot_admin
 
@@ -722,40 +804,47 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 trace_time = timeit.default_timer()
                 timing['trace_plot'] += trace_time - start_plotting
 
-                psd_v_plot, psd_a_plot, spec_psd_plot, spectrogram_plot = plot_filenames(outdir, this_channel.id,
-                                                                                         plot_start, plot_end)
+                plot_files = plot_filenames(outdir, this_channel.id, plot_start, plot_end, asis=hydrophone)
                 get_filenames = timeit.default_timer()
                 timing['plot_admin'] += get_filenames - trace_time
 
                 # PSD plots
-                if not (use_existing_plots and os.path.isfile(psd_v_plot)):
+                if hydrophone:
+                    psd_asis = plot_files[0]
+                else:
+                    psd_asis = plot_files[3]
+                if not (use_existing_plots and os.path.isfile(psd_asis)):
                     psd_v_fig, vax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
                     for f, v in zip(psd_temp_results['psd_freqs'], psd_temp_results['vpsd_array']):
                         vax.plot(f, 10. * np.log10(v), c='0.8', lw=0.5, marker=None)
                     vax.set_xscale('log')
+                    plt.grid(True, ls=':')
                     vax.set_xlabel('Frequency (Hz)')
                     vax.set_ylabel('Power Spectral Density (dB)')
+                    vax.set_xlim(xmin=1e-3)
                     plt.tight_layout()
-                    psd_v_fig.savefig(psd_v_plot)
-                psd_v_plots.append(psd_v_plot)
+                    psd_v_fig.savefig(psd_asis)
 
-                if not (use_existing_plots and os.path.isfile(psd_a_plot)):
-                    psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
-                    aax.plot(NLNM[0], NLNM[1], c='k', lw=0.5, marker=None)
-                    aax.plot(NHNM[0], NHNM[1], c='k', lw=0.5, marker=None)
-                    for f, a in zip(psd_temp_results['psd_freqs'], psd_temp_results['psd_array']):
-                        aax.plot(f, 10. * np.log10(a), c='0.8', lw=0.5, marker=None)
-                    aax.set_xscale('log')
-                    plt.grid(True, ls=':')
-                    aax.set_xlabel('Frequency (Hz)')
-                    aax.set_ylabel('Power Spectral Density (dB)')
-                    aax.set_xlim(xmin=1e-3)
-                    plt.tight_layout()
-                    psd_a_fig.savefig(psd_a_plot)
+                if not hydrophone:
+                    psd_v_plots.append(psd_asis)
+                    if not (use_existing_plots and os.path.isfile(plot_files[0])):
+                        psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
+                        aax.plot(NLNM[0], NLNM[1], c='k', lw=0.5, marker=None)
+                        aax.plot(NHNM[0], NHNM[1], c='k', lw=0.5, marker=None)
+                        for f, a in zip(psd_temp_results['psd_freqs'], psd_temp_results['psd_array']):
+                            aax.plot(f, 10. * np.log10(a), c='0.8', lw=0.5, marker=None)
+                        aax.set_xscale('log')
+                        plt.grid(True, ls=':')
+                        aax.set_xlabel('Frequency (Hz)')
+                        aax.set_ylabel('Power Spectral Density (dB)')
+                        aax.set_xlim(xmin=1e-3)
+                        plt.tight_layout()
+                        psd_a_fig.savefig(plot_files[0])
+
                 done_psds = timeit.default_timer()
                 timing['psd_plot'] += done_psds - get_filenames
                 psd_a_plots.append({
-                    'image': psd_a_plot,
+                    'image': plot_files[0],
                     'start': plot_start.strftime('%Y-%m-%d'),
                     'end': (plot_end - 1).strftime('%Y-%m-%d')
                 })
@@ -767,13 +856,16 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 tm_x_ticks, tm_x_ticklabels = date_ticks(plot_start, plot_end)
 
                 # Spectrogram plot from PSDs
-                if not (use_existing_plots and os.path.isfile(spec_psd_plot)):
+                if not (use_existing_plots and os.path.isfile(plot_files[1])):
                     sfrq = psd_temp_results['psd_freqs'][0]
                     npts = int(spec_win * this_channel.stats.sampling_rate)
                     nover = int(overlap * npts)
 
                     spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
-                    spec_psds = 10. * np.log10(np.transpose(psd_temp_results['vpsd_array']))
+                    if hydrophone:
+                        spec_psds = 10. * np.log10(np.transpose(psd_temp_results['vpsd_array']))
+                    else:
+                        spec_psds = 10. * np.log10(np.transpose(psd_temp_results['psd_array']))
                     spec_psds = np.flipud(spec_psds)
 
                     pad_xextent = (npts - nover) / this_channel.stats.sampling_rate / 2
@@ -781,7 +873,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     xmin, xmax = xextent
                     extent = xmin, xmax, sfrq[0], sfrq[-1]
 
-                    im = sax.imshow(spec_psds, cmap=None, extent=extent, vmin=None, vmax=None, origin='upper')
+                    im = sax.imshow(spec_psds, cmap=spec_cmap, extent=extent, vmin=spec_lim[0], vmax=spec_lim[1], origin='upper')
                     sax.axis('auto')
                     sax._sci(im)
                     sax.set_yscale('log')
@@ -791,13 +883,13 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     sax.set_xticks(tm_x_ticks, tm_x_ticklabels, horizontalalignment='right')
                     sax.tick_params(axis='x', rotation=40)
                     plt.tight_layout()
-                    spec_fig.savefig(spec_psd_plot)
+                    spec_fig.savefig(plot_files[1])
 
                 done_spec_psd = timeit.default_timer()
                 timing['spec_plot'] += done_spec_psd - report_add
 
                 spec_plots.append({
-                    'image': spec_psd_plot,
+                    'image': plot_files[1],
                     'start': plot_start.strftime('%Y-%m-%d'),
                     'end': (plot_end - 1).strftime('%Y-%m-%d')
                 })
@@ -836,6 +928,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     add_to_report = timeit.default_timer()
     report_info['psdLoc'] = psd_a_plots
     report_info['specLoc'] = spec_plots
+    report_info['hydrophone'] = hydrophone
     timing['report_info'] += timeit.default_timer() - add_to_report
     timing['trace_analysis'] = timeit.default_timer() - func_start
     return report_info, all_gaps, timing

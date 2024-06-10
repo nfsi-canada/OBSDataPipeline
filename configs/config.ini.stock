@@ -4,6 +4,17 @@ log_dir=~/resource/OBSDataPipeline/logs
 pdftex_path=C:/texlive/2021/bin/win32/pdflatex
 
 
+[dataset]
+# Settings specific to this dataset
+base_dir=~/resource/OBSDataPipeline/test_data
+relative_paths=True
+data_dir=AQU-0260
+datalog=Test OBS Deployment Summary.xlsx
+channelmap=Test_recording_channel_map.xlsx
+extra_meta=project_info.json
+network=XX
+
+
 [sensor_tracker]
 # Sensor tracker configuration
 #  host_url: URL to connect to instance of sensor_tracker
