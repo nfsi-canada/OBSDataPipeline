@@ -914,11 +914,13 @@ if __name__ == '__main__':
         log_dir = config.get('common', 'log_dir', fallback=None)
         if log_dir is not None:
             if log_dir == ':base':
-                logs_dir = base_dir
+                logs_dir = os.path.join(base_dir, 'logs')
             elif log_dir == ':data':
-                logs_dir = data_dir
+                logs_dir = os.path.join(data_dir, 'logs')
             else:
                 logs_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(log_dir)))
+            if not os.path.exists(logs_dir):
+                os.makedirs(logs_dir)
             g_log = logger.get_general_logger(start_time, obs_identifier, debug=args.debug, logs_dir=logs_dir)
         else:
             g_log = logger.get_general_logger(start_time, obs_identifier, debug=args.debug)
