@@ -7,8 +7,11 @@ def get_config(config_path=None):
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     stock_config_path = os.path.join(base_dir, 'configs/config.ini.stock')
     if config_path is None:
-        resource_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), 'resource/OBSDataPipeline')
-        config_path = os.path.join(resource_dir, 'configs/config.ini')
+        resource_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), 'resource')
+        if os.path.exists(resource_dir):
+            config_path = os.path.join(resource_dir, 'OBSDataPipeline', 'configs/config.ini')
+        else:
+            config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'configs/config.ini')
 
     # Check if there is a config file, and if not, copy the stock config file
     if not os.path.isfile(config_path):

@@ -7,6 +7,6 @@ Pre-processing and QC tasks for data collected from NFSI's OBS instruments
 * Run `conda env create` to setup the environment or `conda env update` to update an existing environment after a package version change
 
 ### Configuration
-* This package expects to be located at `[base_dir]/OBSDataPipeline`, with a folder called `resource` at the same level as `base_dir`.
-* Copy `config/config.ini.stock` to `resource/OBSDataPipeline/config/` and name the copy `config.ini`. Alternatively, the script will do this automatically if `config.ini` does not exist.
-* Edit `config.ini` as necessary for your particular setup 
+* By default, this package expects to be located at `[base_dir]/OBSDataPipeline`, with a folder called `resource` at the same level as `base_dir`. If this is not the case, the code cannot be run without inputs (default test case) and `log_dir` must be specified in the `common` section of the default config file.
+* Copy `configs/config.ini.stock` to either `resource/OBSDataPipeline/configs/` or the existing `configs` directory and name the copy `config.ini`. Alternatively, the script will do this automatically the first time it runs if `config.ini` does not exist.
+* Edit `config.ini` as necessary for your particular setup.

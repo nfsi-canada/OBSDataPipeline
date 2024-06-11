@@ -112,6 +112,7 @@ if __name__ == '__main__':
         start_time = datetime.now()
         obs_id = args.obs_id
 
+        # TODO: Allow user-configurable log directory
         g_log = logger.get_general_logger(start_time, obs_id)
         g_log.info("\n\n=====================================================================")
         g_log.info("Starting job: {0}".format(str(args)))
