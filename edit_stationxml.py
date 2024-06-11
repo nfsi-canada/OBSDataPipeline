@@ -45,6 +45,7 @@ if __name__ == '__main__':
         args = parser.parse_args()
         run_start = datetime.now()
 
+        # TODO: Allow user-configurable log directory
         g_log = logger.get_general_logger(run_start, 'SDS')
         g_log.info("\n\n=====================================================================")
         g_log.info("Starting job: {0}".format(str(args)))

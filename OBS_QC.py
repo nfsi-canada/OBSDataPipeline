@@ -850,18 +850,13 @@ if __name__ == '__main__':
         start_time = datetime.now()
         t0 = timeit.default_timer()
         args = parser.parse_args()
-        # TODO: Handle when obs_id is only given in config...
-        obs_id = args.obs_id
-
-        g_log = logger.get_general_logger(start_time, obs_id, debug=args.debug)
-        g_log.info("\n\n=====================================================================")
-        g_log.info("Starting job: {0}".format(str(args)))
 
         if args.base_dir:
             base_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.base_dir)))
         else:
             base_dir = None
 
+        # Read config file
         if args.config_path:
             config_path = args.config_path
             if args.relative_paths:
@@ -877,7 +872,7 @@ if __name__ == '__main__':
 
         # Copy existing config info and add/update from command line arguments
         full_config = config_handler.copy_config(config)
-
+        # Key folders
         if base_dir is None:
             base_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(config.get('dataset', 'base_dir', fallback=os.path.join(resource_dir, 'test_data')))))
         full_config['dataset']['base_dir'] = base_dir
@@ -887,21 +882,6 @@ if __name__ == '__main__':
         else:
             relpath = config.getboolean('dataset', 'relative_paths', fallback=False)
         full_config['dataset']['relative_paths'] = str(relpath)
-
-        if args.obs_id:
-            obs_identifier = args.obs_id
-        else:
-            obs_identifier = config.get('dataset', 'obsid', fallback=None)
-        if obs_identifier is None:
-            warnings.warn('No valid OBS identifier given, using default AQU-0000.')
-            g_log.warn('No valid OBS identifier given, using default AQU-0000.')
-            obs_identifier = 'AQU-0000'
-        full_config['dataset']['obsid'] = obs_identifier
-        id_type = 'unknown'
-        if re.match(r'AQU-[0-9a-fA-F]{4}', obs_identifier):
-            id_type = 'serial'
-        elif re.match(r'D[aA][lL][_\-][0-9]{2,3}', obs_identifier):
-            id_type = 'obs_name'
 
         if args.data_dir:
             data_path = args.data_dir
@@ -920,6 +900,38 @@ if __name__ == '__main__':
             else:
                 full_config['dataset']['data_dir'] = data_dir
         data_dir = os.path.normpath(data_dir)
+
+        if args.obs_id:
+            obs_identifier = args.obs_id
+        else:
+            obs_identifier = config.get('dataset', 'obsid', fallback=None)
+        if obs_identifier is None:
+            warnings.warn('No valid OBS identifier given, using default AQU-0000.')
+            obs_identifier = 'AQU-0000'
+        full_config['dataset']['obsid'] = obs_identifier
+
+        # Get log directory if in config
+        log_dir = config.get('common', 'log_dir', fallback=None)
+        if log_dir is not None:
+            if log_dir == ':base':
+                logs_dir = base_dir
+            elif log_dir == ':data':
+                logs_dir = data_dir
+            else:
+                logs_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(log_dir)))
+            g_log = logger.get_general_logger(start_time, obs_identifier, debug=args.debug, logs_dir=logs_dir)
+        else:
+            g_log = logger.get_general_logger(start_time, obs_identifier, debug=args.debug)
+
+        g_log.info("\n\n=====================================================================")
+        g_log.info("Starting job: {0}".format(str(args)))
+        g_log.warn('No valid OBS identifier given, using default AQU-0000.')
+
+        id_type = 'unknown'
+        if re.match(r'AQU-[0-9a-fA-F]{4}', obs_identifier):
+            id_type = 'serial'
+        elif re.match(r'D[aA][lL][_\-][0-9]{2,3}', obs_identifier):
+            id_type = 'obs_name'
 
         output_dir, out_path = None, None
         if args.outdir:
