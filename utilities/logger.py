@@ -4,11 +4,10 @@ from datetime import datetime
 
 from . import config_handler
 
-# TODO: Make log directory actually user-configurable (this is restricted to specify in default config file)
 config = config_handler.get_config()
-logs_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(config.get('common', 'log_dir'))))
-if not os.path.exists(logs_dir):
-    os.makedirs(logs_dir)
+DEFAULT_LOG_DIR = os.path.abspath(os.path.expanduser(os.path.expandvars(config.get('common', 'log_dir'))))
+if not os.path.exists(DEFAULT_LOG_DIR):
+    os.makedirs(DEFAULT_LOG_DIR)
 
 format_str = '%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s - %(message)s'
 formatter = logging.Formatter(format_str)
@@ -22,7 +21,7 @@ general_log = None
 verbose_setting = None
 
 
-def get_general_logger(start=datetime.now(), obs_id="AQU-0000", debug=False):
+def get_general_logger(start=datetime.now(), obs_id="AQU-0000", debug=False, logs_dir=DEFAULT_LOG_DIR):
     global general_log_handle
     global general_log
 
