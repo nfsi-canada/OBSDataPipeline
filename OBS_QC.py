@@ -263,7 +263,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                                                               network_id, station_info, channel_map,
                                                                               project_meta, win_len, spec_win, overlap,
                                                                               plot_length=plot_len, start=data_start,
-                                                                              end=data_end, spec_cmap=cmap,
+                                                                              end=data_end, spec_cmap=cmap, detrend=detrend,
                                                                               use_existing_plots=use_existing_plots)
                 for key in buff_time:
                     if key in debug_info['timing']:
@@ -540,7 +540,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                                 if 'humid' in report_params:
                                     g_log.warn('Multiple humidity channels processed for instrument {}. Only first '
-                                               'plot will be included in report.'.format(obs_id))
+                                               'plot will be included in report.'.format(obs_identifier))
                                     report_params['humid']['triggers'].extend(humidity_blips)
                                 else:
                                     report_params['humid'] = {
