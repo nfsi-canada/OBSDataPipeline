@@ -948,6 +948,12 @@ if __name__ == '__main__':
                 output_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(out_path)))
             output_dir = os.path.normpath(output_dir)
 
+        for flag, key in zip([args.function_check, args.detrend_seis, args.skip_backup, args.use_existing_plots, args.debug, args.obslog_column_names], ['function_check', 'detrend_seismic', 'skip_backup', 'use_existing_plots', 'debug', 'logcolnames']):
+            config_flag = config.getboolean('dataset', key, fallback=False)
+            # only overwrite existing flags if CL arguments are present and different from config
+            if flag and not config_flag:
+                full_config['dataset'][key] = str(flag)
+
         if args.datalog:
             datalog = args.datalog
         else:
@@ -979,7 +985,8 @@ if __name__ == '__main__':
             deploy_start = datetime.strptime(config.get('dataset', 'start'), "%Y%m%d")
 
         g_log.info('Reading project metadata from {0}...'.format(data_log_file))
-        obs_log_info = nf.io.parse_obs_log(data_log_file, log_delim, names_in_file=args.obslog_column_names)
+        log_column_names = full_config.getboolean('dataset', 'logcolnames', fallback=False)
+        obs_log_info = nf.io.parse_obs_log(data_log_file, log_delim, names_in_file=log_column_names)
         # Find this OBS in the basic, deployment, and recovery metadata tables
         base_meta = None
         if id_type == 'serial':
@@ -1088,12 +1095,6 @@ if __name__ == '__main__':
             else:
                 deployment = station_meta
                 project_meta['this_deployment'] = deployment
-
-        for flag, key in zip([args.function_check, args.detrend_seis, args.skip_backup, args.use_existing_plots, args.debug], ['function_check', 'detrend_seismic', 'skip_backup', 'use_existing_plots', 'debug']):
-            config_flag = config.getboolean('dataset', key, fallback=False)
-            # only overwrite existing flags if CL arguments are present and different from config
-            if flag and not config_flag:
-                full_config['dataset'][key] = str(flag)
 
         if args.network_id:
             network = args.network_id
