@@ -521,8 +521,6 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     plot_end = None
     plot_start = obspy.UTCDateTime(1970, 1, 1)
     make_plot = False   # only create a plot when necessary
-    spec_array = None
-    spec_times = None
     psd_temp_results = {
         'psd_array': None,
         'vpsd_array': None,
@@ -598,6 +596,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     plot_start, plot_end = next_plot_window(plot_end, plot_length=plot_length)
                     plot_files = plot_filenames(outdir, ch_id, plot_start, plot_end, asis=hydrophone)
                     files_exist = [os.path.isfile(fn) for fn in plot_files]
+                    # TODO: Skip unnecessary PSD calculations if using existing plots
             plot_setup = timeit.default_timer()
             timing['plot_admin'] += plot_setup - trim_time
 
@@ -911,7 +910,6 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 }
 
                 # Reset temp arrays for spectrogram
-                spec_array, spec_times = None, None
                 reset_arr = timeit.default_timer()
                 timing['array_reset'] += reset_arr - final_start
 

@@ -99,7 +99,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     elif 'end_date' in project_meta:
         data_end = obspy.UTCDateTime(project_meta['end_date']) + 24 * 60 * 60
 
-    # Read station metadata file
+    # Read station metadata file (dataless SEED or StationXML)
     station_info = None
     if metadata is not None:
         g_log.info("Reading metadata from file {0}".format(metadata))
@@ -251,10 +251,11 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     plot_len = 10
                 elif (files_end - files_start) < timedelta(days=31).total_seconds():
                 """
-                if (files_end - files_start) < timedelta(days=31).total_seconds():
-                    # Less than 1 month of data recorded, just make one plot
-                    plot_end = files_end + 24 * 60 * 60
-                    plot_days = plot_end.date - files_start.date
+                if (data_end - data_start) < timedelta(days=31).total_seconds() or (files_end - files_start) < timedelta(days=31).total_seconds():
+                    # Less than 1 month of data to analyze, just make one plot
+                    plot_end = min(files_end, data_end) + 24 * 60 * 60
+                    plot_start = max(files_start, data_start)
+                    plot_days = plot_end.date - plot_start.date
                     plot_len = np.round(plot_days.total_seconds() / 60 / 60 / 24)
 
                 # Ensure files are sorted alphabetically (should be same as chronological order)
@@ -472,7 +473,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                     avg_power.extend(nf.rolling_window_stats(tr, window_length=stat_window, window_offset=stat_window/3, full=False))
 
                                 # TODO: Get times of data writes (spikes 45 minutes apart)
-                                if (qc_config is not None) and ('qartod' in qc_config) and ('spike_test' in qc_config['qartod']):
+                                if feature_test and (qc_config is not None) and ('qartod' in qc_config) and ('spike_test' in qc_config['qartod']):
                                     spikes = qartod.spike_test(tr.data, **qc_config['qartod']['spike_test'])
                             if tr.meta.channel == 'ME4':
                                 power_data[tr.meta.channel] = tr.copy()
@@ -609,10 +610,11 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     # TODO: Add list of all channels at beginning of report
 
     # Parse gap information for report
-    # TODO: Include check for duplicates (may come out of buffered seismic data)
+    # TODO: Include check for duplicates (may come out of buffered seismic data) -> TEST
     if len(all_gaps) > 0:
+        unique_gaps = list(set(all_gaps))
         gap_list = []
-        for gap in all_gaps:
+        for gap in unique_gaps:
             gap_list.append({
                 'id': '.'.join(gap[0:4]),
                 'start': gap[4].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
@@ -707,6 +709,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             min_hib = latest_win
         report_params['batteryStats']['HibernateEstimate'] = min_hib.strftime('%Y-%m-%d')
 
+    # Calculate current draw, if both power and voltage data present
     if ('LE3' in power_data) and ('ME4' in power_data):
         curr_stats = power_data['LE3'].stats.copy()
         curr_stats.channel = 'LZ9'
@@ -714,6 +717,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         if 'response' in curr_stats:
             curr_stats.__delitem__('response')
 
+        # Get equal sample rates for voltage and power
         if power_data['ME4'].stats.sampling_rate != power_data['LE3'].stats.sampling_rate:
             factor = power_data['ME4'].stats.sampling_rate / power_data['LE3'].stats.sampling_rate
             if (factor % 1) > 1e-5:
@@ -723,29 +727,31 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                        endtime=power_data['LE3'].stats.endtime, nearest_sample=True)
                 factor = int(factor)
                 power_data['ME4'].decimate(factor, no_filter=True, strict_length=False)
-                curr_data = -power_data['LE3'].data / power_data['ME4'].data
-                tr_curr = obspy.Trace(curr_data, curr_stats)
-                st_curr = tr_curr.split()
-                st_curr.write(os.path.join(output_dir, 'calculated_current.mseed'), format='MSEED')
-                if (tr_curr.stats.endtime - tr_curr.stats.starttime) > 5*24*60*60:
-                    curr_windowed = nf.rolling_window_stats(tr_curr, full=False)
-                else:
-                    stat_window = (tr_curr.stats.endtime - tr_curr.stats.starttime) * 0.6
-                    if 'battery_stats_window' not in report_params:
-                        report_params['battery_stats_window'] = stat_window
-                    curr_windowed = nf.rolling_window_stats(tr_curr, window_length=stat_window, window_offset=stat_window/3, full=False)
-                crnt = pd.DataFrame(curr_windowed, columns=['Start', 'End', 'Center', 'Min_Amps', 'Max_Amps', 'Avg_Amps'])
-                # Time series plot (applies instrument sensitivity in-place if response present in tr.meta)
-                current_plot = os.path.join(output_dir, 'current_{0}.png'.format(obs_log['OBS ID'].values[0]))
-                if not (use_existing_plots and os.path.isfile(current_plot)):
-                    fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-                    crnt.plot(x='Center', y='Avg_Amps', kind='line', ax=ax, xlabel='Date/Time',
-                                     ylabel='Current Draw (A)', legend=False)
-                    ax.grid(True, ls=':')
-                    fig.tight_layout()
-                    fig.savefig(current_plot)
-                    plt.close(fig)
-                report_params['batteryStats']['currentPlot'] = current_plot
+
+        curr_data = -power_data['LE3'].data / power_data['ME4'].data
+        tr_curr = obspy.Trace(curr_data, curr_stats)
+        st_curr = tr_curr.split()
+        st_curr.write(os.path.join(output_dir, 'calculated_current.mseed'), format='MSEED')
+        if (tr_curr.stats.endtime - tr_curr.stats.starttime) > 5*24*60*60:
+            curr_windowed = nf.rolling_window_stats(tr_curr, full=False)
+        else:
+            stat_window = (tr_curr.stats.endtime - tr_curr.stats.starttime) * 0.6
+            if 'battery_stats_window' not in report_params:
+                report_params['battery_stats_window'] = stat_window
+            curr_windowed = nf.rolling_window_stats(tr_curr, window_length=stat_window, window_offset=stat_window/3,
+                                                    full=False)
+        crnt = pd.DataFrame(curr_windowed, columns=['Start', 'End', 'Center', 'Min_Amps', 'Max_Amps', 'Avg_Amps'])
+        # Time series plot (applies instrument sensitivity in-place if response present in tr.meta)
+        current_plot = os.path.join(output_dir, 'current_{0}.png'.format(obs_log['OBS ID'].values[0]))
+        if not (use_existing_plots and os.path.isfile(current_plot)):
+            fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
+            crnt.plot(x='Center', y='Avg_Amps', kind='line', ax=ax, xlabel='Date/Time', ylabel='Current Draw (A)',
+                      legend=False)
+            ax.grid(True, ls=':')
+            fig.tight_layout()
+            fig.savefig(current_plot)
+            plt.close(fig)
+        report_params['batteryStats']['currentPlot'] = current_plot
 
     if 'battery_stats_window' in report_params:
         if report_params['battery_stats_window'] > 24*60*60:
@@ -884,6 +890,7 @@ if __name__ == '__main__':
             relpath = config.getboolean('dataset', 'relative_paths', fallback=False)
         full_config['dataset']['relative_paths'] = str(relpath)
 
+        # Location of OBS data
         if args.data_dir:
             data_path = args.data_dir
         else:
@@ -902,6 +909,7 @@ if __name__ == '__main__':
                 full_config['dataset']['data_dir'] = data_dir
         data_dir = os.path.normpath(data_dir)
 
+        # OBS identifier
         if args.obs_id:
             obs_identifier = args.obs_id
         else:
@@ -944,6 +952,7 @@ if __name__ == '__main__':
         elif re.match(r'D[aA][lL][_\-][0-9]{2,3}', obs_identifier):
             id_type = 'obs_name'
 
+        # Output directory for report files, if specified
         output_dir, out_path = None, None
         if args.outdir:
             out_path = args.outdir
@@ -957,6 +966,7 @@ if __name__ == '__main__':
                 output_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(out_path)))
             output_dir = os.path.normpath(output_dir)
 
+        # Path to deployment summary spreadsheet
         if args.datalog:
             datalog = args.datalog
         else:
@@ -990,7 +1000,7 @@ if __name__ == '__main__':
         g_log.info('Reading project metadata from {0}...'.format(data_log_file))
         log_column_names = full_config.getboolean('dataset', 'logcolnames', fallback=False)
         obs_log_info = nf.io.parse_obs_log(data_log_file, log_delim, names_in_file=log_column_names)
-        # Find this OBS in the basic, deployment, and recovery metadata tables
+        # Find this OBS in the metadata table
         base_meta = None
         if id_type == 'serial':
             base_meta = obs_log_info['basic'].loc[obs_log_info['basic']['OBS ID'] == obs_identifier]
@@ -1012,6 +1022,7 @@ if __name__ == '__main__':
             raise IndexError('Multiple entries found for OBS {0} in provided metadata. Please use a unique identifier '
                              'or provide start date.'.format(obs_identifier))
 
+        # Check that deployment start date matches between metadata and CLI/config argument
         if deploy_start is not None:
             meta_start = min(base_meta['Launch Date/Time (UTC)'].values[0],
                              base_meta['Date/Time on Seafloor (UTC)'].values[0])
@@ -1020,6 +1031,7 @@ if __name__ == '__main__':
                     "Start time in metadata file ({0}) is different from runtime/config argument ({1}).".format(
                         meta_start.strftime('%Y-%m-%d'), deploy_start.strftime('%Y-%m-%d')))
 
+        # Path to channel map file, if specified
         channel_map = None
         if args.channel_map:
             ch_map = args.channel_map
@@ -1034,6 +1046,7 @@ if __name__ == '__main__':
         else:
             g_log.info("No channel map provided. Channel IDs will be processed as they appear in the raw data files.")
 
+        # Path to metadata file (dataless SEED or StationXML), if specified
         metadata_file = None
         if args.metadata_file:
             meta_file = args.metadata_file
@@ -1074,6 +1087,7 @@ if __name__ == '__main__':
             g_log.info("No project metadata JSON found at {0}".format(os.path.normpath(project_json)))
             full_config.remove_option('dataset', 'extra_meta')
 
+        # Pull extra metadata for this station/deployment only (from JSON)
         station_meta = None
         if project_meta is not None:
             try:
@@ -1151,15 +1165,16 @@ if __name__ == '__main__':
 
         setup_time = timeit.default_timer()
         g_log.info("Time spent parsing arguments and preparing to process data: {0} seconds".format(setup_time - t0))
-        g_log.info('Logging level: {}'.format(g_log.getEffectiveLevel()))
+        g_log.debug('Logging level: {}'.format(g_log.getEffectiveLevel()))
 
         # Process data files to apply clock drift correction and update metadata
         process(data_dir, base_meta, network, full_config, output_dir=output_dir, metadata=metadata_file,
                 channel_map=channel_map, project_meta=project_meta, cmap=colormap, flags_from_config=True, **report_kwargs)
 
+        # Final post-process logging
         proc_time = timeit.default_timer()
         g_log.info("Time spent processing data: {0} seconds".format(proc_time - setup_time))
-        g_log.info('Logging level: {}'.format(g_log.getEffectiveLevel()))
+        g_log.debug('Logging level: {}'.format(g_log.getEffectiveLevel()))
 
         g_log.info("Processing complete!")
         end_time = datetime.now()
