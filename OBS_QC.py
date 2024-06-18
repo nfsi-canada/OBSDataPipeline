@@ -789,6 +789,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     g_log.info("end")
     print(debug_info)
+    g_log.debug(str(debug_info))
 
 
 if __name__ == '__main__':
@@ -910,8 +911,16 @@ if __name__ == '__main__':
             obs_identifier = 'AQU-0000'
         full_config['dataset']['obsid'] = obs_identifier
 
+        # Runtime flags
+        for flag, key in zip([args.function_check, args.detrend_seis, args.skip_backup, args.use_existing_plots, args.debug, args.obslog_column_names], ['function_check', 'detrend_seismic', 'skip_backup', 'use_existing_plots', 'debug', 'logcolnames']):
+            config_flag = config.getboolean('dataset', key, fallback=False)
+            # only overwrite existing flags if CL arguments are present and different from config
+            if flag and not config_flag:
+                full_config['dataset'][key] = str(flag)
+
         # Get log directory if in config
         log_dir = config.get('common', 'log_dir', fallback=None)
+        debug_logging = full_config.getboolean('dataset', 'debug', fallback=False)
         if log_dir is not None:
             if log_dir == ':base':
                 logs_dir = os.path.join(base_dir, 'logs')
@@ -921,9 +930,9 @@ if __name__ == '__main__':
                 logs_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(log_dir)))
             if not os.path.exists(logs_dir):
                 os.makedirs(logs_dir)
-            g_log = logger.get_general_logger(start_time, obs_identifier, debug=args.debug, logs_dir=logs_dir)
+            g_log = logger.get_general_logger(start_time, obs_identifier, debug=debug_logging, logs_dir=logs_dir)
         else:
-            g_log = logger.get_general_logger(start_time, obs_identifier, debug=args.debug)
+            g_log = logger.get_general_logger(start_time, obs_identifier, debug=debug_logging)
 
         g_log.info("\n\n=====================================================================")
         g_log.info("Starting job: {0}".format(str(args)))
@@ -947,12 +956,6 @@ if __name__ == '__main__':
             else:
                 output_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(out_path)))
             output_dir = os.path.normpath(output_dir)
-
-        for flag, key in zip([args.function_check, args.detrend_seis, args.skip_backup, args.use_existing_plots, args.debug, args.obslog_column_names], ['function_check', 'detrend_seismic', 'skip_backup', 'use_existing_plots', 'debug', 'logcolnames']):
-            config_flag = config.getboolean('dataset', key, fallback=False)
-            # only overwrite existing flags if CL arguments are present and different from config
-            if flag and not config_flag:
-                full_config['dataset'][key] = str(flag)
 
         if args.datalog:
             datalog = args.datalog
@@ -1148,6 +1151,7 @@ if __name__ == '__main__':
 
         setup_time = timeit.default_timer()
         g_log.info("Time spent parsing arguments and preparing to process data: {0} seconds".format(setup_time - t0))
+        g_log.info('Logging level: {}'.format(g_log.getEffectiveLevel()))
 
         # Process data files to apply clock drift correction and update metadata
         process(data_dir, base_meta, network, full_config, output_dir=output_dir, metadata=metadata_file,
@@ -1155,6 +1159,7 @@ if __name__ == '__main__':
 
         proc_time = timeit.default_timer()
         g_log.info("Time spent processing data: {0} seconds".format(proc_time - setup_time))
+        g_log.info('Logging level: {}'.format(g_log.getEffectiveLevel()))
 
         g_log.info("Processing complete!")
         end_time = datetime.now()
