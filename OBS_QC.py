@@ -37,7 +37,8 @@ if not os.path.isdir(resource_dir):
 
 
 def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, project_meta=None,
-            full=True, detrend=False, backup=True, cmap=None, use_existing_plots=False, flags_from_config=False, **kwargs):
+            full=True, detrend=False, backup=True, cmap=None, use_existing_plots=False, parallel=False,
+            flags_from_config=False, **kwargs):
     """
     Extra keyword arguments are included as report parameters (must match variables in template file).
     """
@@ -50,10 +51,11 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     # Get flags from config if necessary
     if flags_from_config:
         # False fallback value will default to same values as function definition
-        full = not config.get('dataset', 'function_check', fallback=False)
-        detrend = config.get('dataset', 'detrend_seismic', fallback=False)
-        backup = not config.get('dataset', 'skip_backup', fallback=False)
-        use_existing_plots = config.get('dataset', 'use_existing_plots', fallback=False)
+        full = not config.getboolean('dataset', 'function_check', fallback=False)
+        detrend = config.getboolean('dataset', 'detrend_seismic', fallback=False)
+        backup = not config.getboolean('dataset', 'skip_backup', fallback=False)
+        use_existing_plots = config.getboolean('dataset', 'use_existing_plots', fallback=False)
+        parallel = config.getboolean('dataset', 'parallel', fallback=False)
 
     # Initialize report parameters dictionary with input keywords
     report_params = {}
@@ -265,7 +267,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                                                               project_meta, win_len, spec_win, overlap,
                                                                               plot_length=plot_len, start=data_start,
                                                                               end=data_end, spec_cmap=cmap, detrend=detrend,
-                                                                              use_existing_plots=use_existing_plots)
+                                                                              use_existing_plots=use_existing_plots, parallel=parallel)
                 for key in buff_time:
                     if key in debug_info['timing']:
                         debug_info['timing'][key] += buff_time[key]
@@ -799,6 +801,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
 
 if __name__ == '__main__':
+    multiprocessing.freeze_support()
     multiprocessing.set_start_method('spawn')
     num_cores = multiprocessing.cpu_count()
 
@@ -850,6 +853,9 @@ if __name__ == '__main__':
     parser.add_argument('--colormap', dest="colormap", default=None,
                         help="Name of matplotlib colormap to use for spectrogram plots.")
     parser.add_argument('--config', dest='config_path', help="Path to config file (if not using default).")
+    parser.add_argument('--parallel', dest='parallel', action='store_true',
+                        help="Run with multiprocessing parallelization for PSD calculations. Only implemented for "
+                             "buffered seismic data.")
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help="Activate debug mode (more verbose logging). Command-line only.")
 
@@ -910,17 +916,19 @@ if __name__ == '__main__':
         data_dir = os.path.normpath(data_dir)
 
         # OBS identifier
+        default_obs = False
         if args.obs_id:
             obs_identifier = args.obs_id
         else:
             obs_identifier = config.get('dataset', 'obsid', fallback=None)
         if obs_identifier is None:
             warnings.warn('No valid OBS identifier given, using default AQU-0000.')
+            default_obs = True
             obs_identifier = 'AQU-0000'
         full_config['dataset']['obsid'] = obs_identifier
 
         # Runtime flags
-        for flag, key in zip([args.function_check, args.detrend_seis, args.skip_backup, args.use_existing_plots, args.debug, args.obslog_column_names], ['function_check', 'detrend_seismic', 'skip_backup', 'use_existing_plots', 'debug', 'logcolnames']):
+        for flag, key in zip([args.function_check, args.detrend_seis, args.skip_backup, args.use_existing_plots, args.debug, args.obslog_column_names, args.parallel], ['function_check', 'detrend_seismic', 'skip_backup', 'use_existing_plots', 'debug', 'logcolnames', 'parallel']):
             config_flag = config.getboolean('dataset', key, fallback=False)
             # only overwrite existing flags if CL arguments are present and different from config
             if flag and not config_flag:
@@ -944,7 +952,10 @@ if __name__ == '__main__':
 
         g_log.info("\n\n=====================================================================")
         g_log.info("Starting job: {0}".format(str(args)))
-        g_log.warn('No valid OBS identifier given, using default AQU-0000.')
+        g_log.info("{} CPU cores available on this machine".format(num_cores))
+
+        if default_obs:
+            g_log.warn('No valid OBS identifier given, using default AQU-0000.')
 
         id_type = 'unknown'
         if re.match(r'AQU-[0-9a-fA-F]{4}', obs_identifier):
