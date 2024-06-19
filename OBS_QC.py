@@ -614,9 +614,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     # Parse gap information for report
     # TODO: Include check for duplicates (may come out of buffered seismic data) -> TEST
     if len(all_gaps) > 0:
-        unique_gaps = list(set(all_gaps))
+        unique_gaps = {}
+        for gap in all_gaps:
+            gap_key = '_'.join(['.'.join(gap[0:4]), gap[4].strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], gap[5].strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]])
+            unique_gaps.update({gap_key: gap})
+
         gap_list = []
-        for gap in unique_gaps:
+        for key, gap in unique_gaps.items():
             gap_list.append({
                 'id': '.'.join(gap[0:4]),
                 'start': gap[4].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
