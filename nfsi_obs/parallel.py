@@ -3,8 +3,7 @@ import multiprocessing
 import numpy as np
 import obspy
 from scipy import signal
-from time import sleep
-import timeit
+import sys
 import warnings
 
 
@@ -25,6 +24,7 @@ class PSDProcess(multiprocessing.Process):
             trace_window = self.queue.get()
             psd, frq = mlab.psd(trace_window.data, **self.psd_kwargs)
             midpoint = trace_window.stats.starttime + (trace_window.stats.endtime - trace_window.stats.starttime) / 2
+            print(midpoint)
 
             result = {
                 'freq': frq,
@@ -40,6 +40,31 @@ class PSDProcess(multiprocessing.Process):
             self.result_out.put(result)
 
         self.done_event.set()
+        sys.exit(0)
+
+
+def calc_psds_from_queue(in_queue, result_queue, done_event, calc_acc=False, num=0, **psd_kwargs):
+    while not in_queue.empty():
+        trace_window = in_queue.get()
+        psd, frq = mlab.psd(trace_window.data, **psd_kwargs)
+        midpoint = trace_window.stats.starttime + (trace_window.stats.endtime - trace_window.stats.starttime) / 2
+        #print(midpoint)
+
+        result = {
+            'freq': frq,
+            'psd_asis': psd,
+            'timestamp': midpoint.timestamp
+        }
+
+        if calc_acc:
+            acc_psd = psd * (2 * np.pi * frq) * (2 * np.pi * frq)
+            result.update({'acc_psd': acc_psd})
+
+        # Send results out to calling Process
+        result_queue.put(result)
+
+    print('Process {} finished'.format(num))
+    #done_event.set()
 
 
 def calc_psds_multiproc(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False, calc_acc=False, seg_len=pow(2, 17), max_processes=None):
@@ -68,15 +93,17 @@ def calc_psds_multiproc(trace, win_len, overlap, sub_overlap, endtime=None, buff
     }
 
     # Add all data windows to processing Queue
+    print('Building data queue...')
     trace_queue = multiprocessing.Queue()
     results = multiprocessing.Queue()
+    num_windows = 0
     for sect in trace.slide(win_len, win_len * (1 - overlap), nearest_sample=False):
         if endtime is not None:
             if sect.stats.starttime > endtime:
-                hit_end = True
                 continue    # skip windows which start after `endtime` and reset next start to include last window in next section of buffer
 
         trace_queue.put(sect)
+        num_windows += 1
 
     # Create processes
     num_cores = multiprocessing.cpu_count()
@@ -85,26 +112,28 @@ def calc_psds_multiproc(trace, win_len, overlap, sub_overlap, endtime=None, buff
     if max_processes > num_cores:
         warnings.warn('Specified number of processes ({0}) is greater than number of cores available ({1})'.format(max_processes, num_cores))
         max_processes = num_cores - 1
-    print('Using {} processes to calculate PSD curves'.format(max_processes))
+    print('Using {0} processes to calculate PSD curves for {1} windows'.format(max_processes, num_windows))
     finished_processing = multiprocessing.Event()
-    processes = [PSDProcess(trace_queue, results, finished_processing, calc_acc, psd_kwargs) for i in range(max_processes)]
+    #processes = [PSDProcess(trace_queue, results, finished_processing, calc_acc, psd_kwargs) for i in range(max_processes)]
+    processes = [multiprocessing.Process(target=calc_psds_from_queue, args=(trace_queue, results, finished_processing, calc_acc, i), kwargs=psd_kwargs) for i in range(max_processes)]
 
     # Start processes
+    print('Starting processing...')
     for process in processes:
         process.start()
 
     # Collect PSD results as they are produced:
+    print('Collecting PSD results...', flush=True)
     all_psds = []
-    while not finished_processing.is_set():
-        if not results.empty():
-            psd_result = results.get()
-            all_psds.append(psd_result)
-        else:
-            sleep(1)
+    for i in range(num_windows):
+        psd_result = results.get()
+        all_psds.append(psd_result)
+        #print(psd_result['timestamp'])
 
     # Wait for processes to finish (join)
     for process in processes:
         process.join()
+    print('Done processing. Organizing results...')
 
     # Organize results array
     sorted_psds = sorted(all_psds, key=lambda p: p['timestamp'])
@@ -117,7 +146,7 @@ def calc_psds_multiproc(trace, win_len, overlap, sub_overlap, endtime=None, buff
 
     # Cleanup and return
     if buffered:
-        next_win_start = max(times) - win_len * 0.5 + win_len * (1 - overlap)
+        next_win_start = obspy.UTCDateTime(max(times)) - win_len * 0.5 + win_len * (1 - overlap)
         return acc_psds, vel_psds, freqs, times, next_win_start
     else:
         return acc_psds, vel_psds, freqs, times

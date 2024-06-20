@@ -620,7 +620,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             unique_gaps.update({gap_key: gap})
 
         gap_list = []
-        for key, gap in unique_gaps.items():
+        for gap in unique_gaps.values():
             gap_list.append({
                 'id': '.'.join(gap[0:4]),
                 'start': gap[4].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
@@ -980,6 +980,10 @@ if __name__ == '__main__':
             else:
                 output_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(out_path)))
             output_dir = os.path.normpath(output_dir)
+
+        if output_dir is not None:
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
 
         # Path to deployment summary spreadsheet
         if args.datalog:
