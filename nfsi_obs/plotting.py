@@ -11,7 +11,7 @@ import timeit
 from .waveform import WaveformPlotting
 from .metadata import get_channel_type, update_metadata
 from .extenders import cut_trace
-from .parallel import calc_psds_multiproc
+from .parallel import calc_psds_multiproc, calc_psds_proc_pool, calc_psds_thread_pool
 
 
 QARTOD_COLOURS = {
@@ -436,7 +436,8 @@ def plot_filenames(outdir, ch_id, plot_start, plot_end, asis=False):
 
 def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, channel_map=None, project_meta=None,
                         psd_win=3600, spec_win=3600, overlap=0.5, psd_over=0.75, plot_length=None, ch_id=None,
-                        start=None, end=None, detrend=False, spec_cmap=None, use_existing_plots=False, parallel=False):
+                        start=None, end=None, detrend=False, spec_cmap=None, use_existing_plots=False, parallel=False,
+                        max_processes=None):
     """
     Analyze seismic data stored in raw data files and create PSD and spectrogram plots. File paths in *files* should be
     listed in chronological order. Files must be readable by obspy.read()
@@ -775,7 +776,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             psd_start = first_psd_start
             new_data = cut_trace(this_channel, psd_start, None, nearest_sample=True, pad=True)
             if parallel:
-                apsds, vpsds, freqs, times, next_psd_start = calc_psds_multiproc(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone))
+                apsds, vpsds, freqs, times, next_psd_start = calc_psds_thread_pool(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), max_processes=max_processes)
             else:
                 apsds, vpsds, freqs, times, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone))
             psd_calc_time = timeit.default_timer()

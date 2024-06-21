@@ -37,7 +37,7 @@ if not os.path.isdir(resource_dir):
 
 
 def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, project_meta=None,
-            full=True, detrend=False, backup=True, cmap=None, use_existing_plots=False, parallel=False,
+            full=True, detrend=False, backup=True, cmap=None, use_existing_plots=False, parallel=False, max_proc=None,
             flags_from_config=False, **kwargs):
     """
     Extra keyword arguments are included as report parameters (must match variables in template file).
@@ -74,7 +74,10 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     if not config.has_section('seismic'):
         config.add_section('seismic')
     spec_win = config.getint('seismic', 'spectrogram_window', fallback=60)
-    for key, val in zip(['window_length', 'overlap_percent', 'spectrogram_window'], [win_len, overlap, spec_win]):
+    if max_proc is None:
+        max_proc = config.getint('seismic', 'max_processes', fallback=5)
+    for key, val in zip(['window_length', 'overlap_percent', 'spectrogram_window', 'max_processes'],
+                        [win_len, overlap, spec_win, max_proc]):
         config['seismic'][key] = str(val)
 
     base_time = timeit.default_timer()
@@ -267,7 +270,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                                                               project_meta, win_len, spec_win, overlap,
                                                                               plot_length=plot_len, start=data_start,
                                                                               end=data_end, spec_cmap=cmap, detrend=detrend,
-                                                                              use_existing_plots=use_existing_plots, parallel=parallel)
+                                                                              use_existing_plots=use_existing_plots,
+                                                                              parallel=parallel, max_processes=max_proc)
                 for key in buff_time:
                     if key in debug_info['timing']:
                         debug_info['timing'][key] += buff_time[key]
@@ -860,6 +864,8 @@ if __name__ == '__main__':
     parser.add_argument('--parallel', dest='parallel', action='store_true',
                         help="Run with multiprocessing parallelization for PSD calculations. Only implemented for "
                              "buffered seismic data.")
+    parser.add_argument('--max_processes', dest='max_proc', type=int, default=0,
+                        help="Maximum number of processes/threads to be used in parallelized analysis.")
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help="Activate debug mode (more verbose logging). Command-line only.")
 
@@ -1144,6 +1150,10 @@ if __name__ == '__main__':
             colormap = config.get('dataset', 'colormap', fallback='viridis')
         full_config['dataset']['colormap'] = colormap
 
+        max_processes = None
+        if args.max_proc > 0:
+            max_processes = args.max_proc
+
         # Gather some basic information for report
         report_kwargs = {
             'today': datetime.now().strftime('%Y-%m-%d'),
@@ -1188,7 +1198,8 @@ if __name__ == '__main__':
 
         # Process data files to apply clock drift correction and update metadata
         process(data_dir, base_meta, network, full_config, output_dir=output_dir, metadata=metadata_file,
-                channel_map=channel_map, project_meta=project_meta, cmap=colormap, flags_from_config=True, **report_kwargs)
+                channel_map=channel_map, project_meta=project_meta, cmap=colormap, max_proc=max_processes,
+                flags_from_config=True, **report_kwargs)
 
         # Final post-process logging
         proc_time = timeit.default_timer()
