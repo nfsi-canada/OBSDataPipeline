@@ -784,8 +784,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         sorted_channels = sorted(report_params[ch_type + '_channels'], key=lambda d: d['order'])
         report_params[ch_type + '_channels'] = sorted_channels
 
+    if obs_log['Station'].values[0] != obs_log['OBS ID'].values[0]:
+        id_str = '_'.join([obs_log['Station'].values[0], obs_log['OBS ID'].values[0]])
+    else:
+        id_str = obs_log['OBS ID'].values[0]
+
     # Save report to *.md and *.pdf formats
-    report_md = os.path.join(output_dir, 'QC_report_{0}_auto.md'.format(obs_log['OBS ID'].values[0]))
+    report_md = os.path.join(output_dir, 'QC_report_{0}_auto.md'.format(id_str))
     qcReport = ReportGenerator(type='qc')
     md_out, report_buffer = qcReport.write_report(report_params, report_md)
 
@@ -795,7 +800,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         pandoc_args.append('--pdf-engine={0}'.format(tex_path))
     pandoc_args.extend(['--toc'])
 
-    report_pdf = os.path.join(output_dir, 'QC_report_{0}_auto.pdf'.format(obs_log['OBS ID'].values[0]))
+    report_pdf = os.path.join(output_dir, 'QC_report_{0}_auto.pdf'.format(id_str))
     report_converted = pypandoc.convert_text(report_buffer, to='pdf', format='md', outputfile=report_pdf, extra_args=pandoc_args)
     g_log.info("Report saved as {0}".format(report_pdf))
 
