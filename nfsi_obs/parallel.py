@@ -2,6 +2,7 @@ from matplotlib import mlab
 import multiprocessing
 import numpy as np
 import obspy
+import psutil
 from scipy import signal
 import warnings
 
@@ -103,12 +104,12 @@ def calc_psds_multiproc(trace, win_len, overlap, sub_overlap, endtime=None, buff
         num_windows += 1
 
     # Create processes
-    num_cores = multiprocessing.cpu_count()
+    num_cores = psutil.cpu_count(logical=False)
     if max_processes is None:
-        max_processes = int(max([1, num_cores * 0.75 - 1]))
+        max_processes = int(max([1, num_cores - 1]))
     if max_processes > num_cores:
         warnings.warn('Specified number of processes ({0}) is greater than number of cores available ({1})'.format(max_processes, num_cores))
-        max_processes = num_cores - 1
+        max_processes = int(max([1, num_cores - 1]))
     print('Using {0} processes to calculate PSD curves for {1} windows'.format(max_processes, num_windows))
     #processes = [PSDProcess(trace_queue, results, calc_acc, psd_kwargs) for i in range(max_processes)]
     processes = [multiprocessing.Process(target=calc_psds_from_queue, args=(trace_queue, results, calc_acc, i), kwargs=psd_kwargs) for i in range(max_processes)]
@@ -223,12 +224,12 @@ def calc_psds_proc_pool(trace, win_len, overlap, sub_overlap, endtime=None, buff
     num_windows = int(((len(trace) / trace.meta.sampling_rate) - win_len) / (win_len * (1 - overlap)))
 
     # Create processes
-    num_cores = multiprocessing.cpu_count()
+    num_cores = psutil.cpu_count(logical=False)
     if max_processes is None:
         max_processes = int(max([1, num_cores * 0.75 - 1]))
     if max_processes > num_cores:
         warnings.warn('Specified number of processes ({0}) is greater than number of cores available ({1})'.format(max_processes, num_cores))
-        max_processes = num_cores - 1
+        max_processes = int(max([1, num_cores - 1]))
     print('Using {0} processes to calculate PSD curves for {1} windows'.format(max_processes, num_windows))
     pool = multiprocessing.pool.Pool(max_processes, initializer=process_pool_init, initargs=[psd_kwargs, calc_acc])
 
@@ -316,12 +317,12 @@ def calc_psds_thread_pool(trace, win_len, overlap, sub_overlap, endtime=None, bu
     num_windows = int(((len(trace) / trace.meta.sampling_rate) - win_len) / (win_len * (1 - overlap)))
 
     # Create processes
-    num_cores = multiprocessing.cpu_count()
+    num_cores = psutil.cpu_count(logical=False)
     if max_processes is None:
         max_processes = int(max([1, num_cores * 0.75 - 1]))
     if max_processes > num_cores:
         warnings.warn('Specified number of threads ({0}) is greater than number of cores available ({1})'.format(max_processes, num_cores))
-        max_processes = num_cores - 1
+        max_processes = int(max([1, num_cores - 1]))
     print('Using {0} threads to calculate PSD curves for {1} windows'.format(max_processes, num_windows))
 
     all_psds = []

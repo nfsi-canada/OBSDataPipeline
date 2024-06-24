@@ -4,11 +4,11 @@ from glob import glob
 import gc
 import json
 import matplotlib.pyplot as plt
-import multiprocessing
 import numpy as np
 import obspy
 import os
 import pandas as pd
+import psutil
 import pypandoc
 import re
 import shutil
@@ -75,7 +75,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         config.add_section('seismic')
     spec_win = config.getint('seismic', 'spectrogram_window', fallback=60)
     if max_proc is None:
-        max_proc = config.getint('seismic', 'max_processes', fallback=5)
+        max_proc = config.getint('seismic', 'max_processes', fallback=None)
     for key, val in zip(['window_length', 'overlap_percent', 'spectrogram_window', 'max_processes'],
                         [win_len, overlap, spec_win, max_proc]):
         config['seismic'][key] = str(val)
@@ -147,10 +147,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     # TODO: Remove file backup here once it has been copied to pre-processing script (QC doesn't change miniSEED files)
     raw_files = glob(os.path.join(data_dir, '**/*.mseed'), recursive=True)
     try:
-        check_dir = output_dir
-        if check_dir is None:
-            check_dir = data_dir
-        raw_files.remove(os.path.join(check_dir, 'calculated_current.mseed'))
+        raw_files.remove(os.path.join(data_dir, 'calculated_current.mseed'))
     except ValueError:
         pass
 
@@ -814,9 +811,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
 
 if __name__ == '__main__':
-    multiprocessing.freeze_support()
-    multiprocessing.set_start_method('spawn')
-    num_cores = multiprocessing.cpu_count()
+    num_vcpu = psutil.cpu_count(logical=True)
+    num_cores = psutil.cpu_count(logical=False)
 
     parser = argparse.ArgumentParser(description='Perform basic QC for OBS data. Will correct channel identifiers if '
                                                  'optional --channelmap argument is provided. Does not require clock '
@@ -967,7 +963,7 @@ if __name__ == '__main__':
 
         g_log.info("\n\n=====================================================================")
         g_log.info("Starting job: {0}".format(str(args)))
-        g_log.info("{} CPU cores available on this machine".format(num_cores))
+        g_log.info("{} CPU cores available on this machine ({} logical processors)".format(num_cores, num_vcpu))
 
         if default_obs:
             g_log.warn('No valid OBS identifier given, using default AQU-0000.')

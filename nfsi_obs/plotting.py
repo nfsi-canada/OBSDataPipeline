@@ -11,7 +11,7 @@ import timeit
 from .waveform import WaveformPlotting
 from .metadata import get_channel_type, update_metadata
 from .extenders import cut_trace
-from .parallel import calc_psds_multiproc, calc_psds_proc_pool, calc_psds_thread_pool
+from .parallel import calc_psds_thread_pool
 
 
 QARTOD_COLOURS = {
