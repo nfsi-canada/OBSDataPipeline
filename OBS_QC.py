@@ -1205,7 +1205,8 @@ if __name__ == '__main__':
                     if abs(mems_acc[0]) > 0:
                         tilt_deg = np.degrees(np.arctan(np.sqrt(mems_acc[1]**2 + mems_acc[2]**2) / mems_acc[0]))
                         report_kwargs['tiltAtRecovery'] = '{:.3f}'.format(tilt_deg)
-            except Exception:
+            except TypeError as e:
+                # TypeError if AccZ is None (from abs(None))
                 pass
 
         setup_time = timeit.default_timer()
