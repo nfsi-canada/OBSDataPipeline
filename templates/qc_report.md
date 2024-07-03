@@ -48,6 +48,10 @@ Average power consumption (W): {{ meanPower }}
 
 Battery SOC: At deployment: {{ batteryLevel.start }}% | Remaining: {{ batteryLevel.end }}%
 
+{% if tiltAtRecovery %}
+Tilt from vertical at recovery: {{ tiltAtRecovery }} degrees
+
+{% endif %}
 Power spectral density curves are calculated using {{ psdWindowLength }} Hann windows, with {{ psdOverlapPercent }}% overlap.
 
 \newpage{}

@@ -16,6 +16,7 @@ dependencies:
   - pip:
     - scikit-learn
     - seaborn
+    - psutil
     - stdb
     - obstools
     - pynmeagps

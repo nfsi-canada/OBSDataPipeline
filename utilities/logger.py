@@ -35,7 +35,7 @@ def get_general_logger(start=datetime.now(), obs_id="AQU-0000", debug=False, log
         log.setLevel(logging.INFO)
     general_log_name = start.strftime('%Y-%m-%d_%H-%M-%S') + '_' + obs_id + '.log'
     general_log_handle = logging.FileHandler(os.path.join(logs_dir, general_log_name), mode='a')
-    general_log_handle.setLevel(logging.INFO)
+    general_log_handle.setLevel(log.getEffectiveLevel())
     general_log_handle.setFormatter(formatter)
     log.addHandler(general_log_handle)
     log.addHandler(ch)

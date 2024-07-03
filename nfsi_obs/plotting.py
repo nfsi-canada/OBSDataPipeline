@@ -11,6 +11,7 @@ import timeit
 from .waveform import WaveformPlotting
 from .metadata import get_channel_type, update_metadata
 from .extenders import cut_trace
+from .parallel import calc_psds_thread_pool
 
 
 QARTOD_COLOURS = {
@@ -435,7 +436,8 @@ def plot_filenames(outdir, ch_id, plot_start, plot_end, asis=False):
 
 def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, channel_map=None, project_meta=None,
                         psd_win=3600, spec_win=3600, overlap=0.5, psd_over=0.75, plot_length=None, ch_id=None,
-                        start=None, end=None, detrend=False, spec_cmap=None, use_existing_plots=False):
+                        start=None, end=None, detrend=False, spec_cmap=None, use_existing_plots=False, parallel=False,
+                        max_processes=None):
     """
     Analyze seismic data stored in raw data files and create PSD and spectrogram plots. File paths in *files* should be
     listed in chronological order. Files must be readable by obspy.read()
@@ -459,6 +461,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     :param detrend: if True, remove trend from trace data (RMS linear fit)
     :param spec_cmap: colormap to use for spectrogram plot
     :param use_existing_plots: check if plots exist and do not re-create if present, False by default
+    :param parallel: run PSD calculation with multiprocessing parallelization
 
     :return: dictionary of channel information for auto-report generation
     """
@@ -521,8 +524,6 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     plot_end = None
     plot_start = obspy.UTCDateTime(1970, 1, 1)
     make_plot = False   # only create a plot when necessary
-    spec_array = None
-    spec_times = None
     psd_temp_results = {
         'psd_array': None,
         'vpsd_array': None,
@@ -598,6 +599,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     plot_start, plot_end = next_plot_window(plot_end, plot_length=plot_length)
                     plot_files = plot_filenames(outdir, ch_id, plot_start, plot_end, asis=hydrophone)
                     files_exist = [os.path.isfile(fn) for fn in plot_files]
+                    # TODO: Skip unnecessary PSD calculations if using existing plots
             plot_setup = timeit.default_timer()
             timing['plot_admin'] += plot_setup - trim_time
 
@@ -773,7 +775,10 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             # Calculate PSDs and save to running lists
             psd_start = first_psd_start
             new_data = cut_trace(this_channel, psd_start, None, nearest_sample=True, pad=True)
-            apsds, vpsds, freqs, times, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone))
+            if parallel:
+                apsds, vpsds, freqs, times, next_psd_start = calc_psds_thread_pool(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), max_processes=max_processes)
+            else:
+                apsds, vpsds, freqs, times, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone))
             psd_calc_time = timeit.default_timer()
             timing['psd_calc'] += psd_calc_time - plot_admin
 
@@ -911,7 +916,6 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 }
 
                 # Reset temp arrays for spectrogram
-                spec_array, spec_times = None, None
                 reset_arr = timeit.default_timer()
                 timing['array_reset'] += reset_arr - final_start
 
