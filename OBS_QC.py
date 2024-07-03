@@ -1026,17 +1026,20 @@ if __name__ == '__main__':
         g_log.info('Reading project metadata from {0}...'.format(data_log_file))
         log_column_names = full_config.getboolean('dataset', 'logcolnames', fallback=False)
         obs_log_info = nf.io.parse_obs_log(data_log_file, log_delim, names_in_file=log_column_names)
-        # Find this OBS in the metadata table
-        base_meta = None
+        # Find this OBS in the metadata tables
+        base_meta, rec_meta = None, None
         if id_type == 'serial':
             base_meta = obs_log_info['basic'].loc[obs_log_info['basic']['OBS ID'] == obs_identifier]
+            rec_meta = obs_log_info['recovery'].loc[obs_log_info['recovery']['OBS ID'] == obs_identifier]
         elif id_type == 'obs_name':
             base_meta = obs_log_info['basic'].loc[obs_log_info['basic']['OBS Name'] == obs_identifier]
+            rec_meta = obs_log_info['recovery'].loc[obs_log_info['recovery']['OBS Name'] == obs_identifier]
         else:
             id_columns = ['Station', 'OBS Name', 'OBS ID']
             for col in id_columns:
                 if obs_identifier in obs_log_info['basic'][col].values:
                     base_meta = obs_log_info['basic'].loc[obs_log_info['basic'][col] == obs_identifier]
+                    rec_meta = obs_log_info['recovery'].loc[obs_log_info['recovery'][col] == obs_identifier]
                     break
 
         if base_meta is None or base_meta.empty:
@@ -1044,6 +1047,7 @@ if __name__ == '__main__':
         if deploy_start is not None:
             base_meta = base_meta.loc[(base_meta['Launch Date/Time (UTC)'] >= deploy_start) &
                                       (base_meta['Launch Date/Time (UTC)'] < deploy_start + timedelta(days=1))]
+            rec_meta = rec_meta.loc[(rec_meta['On-Deck Date/Time (UTC)'] == base_meta['Recovery Date/Time (UTC)'].values[0])]
         if base_meta.shape[0] > 1:
             raise IndexError('Multiple entries found for OBS {0} in provided metadata. Please use a unique identifier '
                              'or provide start date.'.format(obs_identifier))
@@ -1192,6 +1196,17 @@ if __name__ == '__main__':
             report_kwargs['introText'] = project_meta['this_deployment']['qc_intro']
         report_kwargs['psdWindowSecs'] = config.getint('seismic', 'window_length')
         report_kwargs['psdOverlapPercent'] = config.getint('seismic', 'overlap_percent')
+
+        # Check for tilt info
+        if rec_meta is not None:
+            try:
+                if rec_meta.columns.isin(['AccZ', 'AccN', 'AccE']).all():
+                    mems_acc = [rec_meta[c].values[0] for c in ['AccZ', 'AccN', 'AccE']]
+                    if abs(mems_acc[0]) > 0:
+                        tilt_deg = np.degrees(np.arctan(np.sqrt(mems_acc[1]**2 + mems_acc[2]**2) / mems_acc[0]))
+                        report_kwargs['tiltAtRecovery'] = '{:.3f}'.format(tilt_deg)
+            except Exception:
+                pass
 
         setup_time = timeit.default_timer()
         g_log.info("Time spent parsing arguments and preparing to process data: {0} seconds".format(setup_time - t0))
