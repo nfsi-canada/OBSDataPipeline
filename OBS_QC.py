@@ -1200,7 +1200,7 @@ if __name__ == '__main__':
         # Check for tilt info
         if rec_meta is not None:
             try:
-                if rec_meta.columns.isin(['AccZ', 'AccN', 'AccE']).all():
+                if {'AccZ', 'AccN', 'AccE'}.issubset(rec_meta.columns):
                     mems_acc = [rec_meta[c].values[0] for c in ['AccZ', 'AccN', 'AccE']]
                     if abs(mems_acc[0]) > 0:
                         tilt_deg = np.degrees(np.arctan(np.sqrt(mems_acc[1]**2 + mems_acc[2]**2) / mems_acc[0]))
