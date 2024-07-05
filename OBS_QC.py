@@ -712,7 +712,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             lookup = pd.NaT
             min_hib = pd.Series([const_grad, const_acc, lookup]).min()
         else:
-            # TODO: Return actual hibernation time if instrument is already below 6.5V
+            # TODO: Return actual hibernation date/time if instrument is already below 6.5V
             min_hib = latest_win
         report_params['batteryStats']['HibernateEstimate'] = min_hib.strftime('%Y-%m-%d')
 

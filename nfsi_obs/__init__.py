@@ -82,7 +82,15 @@ def rolling_window_stats(trace, window_length=3*24*60*60, window_offset=24*60*60
         end = window_start + window_length
         window = trace.slice(window_start, end)
 
-        if window.stats.npts > 0:
+        # Check for empty trace
+        sections = window.split()
+        sections.merge()
+        if len(sections) < 1:
+            # No valid data in window
+            window_start += window_offset
+            continue
+
+        if sections[0].stats.npts > 0:
             stats = [window_start.datetime, end.datetime, center.datetime, window.data.min(), window.max(), window.data.mean()]
             if full:
                 days = (center - trace_start) / 60 / 60 / 24
