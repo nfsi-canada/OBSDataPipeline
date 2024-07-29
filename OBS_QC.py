@@ -104,6 +104,12 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     elif 'end_date' in project_meta:
         data_end = obspy.UTCDateTime(project_meta['end_date']) + 24 * 60 * 60
 
+    if data_start > data_end:
+        # TODO: Better fallback handling here, step out until good window found.
+        g_log.warning("Start time {} greater than end time {} for data. Ignoring start/end times.".format(
+            data_start.strftime('%Y-%m-%d %H:%M:%S'), data_end.strftime('%Y-%m-%d %H:%M:%S')))
+        data_start, data_end = None, None
+
     # Read station metadata file (dataless SEED or StationXML)
     station_info = None
     if metadata is not None:

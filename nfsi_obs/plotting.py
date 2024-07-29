@@ -465,6 +465,8 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
     :return: dictionary of channel information for auto-report generation
     """
+    # TODO: Error on last file if after end date/time (see AQU-C760 drifter (2S.L129) data)
+
     func_start = timeit.default_timer()
     timing = {
         'setup': 0.,
