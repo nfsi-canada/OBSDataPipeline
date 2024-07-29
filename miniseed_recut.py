@@ -152,8 +152,8 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
                 pj = open(metadata_args['extra_meta'])
                 proj_meta = json.load(pj)
 
-        if 'network_id' in metadata_args:
-            net_id = metadata_args['network_id']
+        if 'network' in metadata_args:
+            net_id = metadata_args['network']
 
     # Process data files by channel
     for label, files in labeled_files.groupby('channel'):
@@ -180,7 +180,7 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Pre-process OBS data and perform basic QC')
+    parser = argparse.ArgumentParser(description='Pre-process OBS data and save in SDS archive format')
     parser.add_argument('--data_dir', dest="data_dir", help="Directory where raw miniSEED data is stored.")
     parser.add_argument('--archive_dir', dest="arc_dir",
                         help="Directory where corrected day-long miniSEED data files are to be stored.")
@@ -189,15 +189,16 @@ if __name__ == '__main__':
                              "children of data_dir.")
     parser.add_argument('--channels', dest="channels",
                         help="Comma-separated list of channel names to process (optional).")
-    # TODO: Allow start/end times to include time of day (hhmmss)
-    parser.add_argument('--start', dest="start", default=None, help="Start date for output data, as YYYYMMDD.")
-    parser.add_argument('--end', dest="end", default=None, help="End date for output data (inclusive), as YYYYMMDD.")
+    parser.add_argument('--start', dest="start", default=None,
+                        help="Start date/time for output data, as YYYYMMDD[hh[mm[ss]]].")
+    parser.add_argument('--end', dest="end", default=None,
+                        help="End date/time for output data (inclusive), as YYYYMMDD[hh[mm[ss]]].")
     parser.add_argument('--correct_metadata', dest="correct_metadata", action='store_true',
                         help="Flag to correct channel ID(s) in output data.")
     parser.add_argument('--network', dest="network_id", default='XX',
                         help="Network identifier assigned by FDSN for this project. Default 'XX' for test data.")
     parser.add_argument('--relative_paths', dest="relative_paths", action="store_true",
-                        help="Specify all file paths relative to data_dir (excluding archive_dir).")
+                        help="Specify all file paths relative to data_dir (excluding archive_dir and log_dir).")
     parser.add_argument('--metadata', dest="metadata_file",
                         help="Path to metadata file (dataless SEED or StationXML). Channel IDs should match the raw "
                              "data (not corrected by channel_map).")
@@ -206,13 +207,18 @@ if __name__ == '__main__':
     parser.add_argument('--extra_meta', dest="extra_meta",
                         help="Optional JSON file with extra description and QC information. Station/channel codes "
                              "should match the corrected trace IDs in channel_map, if applicable.")
+    parser.add_argument('--log_dir', dest="log_dir", help="Directory to save log files.")
 
     try:
         args = parser.parse_args()
         run_start = datetime.now()
 
-        # TODO: Allow user-configurable log directory
-        g_log = logger.get_general_logger(run_start, 'SDS')
+        if args.log_dir:
+            logs_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.log_dir)))
+            g_log = logger.get_general_logger(run_start, 'SDS', logs_dir=logs_dir)
+        else:
+            g_log = logger.get_general_logger(run_start, 'SDS')
+
         g_log.info("\n\n=====================================================================")
         g_log.info("Starting job: {0}".format(str(args)))
 
@@ -240,15 +246,35 @@ if __name__ == '__main__':
         startdate, enddate = None, None
         if args.start is not None:
             try:
-                startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d'))
+                if len(args.start) == 6:
+                    startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d'))
+                elif len(args.start) == 8:
+                    startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H'))
+                elif len(args.start) == 10:
+                    startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M'))
+                elif len(args.start) == 12:
+                    startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M%S'))
+                else:
+                    raise TypeError('Unknown timestamp format')
             except Exception as e:
                 startdate = None
+                g_log.warning('Invalid start date specified: {}'.format(args.start))
                 pass
         if args.end is not None:
             try:
-                enddate = obspy.UTCDateTime(datetime.strptime(args.end, '%Y%m%d') + timedelta(days=1))
+                if len(args.end) == 6:
+                    enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d') + timedelta(days=1))
+                elif len(args.end) == 8:
+                    enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H') + timedelta(hours=1))
+                elif len(args.end) == 10:
+                    enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M') + timedelta(minutes=1))
+                elif len(args.end) == 12:
+                    enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M%S') + timedelta(seconds=1))
+                else:
+                    raise TypeError('Unknown timestamp format')
             except Exception as e:
                 enddate = None
+                g_log.warning('Invalid end date specified: {}'.format(args.end))
                 pass
 
         # Metadata files
