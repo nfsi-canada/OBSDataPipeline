@@ -208,6 +208,15 @@ if __name__ == '__main__':
                         help="Optional JSON file with extra description and QC information. Station/channel codes "
                              "should match the corrected trace IDs in channel_map, if applicable.")
     parser.add_argument('--log_dir', dest="log_dir", help="Directory to save log files.")
+    parser.add_argument('--datalog', dest="datalog",
+                        help="Log file from deployment/recovery. Must include station identifiers and clock drift "
+                             "measurements. If not specified, assumed to be a file called 'log.xlsx' in the data "
+                             "directory. Preferred format is XLSX (or similar spreadsheet) following NFSI template.")
+    parser.add_argument('--logdelimiter', dest="log_delim",
+                        help="If the OBS log file is delimited text (other than comma-delimited), use this to specify "
+                             "the column delimiter.")
+    parser.add_argument('--legacylogcols', dest="obslog_column_names_legacy", action="store_true",
+                        help="Use legacy column names for OBS deployment log file.")
 
     try:
         args = parser.parse_args()
@@ -302,11 +311,22 @@ if __name__ == '__main__':
                 else:
                     project_meta = os.path.abspath(os.path.expanduser(os.path.expandvars(args.extra_meta)))
 
+            obs_log_info = None
+            if args.datalog:
+                if args.relative_paths:
+                    data_log_file = os.path.normpath(os.path.join(data_dir, args.datalog))
+                else:
+                    data_log_file = os.path.normpath(
+                        os.path.abspath(os.path.expanduser(os.path.expandvars(args.datalog))))
+                g_log.info('Reading project metadata from {0}...'.format(data_log_file))
+                obs_log_info = nf.io.parse_obs_log(data_log_file, names_in_file=not args.obslog_column_names_legacy)
+
             meta_args = {
                 'channel_map': channel_map,
                 'metadata_file': metadata_file,
                 'extra_meta': project_meta,
-                'network': args.network_id
+                'network': args.network_id,
+                'obs_log': obs_log_info
             }
 
         # Split data into day-long miniSEED files saved in archive_dir (SDS folder structure)
