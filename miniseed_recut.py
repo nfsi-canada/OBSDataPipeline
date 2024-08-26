@@ -24,7 +24,7 @@ BUFFER_MAX = 10
 
 
 def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None, correct_meta=False, net_id='XX',
-                   station_info=None, ch_map=None, proj_meta=None):
+                   station_info=None, ch_map=None, proj_meta=None, clock_drift=None):
     full_data = obspy.Stream()
     for df in file_list:
         g_log.info('Reading {}...'.format(df))
@@ -54,9 +54,23 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
         start_day = start_time.date()
         end_day = end_time.date()
 
+        total_clock_drift, recording_start, recording_end = 0, start_time, end_time
+        if clock_drift is not None:
+            clock_correction = clock_drift[clock_drift['Station'] == tr.stats.station]
+            # TODO: Handle multiple entries with same station ID in a single deployment summary (should only occur in land test data)
+            recording_start = obspy.UTCDateTime(pd.to_datetime(clock_correction['Recording Start Date/Time (UTC)'].values[0]))
+            recording_end = obspy.UTCDateTime(pd.to_datetime(clock_correction['Date/Time Recording Stopped (UTC)'].values[0]))
+            total_clock_drift = clock_correction['Clock Offset on Deck (ms)'].values[0]
+
         cut = obspy.UTCDateTime(start_day)
         while cut < end_day:
-            temp = tr.slice(cut, cut + 24 * 60 * 60, nearest_sample=False)
+            # Timestamp which would become start of day after clock drift correction (negative = OBS clock behind GPS)
+            shift = total_clock_drift * (cut - recording_start) / (recording_end - recording_start)
+            cut_shifted = cut + (shift / 1000)
+            g_log.debug('Clock shift: {0} milliseconds | Day "start": {1}'.format(
+                shift, cut_shifted.strftime('%Y-%m-%d %H:%M:%S.%f')))
+            
+            temp = tr.slice(cut_shifted, cut_shifted + 24 * 60 * 60, nearest_sample=False)
             stt = temp.split()  # deal with traces with gaps
             g_log.info(stt)
 
@@ -65,6 +79,14 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
                                           tr.stats.channel)
                 if not os.path.exists(output_dir):
                     os.makedirs(output_dir)
+
+                # Correct time stamps for clock drift, if necessary (negative drift == OBS clock behind GPS)
+                if abs(total_clock_drift) > 0:
+                    for st in stt:
+                        time_shift = total_clock_drift * (st.stats.starttime - recording_start) / (recording_end - recording_start)
+                        st.stats.starttime -= (time_shift / 1000)
+                    g_log.info('Time series shifted for clock drift correction.')
+                    g_log.info(stt)
 
                 outfile = os.path.join(output_dir, '{}.{}.{}.mseed'.format(tr.id, cut.year, cut.julday))
                 if os.path.isfile(outfile):
@@ -124,7 +146,7 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
     g_log.info("Files contain data for {0} unique set(s) of channels".format(len(np.unique(labeled_files['channel'].values))))
 
     # Read metadata files (if necessary)
-    station_info, ch_map, proj_meta = None, None, None
+    station_info, ch_map, proj_meta, clock_info = None, None, None, None
     net_id = 'XX'
     if correct_meta:
         if not isinstance(metadata_args, dict):
@@ -155,6 +177,9 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
         if 'network' in metadata_args:
             net_id = metadata_args['network']
 
+        if 'obs_log' in metadata_args:
+            clock_info = metadata_args['obs_log'][['Recording Start Date/Time (UTC)', 'Date/Time Recording Stopped (UTC)', 'Clock Offset on Deck (ms)']]
+
     # Process data files by channel
     for label, files in labeled_files.groupby('channel'):
         g_log.info('Processing channel {}...'.format(label))
@@ -171,12 +196,12 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
                     buffer_files = all_files[idf:idf+BUFFER_MAX]
                     idf += BUFFER_MAX
 
-                read_and_recut(buffer_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta)
+                read_and_recut(buffer_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta, clock_info)
 
                 if idf > len(all_files):
                     done_read = True
         else:
-            read_and_recut(all_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta)
+            read_and_recut(all_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta, clock_info)
 
 
 if __name__ == '__main__':
@@ -311,7 +336,7 @@ if __name__ == '__main__':
                 else:
                     project_meta = os.path.abspath(os.path.expanduser(os.path.expandvars(args.extra_meta)))
 
-            obs_log_info = None
+            obs_log_data = None
             if args.datalog:
                 if args.relative_paths:
                     data_log_file = os.path.normpath(os.path.join(data_dir, args.datalog))
@@ -320,13 +345,14 @@ if __name__ == '__main__':
                         os.path.abspath(os.path.expanduser(os.path.expandvars(args.datalog))))
                 g_log.info('Reading project metadata from {0}...'.format(data_log_file))
                 obs_log_info = nf.io.parse_obs_log(data_log_file, names_in_file=not args.obslog_column_names_legacy)
+                obs_log_data = obs_log_info['basic']
 
             meta_args = {
                 'channel_map': channel_map,
                 'metadata_file': metadata_file,
                 'extra_meta': project_meta,
                 'network': args.network_id,
-                'obs_log': obs_log_info
+                'obs_log': obs_log_data
             }
 
         # Split data into day-long miniSEED files saved in archive_dir (SDS folder structure)
