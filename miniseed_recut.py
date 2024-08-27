@@ -54,19 +54,19 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
         start_day = start_time.date()
         end_day = end_time.date()
 
-        total_clock_drift, recording_start, recording_end = 0, start_time, end_time
+        total_clock_drift, recording_start, recording_end = 0, obspy.UTCDateTime(start_time), obspy.UTCDateTime(end_time)
         if clock_drift is not None:
             try:
-                clock_correction = clock_drift[clock_drift['Station'] == tr.stats.station]
+                clock_correction = clock_drift.loc[tr.stats.station]
                 # TODO: Handle multiple entries with same station ID in a single deployment summary (should only occur in land test data)
-                recording_start = obspy.UTCDateTime(pd.to_datetime(clock_correction['Recording Start Date/Time (UTC)'].values[0]))
-                recording_end = obspy.UTCDateTime(pd.to_datetime(clock_correction['Date/Time Recording Stopped (UTC)'].values[0]))
-                total_clock_drift = clock_correction['Clock Offset on Deck (ms)'].values[0]
+                recording_start = obspy.UTCDateTime(pd.to_datetime(clock_correction['Recording Start Date/Time (UTC)']))
+                recording_end = obspy.UTCDateTime(pd.to_datetime(clock_correction['Date/Time Recording Stopped (UTC)']))
+                total_clock_drift = clock_correction['Clock Offset on Deck (ms)']
             except Exception as e:
                 print(e)
                 g_log.error('Unable to read clock drift information from deployment summary. No clock correction will '
                             'be applied.')
-                total_clock_drift, recording_start, recording_end = 0, start_time, end_time
+                total_clock_drift, recording_start, recording_end = 0, obspy.UTCDateTime(start_time), obspy.UTCDateTime(end_time)
 
         cut = obspy.UTCDateTime(start_day)
         while cut < end_day:
@@ -248,6 +248,8 @@ if __name__ == '__main__':
                              "the column delimiter.")
     parser.add_argument('--legacylogcols', dest="obslog_column_names_legacy", action="store_true",
                         help="Use legacy column names for OBS deployment log file.")
+    parser.add_argument('--debug', dest='debug', action='store_true',
+                        help="Activate debug mode (more verbose logging).")
 
     try:
         args = parser.parse_args()
@@ -255,9 +257,9 @@ if __name__ == '__main__':
 
         if args.log_dir:
             logs_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.log_dir)))
-            g_log = logger.get_general_logger(run_start, 'SDS', logs_dir=logs_dir)
+            g_log = logger.get_general_logger(run_start, 'SDS', debug=args.debug, logs_dir=logs_dir)
         else:
-            g_log = logger.get_general_logger(run_start, 'SDS')
+            g_log = logger.get_general_logger(run_start, 'SDS', debug=args.debug)
 
         g_log.info("\n\n=====================================================================")
         g_log.info("Starting job: {0}".format(str(args)))
