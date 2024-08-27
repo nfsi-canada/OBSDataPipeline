@@ -56,11 +56,17 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
 
         total_clock_drift, recording_start, recording_end = 0, start_time, end_time
         if clock_drift is not None:
-            clock_correction = clock_drift[clock_drift['Station'] == tr.stats.station]
-            # TODO: Handle multiple entries with same station ID in a single deployment summary (should only occur in land test data)
-            recording_start = obspy.UTCDateTime(pd.to_datetime(clock_correction['Recording Start Date/Time (UTC)'].values[0]))
-            recording_end = obspy.UTCDateTime(pd.to_datetime(clock_correction['Date/Time Recording Stopped (UTC)'].values[0]))
-            total_clock_drift = clock_correction['Clock Offset on Deck (ms)'].values[0]
+            try:
+                clock_correction = clock_drift[clock_drift['Station'] == tr.stats.station]
+                # TODO: Handle multiple entries with same station ID in a single deployment summary (should only occur in land test data)
+                recording_start = obspy.UTCDateTime(pd.to_datetime(clock_correction['Recording Start Date/Time (UTC)'].values[0]))
+                recording_end = obspy.UTCDateTime(pd.to_datetime(clock_correction['Date/Time Recording Stopped (UTC)'].values[0]))
+                total_clock_drift = clock_correction['Clock Offset on Deck (ms)'].values[0]
+            except Exception as e:
+                print(e)
+                g_log.error('Unable to read clock drift information from deployment summary. No clock correction will '
+                            'be applied.')
+                total_clock_drift, recording_start, recording_end = 0, start_time, end_time
 
         cut = obspy.UTCDateTime(start_day)
         while cut < end_day:
@@ -69,7 +75,7 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
             cut_shifted = cut + (shift / 1000)
             g_log.debug('Clock shift: {0} milliseconds | Day "start": {1}'.format(
                 shift, cut_shifted.strftime('%Y-%m-%d %H:%M:%S.%f')))
-            
+
             temp = tr.slice(cut_shifted, cut_shifted + 24 * 60 * 60, nearest_sample=False)
             stt = temp.split()  # deal with traces with gaps
             g_log.info(stt)
