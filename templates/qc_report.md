@@ -30,7 +30,7 @@ Station name: {{ stationName }}
 
 Location (lat/lon): {{ latString }}, {{ lonString }}
 
-Water depth (m): {{ waterDepth }}
+Water depth (m): {{ depthString }}
 
 Deployment date: {{ deployDate }}
 

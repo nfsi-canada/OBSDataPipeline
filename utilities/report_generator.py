@@ -62,6 +62,8 @@ class ReportGenerator:
                     input_variables['lonString'] = '{0:.6f} E'.format(input_variables['longitude'])
             else:
                 input_variables['lonString'] = 'none'
+        if 'waterDepth' in input_variables:
+            input_variables['depthString'] = '{:.1f}'.format(input_variables['waterDepth'])
 
         if 'deployDate' not in input_variables:
             if 'deployed' in input_variables:
@@ -80,6 +82,18 @@ class ReportGenerator:
                     input_variables['psdWindowLength'] = '{0}-hour'.format(input_variables['psdWindowSecs'] / 60 / 60)
                 else:
                     input_variables['psdWindowLength'] = '{0}-day'.format(input_variables['psdWindowSecs'] / 60 / 60 / 24)
+
+        if 'battery_stats_window' in input_variables:
+            if input_variables['battery_stats_window'] > 24 * 60 * 60:
+                input_variables['batteryStats']['window_str'] = '{:.1f}-day'.format(input_variables['battery_stats_window'] / 60 / 60 / 24)
+            elif input_variables['battery_stats_window'] > 60 * 60:
+                input_variables['batteryStats']['window_str'] = '{:.1f}-hour'.format(input_variables['battery_stats_window'] / 60 / 60)
+            elif input_variables['battery_stats_window'] > 60:
+                input_variables['batteryStats']['window_str'] = '{:.1f}-minute'.format(input_variables['battery_stats_window'] / 60)
+            else:
+                input_variables['batteryStats']['window_str'] = '{:.1f}-second'.format(input_variables['battery_stats_window'])
+        else:
+            input_variables['batteryStats']['window_str'] = '3-day'
 
         report_str = (self.env.render(
             **input_variables

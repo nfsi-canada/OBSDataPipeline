@@ -617,6 +617,10 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     debug_info['timing']['centring_summary'] = centre_time - loop_time
 
     # TODO: Add list of all channels at beginning of report
+    # TODO: Add average seafloor temperature and pressure during deployment to report summary
+    # TODO: Add expected hibernation date (once calculated properly) to report summary
+    # TODO: Column formatting for report summary page (easier to read?)
+    # TODO: Add time on seafloor (start/end) to report summary
 
     # Parse gap information for report
     # TODO: Include check for duplicates (may come out of buffered seismic data) -> TEST
@@ -765,18 +769,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             fig.savefig(current_plot)
             plt.close(fig)
         report_params['batteryStats']['currentPlot'] = current_plot
-
-    if 'battery_stats_window' in report_params:
-        if report_params['battery_stats_window'] > 24*60*60:
-            report_params['batteryStats']['window_str'] = '{:.1f}-day'.format(report_params['battery_stats_window'] / 60 / 60 / 24)
-        elif report_params['battery_stats_window'] > 60*60:
-            report_params['batteryStats']['window_str'] = '{:.1f}-hour'.format(report_params['battery_stats_window'] / 60 / 60)
-        elif report_params['battery_stats_window'] > 60:
-            report_params['batteryStats']['window_str'] = '{:.1f}-minute'.format(report_params['battery_stats_window'] / 60)
-        else:
-            report_params['batteryStats']['window_str'] = '{:.1f}-second'.format(report_params['battery_stats_window'])
-    else:
-        report_params['batteryStats']['window_str'] = '3-day'
 
     battery_time = timeit.default_timer()
     g_log.debug("Time spent checking battery stats: {0} seconds".format((battery_time - gap_time)))
