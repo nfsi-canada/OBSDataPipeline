@@ -68,6 +68,10 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
                             'be applied.')
                 total_clock_drift, recording_start, recording_end = 0, obspy.UTCDateTime(start_time), obspy.UTCDateTime(end_time)
 
+            if np.isnan(total_clock_drift):
+                g_log.warning('No clock drift measurement provided in deployment summary for station {}.'.format(tr.stats.station))
+                total_clock_drift = 0
+
         cut = obspy.UTCDateTime(start_day)
         while cut < end_day:
             # Timestamp which would become start of day after clock drift correction (negative = OBS clock behind GPS)
@@ -288,13 +292,13 @@ if __name__ == '__main__':
         startdate, enddate = None, None
         if args.start is not None:
             try:
-                if len(args.start) == 6:
+                if len(args.start) == 8:
                     startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d'))
-                elif len(args.start) == 8:
-                    startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H'))
                 elif len(args.start) == 10:
-                    startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M'))
+                    startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H'))
                 elif len(args.start) == 12:
+                    startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M'))
+                elif len(args.start) == 14:
                     startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M%S'))
                 else:
                     raise TypeError('Unknown timestamp format')
@@ -304,13 +308,13 @@ if __name__ == '__main__':
                 pass
         if args.end is not None:
             try:
-                if len(args.end) == 6:
+                if len(args.end) == 8:
                     enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d') + timedelta(days=1))
-                elif len(args.end) == 8:
-                    enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H') + timedelta(hours=1))
                 elif len(args.end) == 10:
-                    enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M') + timedelta(minutes=1))
+                    enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H') + timedelta(hours=1))
                 elif len(args.end) == 12:
+                    enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M') + timedelta(minutes=1))
+                elif len(args.end) == 14:
                     enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M%S') + timedelta(seconds=1))
                 else:
                     raise TypeError('Unknown timestamp format')
