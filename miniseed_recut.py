@@ -323,6 +323,8 @@ if __name__ == '__main__':
                 g_log.warning('Invalid end date specified: {}'.format(args.end))
                 pass
 
+        g_log.info('Start: {}, End: {}'.format(startdate.strftime('%Y-%m-%d %H:%M:%S'), enddate.strftime('%Y-%m-%d %H:%M:%S')))
+
         # Metadata files
         meta_args = None
         if args.correct_metadata:

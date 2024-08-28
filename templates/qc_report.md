@@ -110,10 +110,6 @@ Abnormal change(s) in humidity were observed during this deployment.
 ## {{ ch.channelName }}
 SEED ID: {{ ch.seedID }}
 
-{% if ch.azimuth %}
-Orientation: {{ ch.azimuth }} / {{ ch.dip }}
-{% endif %}
-
 {% if ch.traceLoc %}
 ### Full trace
 
