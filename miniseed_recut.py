@@ -309,13 +309,13 @@ if __name__ == '__main__':
         if args.end is not None:
             try:
                 if len(args.end) == 8:
-                    enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d') + timedelta(days=1))
+                    enddate = obspy.UTCDateTime(datetime.strptime(args.end, '%Y%m%d') + timedelta(days=1))
                 elif len(args.end) == 10:
-                    enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H') + timedelta(hours=1))
+                    enddate = obspy.UTCDateTime(datetime.strptime(args.end, '%Y%m%d%H') + timedelta(hours=1))
                 elif len(args.end) == 12:
-                    enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M') + timedelta(minutes=1))
+                    enddate = obspy.UTCDateTime(datetime.strptime(args.end, '%Y%m%d%H%M') + timedelta(minutes=1))
                 elif len(args.end) == 14:
-                    enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M%S') + timedelta(seconds=1))
+                    enddate = obspy.UTCDateTime(datetime.strptime(args.end, '%Y%m%d%H%M%S') + timedelta(seconds=1))
                 else:
                     raise TypeError('Unknown timestamp format')
             except Exception as e:
