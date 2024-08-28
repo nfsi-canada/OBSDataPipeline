@@ -17,7 +17,7 @@ import re
 import traceback
 
 from obspy.io.stationxml.core import validate_stationxml
-from obspy.core.inventory import Inventory, Network, Station, Channel
+from obspy.core.inventory import Inventory, Network, Station, Channel, Operator, Person, Equipment
 
 import nfsi_obs as nf
 from utilities import logger
@@ -136,13 +136,26 @@ def map_and_filter_xml(sxml_file, channel_list=None, channel_map=None):
     return filter_inventory(input_inv, channel_list)
 
 
-def update_station_xml(inv, obs_log=None, extra_info=None):
+def update_station_xml(inv, obs_log=None, extra_info=None, nfsi_fields=False):
     """
     Add/update info in obspy.Inventory to fit StationXML standard. Station/channel coordinates are taken from `obs_log`.
     Various other metadata fields are in the `extra_info` dictionary.
     """
+    if nfsi_fields:
+        # General information, NFSI-specific
+        inv.source = 'NFSI'
+        inv.module = 'OBSDataPipeline 0.4.0'
+        inv.module_uri = 'https://github.com/nfsi-canada/OBSDataPipeline'
+
     # Station/channel coordinates
     for n in inv.networks:
+        if nfsi_fields:
+            n.operator = Operator('NFSI',
+                                  contacts=[
+                                      Person(agencies=['NFSI'], emails=['nfsi@nfsi.ca'], phones=['1-902-494-6130']),
+                                  ],
+                                  website='https://nfsi.ca')
+
         for s in n.stations:
             base_meta = obs_log['basic'].loc[obs_log['basic']['Station'] == s.code]
             lat = base_meta['Deployed Latitude'].values[0]
@@ -150,15 +163,38 @@ def update_station_xml(inv, obs_log=None, extra_info=None):
             elev = -base_meta['Water Depth (m)'].values[0]
             start = obspy.UTCDateTime(pd.to_datetime(base_meta['Date/Time on Seafloor (UTC)'].values[0]))
             end = obspy.UTCDateTime(pd.to_datetime(base_meta['Date/Time Released (UTC)'].values[0]))
+            try:
+                survey_method = base_meta['Survey Calculation Method'].values[0]
+            except (KeyError, IndexError):
+                # Column not present, use default
+                survey_method = 'Triangulation'
             s.latitude = lat
             s.longitude = lon
             s.elevation = elev
+            s.latitude.__setattr__('measurement_method', survey_method)
+            s.longitude.__setattr__('measurement_method', survey_method)
+            s.elevation.__setattr__('measurement_method', survey_method)
+            # TODO: Handle situations where water level is non-zero (i.e. lake deployments)
+            s.water_level = 0
             for c in s.channels:
                 c.latitude = lat
                 c.longitude = lon
                 c.elevation = elev
+                c.latitude.__setattr__('measurement_method', survey_method)
+                c.longitude.__setattr__('measurement_method', survey_method)
+                c.elevation.__setattr__('measurement_method', survey_method)
                 c.start_date = start
                 c.end_date = end
+
+                if nfsi_fields:
+                    if c.code == 'MDO':
+                        # External pressure sensor, have serial numbers for Keller sensors
+                        c.sensor = Equipment(description='Piezoresistive absolute pressure transducer',
+                                             manufacturer='KELLER', model='PA-10L', serial_number='FILL_FROM_DB')
+                        # TODO: Fill out serial number for Keller sensor (and hydrophone if applicable)
+                    else:
+                        # Same sensor/equipment info as Station (Aquarius)
+                        c.__delattr__('sensor')
 
     # Other metadata from dictionary
     """
@@ -327,7 +363,8 @@ if __name__ == '__main__':
                 continue
 
             # TODO: Correct other metadata in StationXML (coordinates, etc.)
-            complete_metadata = update_station_xml(good_channels, obs_log_info, extra_meta)
+            complete_metadata = update_station_xml(good_channels, obs_log_info, extra_meta, nfsi_fields=True)
+
 
             # Save output XML file
             if len(complete_metadata.networks) > 1:
