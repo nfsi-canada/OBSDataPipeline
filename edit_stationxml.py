@@ -156,6 +156,18 @@ def update_station_xml(inv, obs_log=None, extra_info=None, nfsi_fields=False):
                                   ],
                                   website='https://nfsi.ca')
 
+        net_info = None
+        if 'network_{}'.format(n.code) in extra_info:
+            net_info = extra_info['network_{}'.format(n.code)]
+            if 'source_id' in net_info:
+                n.source_id = net_info['source_id']
+            if 'restricted_status' in net_info:
+                n.restricted_status = net_info['restricted_status']
+            if 'description' in net_info:
+                n.description = net_info['description']
+            if 'identifiers' in net_info:
+                n.identifiers = ['{}:{}'.format(idf['type'], idf['value']) for idf in net_info['identifiers']]
+
         for s in n.stations:
             base_meta = obs_log['basic'].loc[obs_log['basic']['Station'] == s.code]
             lat = base_meta['Deployed Latitude'].values[0]
@@ -174,8 +186,15 @@ def update_station_xml(inv, obs_log=None, extra_info=None, nfsi_fields=False):
             s.latitude.__setattr__('measurement_method', survey_method)
             s.longitude.__setattr__('measurement_method', survey_method)
             s.elevation.__setattr__('measurement_method', survey_method)
-            # TODO: Handle situations where water level is non-zero (i.e. lake deployments)
             s.water_level = 0
+
+            sta_info = None
+            if net_info is not None:
+                if 'station_{}'.format(s.code) in net_info:
+                    sta_info = net_info['station_{}'.format(s.code)]
+                    if 'water_level' in sta_info:
+                        s.water_level = sta_info['water_level']
+
             for c in s.channels:
                 c.latitude = lat
                 c.longitude = lon
@@ -191,10 +210,16 @@ def update_station_xml(inv, obs_log=None, extra_info=None, nfsi_fields=False):
                         # External pressure sensor, have serial numbers for Keller sensors
                         c.sensor = Equipment(description='Piezoresistive absolute pressure transducer',
                                              manufacturer='KELLER', model='PA-10L', serial_number='FILL_FROM_DB')
-                        # TODO: Fill out serial number for Keller sensor (and hydrophone if applicable)
                     else:
                         # Same sensor/equipment info as Station (Aquarius)
                         c.__delattr__('sensor')
+
+                if sta_info is not None:
+                    if 'channel_{}'.format(c.code) in sta_info:
+                        ch_info = sta_info['channel_{}'.format(c.code)]
+                        if 'sensor' in ch_info:
+                            if 'serial_number' in ch_info['sensor']:
+                                c.sensor.serial_number = ch_info['sensor']['serial_number']
 
     # Other metadata from dictionary
     """
