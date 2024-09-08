@@ -17,7 +17,7 @@ import re
 import traceback
 
 from obspy.io.stationxml.core import validate_stationxml
-from obspy.core.inventory import Inventory, Network, Station, Channel, Operator, Person, Equipment
+from obspy.core.inventory import Inventory, Network, Station, Channel, Operator, Person, Equipment, PhoneNumber
 
 import nfsi_obs as nf
 from utilities import logger
@@ -150,11 +150,13 @@ def update_station_xml(inv, obs_log=None, extra_info=None, nfsi_fields=False):
     # Station/channel coordinates
     for n in inv.networks:
         if nfsi_fields:
-            n.operator = Operator('NFSI',
+            n.operators = [Operator('NFSI',
                                   contacts=[
-                                      Person(agencies=['NFSI'], emails=['nfsi@nfsi.ca'], phones=['1-902-494-6130']),
+                                      Person(agencies=['NFSI'],
+                                             emails=['nfsi@nfsi.ca'],
+                                             phones=[PhoneNumber(902, '494-6130', country_code=1)]),
                                   ],
-                                  website='https://nfsi.ca')
+                                  website='https://nfsi.ca')]
 
         net_info = None
         if 'network_{}'.format(n.code) in extra_info:
@@ -166,7 +168,7 @@ def update_station_xml(inv, obs_log=None, extra_info=None, nfsi_fields=False):
             if 'description' in net_info:
                 n.description = net_info['description']
             if 'identifiers' in net_info:
-                n.identifiers = ['{}:{}'.format(idf['type'], idf['value']) for idf in net_info['identifiers']]
+                n.identifiers = ['{0}:{1}'.format(idf['type'], idf['value']) for idf in net_info['identifiers']]
 
         for s in n.stations:
             base_meta = obs_log['basic'].loc[obs_log['basic']['Station'] == s.code]
@@ -212,7 +214,7 @@ def update_station_xml(inv, obs_log=None, extra_info=None, nfsi_fields=False):
                                              manufacturer='KELLER', model='PA-10L', serial_number='FILL_FROM_DB')
                     else:
                         # Same sensor/equipment info as Station (Aquarius)
-                        c.__delattr__('sensor')
+                        c.sensor = None
 
                 if sta_info is not None:
                     if 'channel_{}'.format(c.code) in sta_info:
@@ -220,34 +222,6 @@ def update_station_xml(inv, obs_log=None, extra_info=None, nfsi_fields=False):
                         if 'sensor' in ch_info:
                             if 'serial_number' in ch_info['sensor']:
                                 c.sensor.serial_number = ch_info['sensor']['serial_number']
-
-    # Other metadata from dictionary
-    """
-    for key in extra_info:
-        if re.match(r'network_[A-Z0-9]+', key):
-            continue
-
-        inv[key] = extra_info[key]
-            # Inventory
-            ## source
-            ## module (obspy)
-            ## created date/time
-            # Network
-            ## startDate
-            ## endDate (if applicable)
-            ## restricted status
-            ## sourceID?
-            ## identifier (DOI)
-            ## description
-            ## operator (agency, contact > email, website)
-            # Station
-            ## site?
-            ## water level = 0 (generally)
-            # Channel
-            ## depth = 0
-            ## water level
-            ## sensor (if applicable -> Keller, hydrophone)
-    """
 
     return inv
 
@@ -389,7 +363,6 @@ if __name__ == '__main__':
 
             # TODO: Correct other metadata in StationXML (coordinates, etc.)
             complete_metadata = update_station_xml(good_channels, obs_log_info, extra_meta, nfsi_fields=True)
-
 
             # Save output XML file
             if len(complete_metadata.networks) > 1:
