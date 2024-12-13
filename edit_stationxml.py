@@ -35,7 +35,7 @@ def filter_inventory(inv, channel_list):
     return inv.copy()
 
 
-def map_and_filter_xml(sxml_file, channel_list=None, channel_map=None):
+def map_and_filter_xml(sxml_file, channel_list=None, channel_map=None, is_dataless=False):
     """
     Filter StationXML file to only channels included in list of channels, applying ID mapping specified in
     `channel_map`. If `channel_list` is not specified, filter to only channels which appear in `channel_map`. If no
@@ -44,13 +44,19 @@ def map_and_filter_xml(sxml_file, channel_list=None, channel_map=None):
     :param sxml_file: Path to StationXML file
     :param channel_list: List of channel IDs
     :param channel_map: pandas.DataFrame mapping existing channel IDs to corrected IDs
+    :param is_dataless: bool, set to True if `sxml_file` is a dataless SEED file
     :return: obspy.Inventory
     """
-    is_sxml = validate_stationxml(sxml_file)
-    if not is_sxml:
-        raise TypeError('Input file {} is not a valid StationXML file.'.format(sxml_file))
+    # Read input metadata file to obspy.Inventory object
+    if is_dataless:
+        input_inv = nf.metadata.read_dataless(sxml_file)
+    else:
+        is_sxml = validate_stationxml(sxml_file)
+        if not is_sxml:
+            raise TypeError('Input file {} is not a valid StationXML file.'.format(sxml_file))
 
-    input_inv = obspy.read_inventory(sxml_file)
+        input_inv = obspy.read_inventory(sxml_file)
+
     if channel_list is None and channel_map is None:
         # No filtering to be done, return inventory as-is
         return input_inv
@@ -212,6 +218,11 @@ def update_station_xml(inv, obs_log=None, extra_info=None, nfsi_fields=False):
                         # External pressure sensor, have serial numbers for Keller sensors
                         c.sensor = Equipment(description='Piezoresistive absolute pressure transducer',
                                              manufacturer='KELLER', model='PA-10L', serial_number='FILL_FROM_DB')
+                    elif c.code == 'HDH':
+                        # Broadband hydrophone
+                        c.sensor = Equipment(description='Ultra low frequency broadband hydrophone',
+                                             manufacturer='High Tech, Inc.', model='HTI-04-PCA/ULF',
+                                             serial_number='FILL_FROM_DB')
                     else:
                         # Same sensor/equipment info as Station (Aquarius)
                         c.sensor = None
@@ -227,7 +238,8 @@ def update_station_xml(inv, obs_log=None, extra_info=None, nfsi_fields=False):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Pre-process OBS data and perform basic QC')
+    parser = argparse.ArgumentParser(description='Complete StationXML files using partial files created by Aquarius '
+                                                 'OBS and supplemental metadata files.')
     parser.add_argument('--input_dir', dest="in_dir",
                         help="Directory where input StationXML files are stored, and/or base directory for relative "
                              "paths.")
@@ -254,6 +266,8 @@ if __name__ == '__main__':
                              "specified, all channels will be output.")
     parser.add_argument('--other_meta', dest="other_metadata",
                         help="JSON file with various metadata to be added to StationXML files.")
+    parser.add_argument('--dataless', action='store_true', dest="is_dataless",
+                        help="Flag to set if input files are dataless SEED rather than StationXML (legacy option).")
 
     try:
         args = parser.parse_args()
@@ -267,7 +281,10 @@ if __name__ == '__main__':
         if args.aqu_xml:
             xml_files = [os.path.abspath(os.path.expanduser(os.path.expandvars(args.aqu_xml)))]
         elif input_dir is not None:
-            xml_files = glob(os.path.join(input_dir, '**', '*.xml'), recursive=True)
+            if args.is_dataless:
+                xml_files = glob(os.path.join(input_dir, '**', '*.dataless'), recursive=True)
+            else:
+                xml_files = glob(os.path.join(input_dir, '**', '*.xml'), recursive=True)
         else:
             raise SyntaxError('No input file or directory specified!')
 
@@ -300,7 +317,10 @@ if __name__ == '__main__':
         g_log.info("\n\n=====================================================================")
         g_log.info("Starting job: {0}".format(str(args)))
 
-        g_log.info("Found {} XML files to edit".format(len(xml_files)))
+        if args.is_dataless:
+            g_log.info("Found {} dataless SEED files to edit".format(len(xml_files)))
+        else:
+            g_log.info("Found {} XML files to edit".format(len(xml_files)))
 
         # Channel list (if specified separately)
         channels = None
@@ -355,7 +375,7 @@ if __name__ == '__main__':
         for xf in xml_files:
             print(xf)
             # Fix channel identifiers and filter to channels of interest
-            good_channels = map_and_filter_xml(xf, channels, channel_map)
+            good_channels = map_and_filter_xml(xf, channels, channel_map, args.is_dataless)
             num_chan = int(np.sum([len(s.channels) for n in good_channels.networks for s in n.stations]))
             print('Filtered channels: {}'.format(num_chan))
             if num_chan < 1:
