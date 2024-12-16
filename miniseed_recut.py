@@ -42,19 +42,28 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
     g_log.info(full_data)
     full_data.print_gaps()
 
+    # Remove channels not from this station (weird corrupt behaviour one time...)
+    this_station = obspy.Stream()
+    for tr in full_data:
+        try:
+            station_info.get_channel_metadata(tr.id)
+            this_station.append(tr)
+        except Exception as e:
+            g_log.warning('Channel {} not present in metadata file, skipping...'.format(tr.id))
+
     # Correct metadata (if applicable)
     if correct_meta:
         g_log.info('Updating metadata...')
-        full_data = nf.metadata.update_metadata(full_data, net_id, g_log, station_info, ch_map, proj_meta)
+        this_station = nf.metadata.update_metadata(this_station, net_id, g_log, station_info, ch_map, proj_meta)
 
     # Cut and save day-long miniSEED files in SDS archive structure
-    for tr in full_data:
+    for tr in this_station:
         start_time = tr.stats.starttime.datetime
         end_time = tr.stats.endtime.datetime + timedelta(days=1)
         start_day = start_time.date()
         end_day = end_time.date()
 
-        total_clock_drift, recording_start, recording_end = 0, obspy.UTCDateTime(start_time), obspy.UTCDateTime(end_time)
+        total_clock_drift, recording_start, recording_end = np.nan, obspy.UTCDateTime(start_time), obspy.UTCDateTime(end_time)
         if clock_drift is not None:
             try:
                 clock_correction = clock_drift.loc[tr.stats.station]
@@ -68,9 +77,9 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
                             'be applied.')
                 total_clock_drift, recording_start, recording_end = 0, obspy.UTCDateTime(start_time), obspy.UTCDateTime(end_time)
 
-            if np.isnan(total_clock_drift):
-                g_log.warning('No clock drift measurement provided in deployment summary for station {}.'.format(tr.stats.station))
-                total_clock_drift = 0
+        if np.isnan(total_clock_drift):
+            g_log.warning('No clock drift measurement provided in deployment summary for station {}.'.format(tr.stats.station))
+            total_clock_drift = 0
 
         cut = obspy.UTCDateTime(start_day)
         while cut < end_day:

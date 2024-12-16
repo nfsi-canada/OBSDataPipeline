@@ -142,7 +142,7 @@ def map_and_filter_xml(sxml_file, channel_list=None, channel_map=None, is_datale
     return filter_inventory(input_inv, channel_list)
 
 
-def update_station_xml(inv, obs_log=None, extra_info=None, nfsi_fields=False):
+def update_station_xml(inv, obs_log=None, extra_info=None, nfsi_fields=False, survey_method='Triangulation'):
     """
     Add/update info in obspy.Inventory to fit StationXML standard. Station/channel coordinates are taken from `obs_log`.
     Various other metadata fields are in the `extra_info` dictionary.
@@ -187,7 +187,8 @@ def update_station_xml(inv, obs_log=None, extra_info=None, nfsi_fields=False):
                 survey_method = base_meta['Survey Calculation Method'].values[0]
             except (KeyError, IndexError):
                 # Column not present, use default
-                survey_method = 'Triangulation'
+                pass
+
             s.latitude = lat
             s.longitude = lon
             s.elevation = elev
@@ -268,6 +269,8 @@ if __name__ == '__main__':
                         help="JSON file with various metadata to be added to StationXML files.")
     parser.add_argument('--dataless', action='store_true', dest="is_dataless",
                         help="Flag to set if input files are dataless SEED rather than StationXML (legacy option).")
+    parser.add_argument('--survey', dest="survey_method", default='Triangulation',
+                        help="Survey method used for determining seafloor locations. Default 'Triangulation'.")
 
     try:
         args = parser.parse_args()
@@ -382,7 +385,7 @@ if __name__ == '__main__':
                 continue
 
             # TODO: Correct other metadata in StationXML (coordinates, etc.)
-            complete_metadata = update_station_xml(good_channels, obs_log_info, extra_meta, nfsi_fields=True)
+            complete_metadata = update_station_xml(good_channels, obs_log_info, extra_meta, nfsi_fields=True, survey_method=args.survey_method)
 
             # Save output XML file
             if len(complete_metadata.networks) > 1:

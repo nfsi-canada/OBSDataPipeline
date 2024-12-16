@@ -72,9 +72,12 @@ def update_metadata(data, network_id, log=None, station_info=None, channel_map=N
 
             # Get orientations of seismic channels
             if re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', tr.meta.channel):
-                orient = station_info.get_orientation(tr.id)
-                for key in ['azimuth', 'dip']:
-                    tr.stats[key] = orient[key]
+                try:
+                    orient = station_info.get_orientation(tr.id)
+                    for key in ['azimuth', 'dip']:
+                        tr.stats[key] = orient[key]
+                except Exception:
+                    warnings.warn('Matching orientation info for channel {} not found.'.format(tr.id))
 
         # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
         if channel_map is not None:
