@@ -44,12 +44,17 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
 
     # Remove channels not from this station (weird corrupt behaviour one time...)
     this_station = obspy.Stream()
+    station_ids = [x.code for n in station_info.networks for x in n.stations]
     for tr in full_data:
         try:
             station_info.get_channel_metadata(tr.id)
             this_station.append(tr)
         except Exception as e:
-            g_log.warning('Channel {} not present in metadata file, skipping...'.format(tr.id))
+            if tr.meta.station in station_ids:
+                this_station.append(tr)
+                g_log.warning('Channel {} not present in metadata file, but is from this station.'.format(tr.id))
+            else:
+                g_log.warning('Channel {} not present in metadata file, skipping...'.format(tr.id))
 
     # Correct metadata (if applicable)
     if correct_meta:

@@ -246,8 +246,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     times = get_start_and_end_time(rf)
                     filetimes.append(times)
                 filetimes = np.array(filetimes)
-                files_start = min(filetimes[:, 0])
-                files_end = max(filetimes[:, 1])
+                if np.any(filetimes < datetime(2021,9,1)):
+                    g_log.warning('Some data timestamps prior to 2021-09-01 (invalid). Using start/end times from OBS log instead.')
+                    files_start = data_start
+                    files_end = data_end
+                else:
+                    files_start = min(filetimes[:, 0])
+                    files_end = max(filetimes[:, 1])
 
                 startend = timeit.default_timer()
                 debug_info['timing']['long_series_check'] += startend - ch_start
@@ -533,13 +538,18 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 for tt in trig_times:
                                     ht = hum_filt.slice(tt[0], tt[1], nearest_sample=False)
                                     back = hum_filt.slice(tt[0] - 24 * 60 * 60, tt[0], nearest_sample=False)
-                                    bm = back.data.mean()
-                                    hx = ht.max()
-                                    hn = ht.data.min()
-                                    if abs(hx - bm) > abs(hn - bm):
-                                        dev = hx - bm
-                                    else:
-                                        dev = hn - bm
+                                    dev = np.nan
+                                    try:
+                                        bm = back.data.mean()
+                                        hx = ht.max()
+                                        hn = ht.data.min()
+                                        if abs(hx - bm) > abs(hn - bm):
+                                            dev = hx - bm
+                                        else:
+                                            dev = hn - bm
+                                    except ValueError:
+                                        g_log.warning('Error encountered determining stats for trigger {}'.format(tt[0].strftime('%Y-%m-%d %H:%M:%S')))
+                                        g_log.error(traceback.format_exc())
 
                                     humidity_blips.append({
                                         'start': tt[0].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
