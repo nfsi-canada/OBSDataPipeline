@@ -110,3 +110,77 @@ def rolling_window_stats(trace, window_length=3*24*60*60, window_offset=24*60*60
         window_start += window_offset
 
     return window_stats
+
+
+def clip_data(unclipped, high_clip, low_clip):
+    """
+    Remove values from input data that are above `high_clip` and below `low_clip`. Returned series (np.array) has np.nan
+    in place of clipped values.
+
+    :param unclipped: input data, array-like
+    :param high_clip: upper clip threshold, np.float
+    :param low_clip: lower clip threshold, np.float
+    :return: np.array
+    """
+    np_unclipped = np.array(unclipped)
+    cond_clip = (np_unclipped > high_clip) | (np_unclipped < low_clip)
+    np_clipped = np.where(cond_clip, np.nan, np_unclipped)
+    return np_clipped
+
+
+def ewma_fb(column, span):
+    """
+    Apply forwards, backwards exponential weighted moving average (EWMA) to data column.
+
+    :param column: pandas.Series
+    :param span: int
+    :return:
+    """
+    # Forwards EWMA
+    fwd = pd.Series.ewm(column, span=span).mean()
+    # Backwards EWMA
+    bwd = pd.Series.ewm(column[::-1], span=span).mean()
+    # Mean of forwards and backwards EWMA
+    stacked_ewma = np.vstack((fwd, bwd[::-1]))
+    fb_ewma = np.mean(stacked_ewma, axis=0)
+    return fb_ewma
+
+
+def remove_outliers(input, fbewma, delta):
+    """
+    Remove data points from `input` that differ from `fbewma` by greater than +/- `delta`
+
+    :param input: array-like
+    :param fbewma: array-like
+    :param delta: np.float
+    :return:
+    """
+
+def remove_write_spikes(trace, range_clips=None, delta=None, span=None):
+    """
+    Remove spikes due to Aquarius data writes (normally every 45 minutes while deployed). This function is intended for
+    use only with the external pressure and temperature data. The signals observed on other channels for the data writes
+    have a slightly different character and have not been tested with this function.
+
+    Modified from SO example (stackoverflow.com/questions/37556487/remove-spikes-from-signal-in-python)
+
+    :param trace: obspy.core.trace.Trace object
+    :return:
+    """
+    trace_df = pd.DataFrame(index=pd.to_datetime(trace.times('timestamp')))
+    trace_df['datetime'] = pd.to_datetime(trace.times('timestamp'))
+    trace_df['as_recorded'] = trace.data
+
+    # Clip data, if desired
+    if range_clips is not None:
+        trace_df['clipped'] = clip_data(trace.data, *range_clips)
+    else:
+        trace_df['clipped'] = trace.data
+
+    # Calculate FBEWMA
+
+    # Remove outliers
+
+    # Interpolate
+
+    # Construct output obspy.Trace and return
