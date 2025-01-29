@@ -1,4 +1,8 @@
+import warnings
+
+from datetime import datetime
 from ioos_qc import utils as iq_utils
+import matplotlib.pyplot as plt
 import numpy as np
 import obspy
 import pandas as pd
@@ -112,14 +116,14 @@ def rolling_window_stats(trace, window_length=3*24*60*60, window_offset=24*60*60
     return window_stats
 
 
-def clip_data(unclipped, high_clip, low_clip):
+def clip_data(unclipped, low_clip, high_clip):
     """
     Remove values from input data that are above `high_clip` and below `low_clip`. Returned series (np.array) has np.nan
     in place of clipped values.
 
     :param unclipped: input data, array-like
-    :param high_clip: upper clip threshold, np.float
     :param low_clip: lower clip threshold, np.float
+    :param high_clip: upper clip threshold, np.float
     :return: np.array
     """
     np_unclipped = np.array(unclipped)
@@ -134,7 +138,7 @@ def ewma_fb(column, span):
 
     :param column: pandas.Series
     :param span: int
-    :return:
+    :return: np.array
     """
     # Forwards EWMA
     fwd = pd.Series.ewm(column, span=span).mean()
@@ -153,10 +157,15 @@ def remove_outliers(input, fbewma, delta):
     :param input: array-like
     :param fbewma: array-like
     :param delta: np.float
-    :return:
+    :return: np.array
     """
+    np_input = np.array(input)
+    np_fbewma = np.array(fbewma)
+    cond_delta = (np.abs(np_input - np_fbewma) > delta)
+    no_outliers = np.where(cond_delta, np.nan, np_input)
+    return no_outliers
 
-def remove_write_spikes(trace, range_clips=None, delta=None, span=None):
+def remove_write_spikes(trace, range_clips=None, delta=1, span=None, qcplot=False, savedf=False, dfpath=None):
     """
     Remove spikes due to Aquarius data writes (normally every 45 minutes while deployed). This function is intended for
     use only with the external pressure and temperature data. The signals observed on other channels for the data writes
@@ -165,9 +174,31 @@ def remove_write_spikes(trace, range_clips=None, delta=None, span=None):
     Modified from SO example (stackoverflow.com/questions/37556487/remove-spikes-from-signal-in-python)
 
     :param trace: obspy.core.trace.Trace object
-    :return:
+    :param range_clips: 2-element tuple or list,
+    :param delta: np.float, outlier threshold for difference between input data and FBEWMA
+    :param span: int or list-like of ints, number of sample points to use for FBEWMA calculation
+    :param qcplot: bool, if True, plot data series for inspection (pauses execution)
+    :param savedf: bool, if True, save DataFrame of intermediate steps
+    :param dfpath: str, path to save DataFrame (default in current directory with name {trace_id}_spike_removal_{datetime.now}.csv)
+    :return: obspy.core.trace.Trace object
     """
-    trace_df = pd.DataFrame(index=pd.to_datetime(trace.times('timestamp')))
+    mode = 'single'
+    if span is None:
+        warnings.warn('FBEWMA window length not specified. Using default value of 10 sample points.')
+        span = 10
+    else:
+        try:
+            span = int(span)
+        except TypeError:
+            try:
+                if len(span) > 1:
+                    print('Multiple averaging windows given ({0}), will use minimum result for outlier removal.'.format(span))
+                    mode = 'multi'
+            except Exception:
+                warnings.warn('Unable to perform spike removal! Unrecognized input provided for FBEWMA window length: {0}'.format(span))
+                return trace
+
+    trace_df = pd.DataFrame(index=pd.to_datetime(trace.times('timestamp')*1e9))
     trace_df['datetime'] = pd.to_datetime(trace.times('timestamp'))
     trace_df['as_recorded'] = trace.data
 
@@ -177,10 +208,37 @@ def remove_write_spikes(trace, range_clips=None, delta=None, span=None):
     else:
         trace_df['clipped'] = trace.data
 
-    # Calculate FBEWMA
+    # Calculate forwards-backwards exponential weighted moving average
+    if mode == 'single':
+        trace_df['fbewma'] = ewma_fb(trace_df['clipped'], span)
+    elif mode == 'multi':
+        all_keys = []
+        for s in span:
+            key = 'fbewma_{}'.format(s)
+            trace_df[key] = ewma_fb(trace_df['clipped'], s)
+            all_keys.append(key)
+        trace_df['fbewma'] = trace_df[all_keys].min(axis=1)
 
     # Remove outliers
-
+    trace_df['remove_outliers'] = remove_outliers(trace_df['clipped'].tolist(), trace_df['fbewma'].tolist(), delta)
     # Interpolate
+    trace_df['interpolated'] = trace_df['remove_outliers'].interpolate()
+
+    # QC plot (optional)
+    if qcplot:
+        trace_df.plot()
+        plt.show()
+
+    if savedf:
+        if dfpath is None:
+            dfpath = '{}_spike_removal_{}.csv'.format(trace.id, datetime.now())
+        trace_df.to_csv(dfpath)
 
     # Construct output obspy.Trace and return
+    interp_stats = trace.stats.copy()
+    if interp_stats.location != '9X':
+        interp_stats.location = '9X'
+    else:
+        interp_stats.location = 'TF'
+    interp_trace = obspy.Trace(trace_df['interpolated'].to_numpy(), interp_stats)
+    return interp_trace
