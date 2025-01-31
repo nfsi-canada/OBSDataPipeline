@@ -456,9 +456,15 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                             despiked = nf.remove_write_spikes(tr, delta=outlier_cutoff, span=averaging_window,
                                                               savedf=False, dfpath=os.path.join(output_dir,
                                                                                   '{}_despiking_info.csv'.format(tr.id)))
+                            g_log.debug('Despiked data type: {}'.format(despiked.data.dtype.type))
+                            try:
+                                despiked.write(os.path.join(output_dir, '{}_despiked.mseed'.format(tr.id)), format='MSEED', encoding='STEIM2')
+                            except Exception as e:
+                                g_log.error('Error writing despiked data to file!')
+                                g_log.error(traceback.format_exc())
+
                             despiked_plot = nf.plotting.trace_plot(despiked, output_dir, dmin, dmax, qc_config,
                                                                    use_existing_plots)
-                            despiked.write(os.path.join(output_dir, '{}_despiked.mseed'.format(tr.id)), format='MSEED')
 
                             tr_timing.append(timeit.default_timer())
                             g_log.debug("Time spent despiking trace: {} seconds".format((tr_timing[-1] - tr_timing[-2])))

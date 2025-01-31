@@ -199,7 +199,6 @@ def remove_write_spikes(trace, range_clips=None, delta=1, span=None, qcplot=Fals
                 return trace
 
     trace_df = pd.DataFrame(index=pd.to_datetime(trace.times('timestamp')*1e9))
-    trace_df['datetime'] = pd.to_datetime(trace.times('timestamp'))
     trace_df['as_recorded'] = trace.data
 
     # Clip data, if desired
@@ -221,8 +220,16 @@ def remove_write_spikes(trace, range_clips=None, delta=1, span=None, qcplot=Fals
 
     # Remove outliers
     trace_df['remove_outliers'] = remove_outliers(trace_df['clipped'].tolist(), trace_df['fbewma'].tolist(), delta)
+
     # Interpolate
+    # TODO: Make interpolated series integers to hopefully allow miniSEED compression to work properly
     trace_df['interpolated'] = trace_df['remove_outliers'].interpolate()
+    # Cut remaining NaNs from beginning and end of interpolated data
+    interpolated = trace_df['interpolated'].dropna()
+    # Force to integer type if input data is integer
+    if trace.data.dtype == int:
+        interpolated.round()
+        interpolated = interpolated.astype(int)
 
     # QC plot (optional)
     if qcplot:
@@ -240,5 +247,6 @@ def remove_write_spikes(trace, range_clips=None, delta=1, span=None, qcplot=Fals
         interp_stats.location = '9X'
     else:
         interp_stats.location = 'TF'
-    interp_trace = obspy.Trace(trace_df['interpolated'].to_numpy(), interp_stats)
+    interp_stats.mseed.dataquality = 'Q'
+    interp_trace = obspy.Trace(interpolated.to_numpy(), interp_stats)
     return interp_trace
