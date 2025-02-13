@@ -76,8 +76,9 @@ def rolling_window_stats(trace, window_length=3*24*60*60, window_offset=24*60*60
 
     trace_start = trace.meta.starttime
     trace_end = trace.meta.endtime
+    end_day = trace_end + 1 * 24 * 60 * 60
     first_window = obspy.UTCDateTime(trace_start.year, trace_start.month, trace_start.day)
-    last_window = obspy.UTCDateTime(trace_end.year, trace_end.month, trace_end.day + 1) - window_offset
+    last_window = obspy.UTCDateTime(end_day.year, end_day.month, end_day.day) - window_offset
 
     window_stats = []
     window_start = first_window
