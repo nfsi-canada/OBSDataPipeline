@@ -56,7 +56,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     debug_info['timing']['base_setup'] = timing_points[-1] - timing_points[-2]
 
     # Start/end of time period to analyze: (1) on seafloor, (2) off-ship, (3) deployment start/end, (4) project start/end
-    # TODO: Only apply this to external or seismic channels? Analyze full battery/power, for example.
     data_start, data_end = None, None
     if not pd.isnull(obs_log['Date/Time on Seafloor (UTC)'].values[0]):
         data_start = obspy.UTCDateTime(pd.to_datetime(obs_log['Date/Time on Seafloor (UTC)'].values[0]))

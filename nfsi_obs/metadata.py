@@ -10,6 +10,8 @@ def convert_dataless_to_stationxml(dataless_file, base_meta, output_dir, channel
     """
     Convert a dataless SEED file to StationXML format.
 
+    NOTE: The utility of this is covered by edit_stationxml.py in main module. Likely don't need to finish this function here.
+
     :param dataless_file: Path to dataless SEED file
     :param base_meta: Basic metadata from OBS field log (single row from result of io.parse_obs_log())
     :type base_meta: pd.Series
@@ -117,7 +119,7 @@ def get_channel_type(ch_code):
         channel_type = 'seismic'
     elif ch_code in ['LKO', 'MDO', 'MDU']:
         # oceanographic data (external P/T, include APG if present)
-        # TODO: Would like this to be more general, but internal temperature is also labeled with "KO" source/subsource code by default
+        # TODO: Would like this to be more general, but internal temperature is also labeled with "KO" source/subsource code by default (check if used before or after code correction).
         channel_type = 'ocean'
     elif ch_code in ['LE3', 'ME4']:
         # battery voltage and power consumption

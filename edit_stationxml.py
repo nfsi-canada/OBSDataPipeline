@@ -384,7 +384,6 @@ if __name__ == '__main__':
             if num_chan < 1:
                 continue
 
-            # TODO: Correct other metadata in StationXML (coordinates, etc.)
             complete_metadata = update_station_xml(good_channels, obs_log_info, extra_meta, nfsi_fields=True, survey_method=args.survey_method)
 
             # Save output XML file
@@ -413,6 +412,7 @@ if __name__ == '__main__':
             complete_metadata.write(out_path, format='STATIONXML', validate=True)
 
         g_log.info("Processing complete!")
+        # TODO: Combine individual stations into full-network StationXML file
         logger.close_logs()
     except Exception as e:
         print(traceback.print_exc())

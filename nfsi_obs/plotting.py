@@ -341,7 +341,7 @@ def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False
         return acc_psds, vel_psds, freqs, times
 
 
-def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, use_existing_plots=False):
+def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, density=False, use_existing_plots=False):
     """
     Plot PSDs of seismic data (as obspy.core.trace.Trace object). If the input trace is from a seismometer (channel code
     "H"), the returned plot will be in acceleration. Otherwise, the plot will be in sensor units (e.g. pressure).
@@ -351,7 +351,8 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, use_existing_plo
     :param win_len: window length for each PSD curve
     :param overlap: fractional window overlap (0-1)
     :param sub_overlap: fractional overlap for sub-windows used in PSD calculation (Welch's average periodogram method)
-    :param use_existing_plots: check if plots exist and do not re-create if present, False by default
+    :param density: if True, plot as probabilistic PSD (heatmap density of curves); False by default
+    :param use_existing_plots: check if plots exist and do not re-create if present; False by default
 
     :return: path to plot PNG file
     """
@@ -369,6 +370,8 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, use_existing_plo
 
     # Calculate all PSDs
     apsds, vpsds, freqs, times = calc_psds(trace, win_len, overlap, sub_overlap, calc_acc=seismometer)
+
+    # TODO: Allow plot as probabilistic PSD (density of curves)
 
     # Plot PSDs in sensor units (velocity or pressure)
     if not (use_existing_plots and os.path.isfile(psd_asis)):

@@ -223,7 +223,6 @@ def remove_write_spikes(trace, range_clips=None, delta=1, span=None, qcplot=Fals
     trace_df['remove_outliers'] = remove_outliers(trace_df['clipped'].tolist(), trace_df['fbewma'].tolist(), delta)
 
     # Interpolate
-    # TODO: Make interpolated series integers to hopefully allow miniSEED compression to work properly
     trace_df['interpolated'] = trace_df['remove_outliers'].interpolate()
     # Cut remaining NaNs from beginning and end of interpolated data
     interpolated = trace_df['interpolated'].dropna()

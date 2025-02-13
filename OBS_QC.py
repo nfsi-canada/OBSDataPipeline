@@ -36,7 +36,7 @@ if not os.path.isdir(resource_dir):
 
 
 def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, project_meta=None,
-            full=True, detrend=False, backup=True, cmap=None, use_existing_plots=False, parallel=False, max_proc=None,
+            full=True, detrend=False, cmap=None, use_existing_plots=False, parallel=False, max_proc=None,
             flags_from_config=False, **kwargs):
     """
     Extra keyword arguments are included as report parameters (must match variables in template file).
@@ -53,7 +53,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         # False fallback value will default to same values as function definition
         full = not config.getboolean('dataset', 'function_check', fallback=False)
         detrend = config.getboolean('dataset', 'detrend_seismic', fallback=False)
-        backup = not config.getboolean('dataset', 'skip_backup', fallback=False)
         use_existing_plots = config.getboolean('dataset', 'use_existing_plots', fallback=False)
         parallel = config.getboolean('dataset', 'parallel', fallback=False)
 
@@ -149,8 +148,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     g_log.debug("Time spent reading station metadata file: {0} seconds".format((timing_points[-1] - timing_points[-2])))
     debug_info['timing']['station_meta'] = timing_points[-1] - timing_points[-2]
 
-    # Find data files and backup if necessary
-    # TODO: Remove file backup here once it has been copied to pre-processing script (QC doesn't change miniSEED files)
+    # Find data files
     raw_files = glob(os.path.join(data_dir, '**/*.mseed'), recursive=True)
     try:
         raw_files.remove(os.path.join(data_dir, 'calculated_current.mseed'))
@@ -159,21 +157,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     g_log.info("Found {0} miniSEED file(s) in data directory and sub-folders".format(len(raw_files)))
     debug_info['num_files'] = len(raw_files)
-    backup_exists = False
     if output_dir is None:
-        if backup:
-            # Make a backup copy of as-recorded raw data if no separate output directory is specified
-            raw_dir = os.path.join(data_dir, 'raw_recorded')
-            if not os.path.exists(raw_dir):
-                g_log.info("Copying raw data to backup directory {0}".format(raw_dir))
-                os.makedirs(raw_dir)
-                for rf in raw_files:
-                    shutil.copy2(rf, raw_dir)
-            else:
-                backup_exists = True
-                g_log.info("Backup of raw data already exists: {0}".format(raw_dir))
-        else:
-            g_log.info("Skipping backup of raw data")
         output_dir = data_dir
 
     # Write QC processing configuration to file
@@ -187,9 +171,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     # label files by channel name
     labels = []
     for rf in raw_files:
-        if backup_exists:
-            if re.match(r'.*raw_recorded.*', rf):
-                continue
         file_name = re.split(r'[/\\]', rf)[-1]
         ch_name = file_name.split('_')[1]
         labels.append({'channel': ch_name, 'path': rf})
@@ -433,7 +414,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                         if full:
                             # TODO: Decide if the same operations are appropriate for the hydrophone data or not
-                            # TODO: Calculate hourly PSDs
+                            # TODO: Save hourly PSDs
                             # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
                             # TODO: Linearity of PSD curves
                             g_log.warning("Full QC of seismic noise not yet implemented")
@@ -643,7 +624,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     # TODO: Add time on seafloor (start/end) to report summary
 
     # Parse gap information for report
-    # TODO: Include check for duplicates (may come out of buffered seismic data) -> TEST
     if len(all_gaps) > 0:
         unique_gaps = {}
         for gap in all_gaps:
@@ -869,8 +849,6 @@ if __name__ == '__main__':
                              "QC.")
     parser.add_argument('--detrend_seismic', dest="detrend_seis", action="store_true",
                         help="Detrend seismic data (RMS linear fit). False by default.")
-    parser.add_argument('--skip_backup', dest="skip_backup", action="store_true",
-                        help="Skip creating a backup copy of the raw data files. False by default.")
     parser.add_argument('--use_existing_plots', dest='use_existing_plots', action='store_true',
                         help='Do not re-create plots which already exist in output directory. False by default.')
     # TODO: When using ST, project name will come from there instead
@@ -957,7 +935,7 @@ if __name__ == '__main__':
         full_config['dataset']['obsid'] = obs_identifier
 
         # Runtime flags
-        for flag, key in zip([args.function_check, args.detrend_seis, args.skip_backup, args.use_existing_plots, args.debug, args.obslog_column_names, args.parallel], ['function_check', 'detrend_seismic', 'skip_backup', 'use_existing_plots', 'debug', 'logcolnames', 'parallel']):
+        for flag, key in zip([args.function_check, args.detrend_seis, args.use_existing_plots, args.debug, args.obslog_column_names, args.parallel], ['function_check', 'detrend_seismic', 'use_existing_plots', 'debug', 'logcolnames', 'parallel']):
             config_flag = config.getboolean('dataset', key, fallback=False)
             # only overwrite existing flags if CL arguments are present and different from config
             if flag and not config_flag:
