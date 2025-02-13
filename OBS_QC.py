@@ -19,7 +19,6 @@ import warnings
 from obspy.io.mseed.util import get_start_and_end_time
 from obspy.io.stationxml.core import validate_stationxml
 from obspy.signal.trigger import trigger_onset, plot_trigger
-from sklearn.linear_model import LinearRegression
 
 from ioos_qc import qartod
 
@@ -191,7 +190,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         if backup_exists:
             if re.match(r'.*raw_recorded.*', rf):
                 continue
-        file_name = re.split(r'/|\\', rf)[-1]
+        file_name = re.split(r'[/\\]', rf)[-1]
         ch_name = file_name.split('_')[1]
         labels.append({'channel': ch_name, 'path': rf})
     labeled_files = pd.DataFrame(labels)
@@ -204,7 +203,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     # Initialize arrays for saving stats
     all_gaps = []
-    centring = pd.DataFrame()
     power_stats = pd.DataFrame()
     avg_power = []
     voltage_stats = []
@@ -235,8 +233,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     })
     # Loop through data files (grouped by channel set name)
     for label, files in labeled_files.groupby('channel'):
-        proc_timing = []
-        proc_timing.append(timeit.default_timer())
+        proc_timing = [timeit.default_timer()]
         g_log.info("Begin processing channel set {0}".format(label))
         g_log.info("{0} data file(s) in list".format(len(files.index)))
 
@@ -343,8 +340,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 debug_info['timing']['gap_test'] += proc_timing[-1] - proc_timing[-2]
 
                 for tr in data:
-                    tr_timing = []
-                    tr_timing.append(timeit.default_timer())
+                    tr_timing = [timeit.default_timer()]
 
                     # Channel type determines what analysis gets run on this trace
                     channel_type = nf.metadata.get_channel_type(tr.meta.channel)
@@ -450,8 +446,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 averaging_window = 15 * 60 * tr.stats.sampling_rate
                                 outlier_cutoff = 1
                             elif re.match(r'[A-Z]KO', tr.meta.channel):
-                                averaging_window = [7 * 60 * tr.stats.sampling_rate, 7 * 60 * tr.stats.sampling_rate]
+                                averaging_window = [7 * 60 * tr.stats.sampling_rate, 30 * 60 * tr.stats.sampling_rate]
                                 outlier_cutoff = 2.05
+                            else:
+                                g_log.info('Unrecognized channel type {}. Using default despiking thresholds.'.format(
+                                    tr.meta.channel))
+                                averaging_window = 10 * 60 * tr.stats.sampling_rate
+                                outlier_cutoff = 1
 
                             despiked = nf.remove_write_spikes(tr, delta=outlier_cutoff, span=averaging_window,
                                                               savedf=False, dfpath=os.path.join(output_dir,
@@ -463,6 +464,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 g_log.error('Error writing despiked data to file!')
                                 g_log.error(traceback.format_exc())
 
+                            # TODO: Include despiked plots in report
                             despiked_plot = nf.plotting.trace_plot(despiked, output_dir, dmin, dmax, qc_config,
                                                                    use_existing_plots)
 
@@ -478,7 +480,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         debug_info['timing']['trace_plot'] += tr_timing[-1] - tr_timing[-2]
 
                         # Analysis of auxiliary data
-                        timestamps = pd.to_datetime(tr.times(type='timestamp'), unit='s').values
                         # TODO: maybe smooth out state-of-health channels? or come up with some way to automatically QC them for anomalous sections
                         start_tran = timeit.default_timer()     # TODO
                         if qc_config is not None:
@@ -490,18 +491,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                         num_fail = np.sum(range_check == 4)
                                         g_log.info('Channel {0} has suspect values at {1} sample(s) ({3:.1%}) and failing values at {2} sample(s) ({4:.1%})'.format(tr.id, num_sus, num_fail, num_sus / len(range_check), num_fail / len(range_check)))
                                         # TODO: Add fail/suspect stats to report as well as log printout
-                                    check_trace = obspy.Trace(range_check, header=tr.stats)
+                                    #check_trace = obspy.Trace(range_check, header=tr.stats)
                                     #trace_info['qcPlotLoc'] = nf.plotting.qartod_plot(check_trace, output_dir, 'gross_range_check', use_existing_plots)
 
                                 if feature_test:
-                                    if re.match(r'[A-Z]M[1-3ENZ]', tr.meta.channel) and ('flat_line_test' in qc_config['qartod']):
-                                        # centring channels only, must have flat-line test criteria specified
-                                        # TODO: Need to re-visit this, not sure it's doing what we want even...
-                                        flt_params = qc_config['qartod']['flat_line_test'].copy()
-                                        flatline = qartod.flat_line_test(tr.data, timestamps,
-                                                                         int(flt_params.pop('suspect_threshold')),
-                                                                         int(flt_params.pop('fail_threshold')))
-                                        centring[tr.id] = pd.Series(flatline, index=timestamps)
+                                    # Implement new features to be tested here
+                                    boo = True
+
                         done_qartod = timeit.default_timer()    # TODO
                         debug_info['timing']['qartod'] += done_qartod - start_tran
 
@@ -526,6 +522,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                                 # TODO: Get times of data writes (spikes 45 minutes apart)
                                 if feature_test and (qc_config is not None) and ('qartod' in qc_config) and ('spike_test' in qc_config['qartod']):
+                                    # This may or may not work and/or be useful
                                     spikes = qartod.spike_test(tr.data, **qc_config['qartod']['spike_test'])
                             if tr.meta.channel == 'ME4':
                                 power_data[tr.meta.channel] = tr.copy()
@@ -628,7 +625,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         units
                     ))
 
-                report_params[channel_type + '_channels'].append(trace_info)
+                    report_params[channel_type + '_channels'].append(trace_info)
         except Exception as e:
             error_count += 1
             msg = str(e)
@@ -638,31 +635,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     timing_points.append(timeit.default_timer())
     g_log.debug("Time spent processing data files: {0} seconds".format((timing_points[-1] - timing_points[-2])))
     debug_info['timing']['all_proc'] = timing_points[-1] - timing_points[-2]
-
-    # Check centring behaviour
-    if len(centring.columns) > 0:
-        is_centred = centring.eq(4).all(axis='columns')
-        # List of time periods where is_centred is True -> [start, end, npts]
-        centred = nf.get_true_periods(is_centred)
-        
-        # TODO: Compile text to summarize centring behaviour
-        ctx = ''
-
-        centring_plot = os.path.join(output_dir, 'centring_{0}.png'.format(obs_log['OBS ID'].values[0]))
-        if not (use_existing_plots and os.path.isfile(centring_plot)):
-            fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-            is_centred.astype(float).plot(kind='line', ax=ax)
-            fig.savefig(centring_plot)
-            plt.close(fig)
-
-        report_params['centring'] = {
-            'plot': centring_plot,
-            'text': ctx
-        }
-
-    timing_points.append(timeit.default_timer())
-    g_log.debug("Time spent checking centring behaviour: {0} seconds".format((timing_points[-1] - timing_points[-2])))
-    debug_info['timing']['centring_summary'] = timing_points[-1] - timing_points[-2]
 
     # TODO: Add list of all channels at beginning of report
     # TODO: Add average seafloor temperature and pressure during deployment to report summary
@@ -761,10 +733,10 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         # TODO: Calculate expected hibernate date/time (6500mV)
         hib_thres = 6500
         valid_gradient = power_stats.loc[power_stats['Voltage_gradient'] < 0]
-        latest_V = valid_gradient['Voltage_Min'].values[-1] * 1000
+        latest_vlt = valid_gradient['Voltage_Min'].values[-1] * 1000
         latest_win = pd.to_datetime(valid_gradient['End'].values[-1])
-        if latest_V > hib_thres:
-            days_to_hibernate = -(latest_V - hib_thres) / valid_gradient['Voltage_gradient'].values[-1]
+        if latest_vlt > hib_thres:
+            days_to_hibernate = -(latest_vlt - hib_thres) / valid_gradient['Voltage_gradient'].values[-1]
             const_grad = timedelta(days=days_to_hibernate) + latest_win
             const_acc = pd.NaT
             lookup = pd.NaT
