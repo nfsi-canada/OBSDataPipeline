@@ -68,6 +68,17 @@ Power spectral density curves are calculated using {{ psdWindowLength }} Hann wi
 
 # General QC
 
+{% if channelList %}
+Recorded data channels:
+
+| Channel | Start Time | End Time | Sampling Rate (Hz) |
+|:--|:---|:---|-:|
+{% for ch in channelList %}
+| {{ ch.id }} | {{ ch.start }} | {{ ch.end }} | {{ ch.sampling }} |
+{% endfor %}
+
+{% endif %}
+
 {% if gapList %}
 The following gaps/overlaps were observed in the recorded data.
 

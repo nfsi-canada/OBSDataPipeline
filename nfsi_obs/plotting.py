@@ -684,6 +684,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
             report_info['seedID'] = this_channel.id
             report_info['channelName'] = this_channel.id
+            report_info['samplingRate'] = this_channel.stats.sampling_rate
             for metaKey, reportKey in zip(['description', 'azimuth', 'dip'], ['channelName', 'azimuth', 'dip']):
                 if hasattr(this_channel.meta, metaKey):
                     report_info[reportKey] = this_channel.meta[metaKey]

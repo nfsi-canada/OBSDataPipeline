@@ -184,6 +184,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     debug_info['timing']['file_sort'] = timing_points[-1] - timing_points[-2]
 
     # Initialize arrays for saving stats
+    all_channels = []
     all_gaps = []
     power_stats = pd.DataFrame()
     avg_power = []
@@ -269,6 +270,12 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                 channel_type = trace_info['channelType']
 
+                all_channels.append({
+                    'id': trace_info['seedID'],
+                    'start': files_start.datetime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                    'end': files_end.datetime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                    'sampling': '{:.1f}'.format(trace_info['samplingRate'])
+                })
                 all_gaps.extend(gaps)
                 report_params[channel_type + '_channels'].append(trace_info)
 
@@ -607,6 +614,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         units
                     ))
 
+                    all_channels.append({
+                        'id': tr.id,
+                        'start': tr.meta.starttime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                        'end': tr.meta.endtime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                        'sampling': '{:.1f}'.format(tr.meta.sampling_rate)
+                    })
+
                     report_params[channel_type + '_channels'].append(trace_info)
         except Exception as e:
             error_count += 1
@@ -618,10 +632,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     g_log.debug("Time spent processing data files: {0} seconds".format((timing_points[-1] - timing_points[-2])))
     debug_info['timing']['all_proc'] = timing_points[-1] - timing_points[-2]
 
-    # TODO: Add list of all channels at beginning of report
     # TODO: Add average seafloor temperature and pressure during deployment to report summary
     # TODO: Add expected hibernation date (once calculated properly) to report summary
     # TODO: Column formatting for report summary page (easier to read?)
+
+    # Add list of all channels for report
+    if len(all_channels) > 0:
+        report_params['channelList'] = sorted(all_channels, key=lambda p: p['id'])
 
     # Parse gap information for report
     if len(all_gaps) > 0:
