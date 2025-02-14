@@ -457,6 +457,12 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                             despiked_plot = nf.plotting.trace_plot(despiked, output_dir, dmin, dmax, qc_config,
                                                                    use_existing_plots)
 
+                            # Add average seafloor readings to report
+                            if re.match(r'[A-Z]DO', tr.meta.channel):
+                                report_params['meanPressure'] = '{:.0f}'.format(np.mean(despiked.data))
+                            elif re.match(r'[A-Z]KO', tr.meta.channel):
+                                report_params['meanTemperature'] = '{:.3f}'.format(np.mean(despiked.data))
+
                             tr_timing.append(timeit.default_timer())
                             g_log.debug("Time spent despiking trace: {} seconds".format((tr_timing[-1] - tr_timing[-2])))
 
