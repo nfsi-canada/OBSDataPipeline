@@ -234,6 +234,63 @@ def qartod_plot(trace, outdir, check='gross_range_check', use_existing_plots=Fal
     return qc_plot
 
 
+def plot_spectrogram(psds, freqs, times, traceID, sampling_rate, spec_win, overlap, plot_start, plot_end, plot_file=None, outdir=None, cmap=None, slim=[None, None]):
+    """
+    Plot spectrogram of seismic data from pre-calculated PSDs
+
+    :param psds: array of PSD curves, as calculated by calc_psds()
+    :param freqs: array of frequencies, as calculated by calc_psds()
+    :param times: array of times, as calculated by calc_psds()
+    :param traceID: trace identifier (preferably valid SEED code)
+    :param sampling_rate: sampling rate in Hz
+    :param spec_win: spectrogram window in seconds
+    :param overlap: window overlap (0-1)
+    :param plot_start: plot start time, obspy.UTCDateTime
+    :param plot_end: plot end time, obspy.UTCDateTime
+    :param plot_file: path to output PNG file
+    :param outdir: path to output directory, only used if plot_file is None
+    :param cmap: Matplotlib colormap for spectrogram plot
+    :param slim: spectrogram amplitude limits for color scale, normally in dB
+
+    :return: path to plot PNG file (same as input plot_file if specified)
+    """
+    # Spectrogram plot from PSDs
+    if plot_file is None:
+        if outdir is not None:
+            plot_file = os.path.join(outdir, 'spec_{0}.png'.format(traceID))
+        else:
+            plot_file = 'spec_{0}.png'.format(traceID)
+
+    if cmap is None:
+        cmap = 'viridis'
+    npts = int(spec_win * sampling_rate)
+    nover = int(overlap * npts)
+    tm_x_ticks, tm_x_ticklabels = date_ticks(plot_start, plot_end)
+
+    spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
+    spec_psds = 10. * np.log10(np.transpose(psds))
+    spec_psds = np.flipud(spec_psds)
+
+    pad_xextent = (npts - nover) / sampling_rate / 2
+    xextent = np.min(times) - pad_xextent, np.max(times) + pad_xextent
+    xmin, xmax = xextent
+    extent = xmin, xmax, freqs[0], freqs[-1]
+
+    im = sax.imshow(spec_psds, cmap=cmap, extent=extent, vmin=slim[0], vmax=slim[1], origin='upper')
+    sax.axis('auto')
+    sax._sci(im)
+    sax.set_yscale('log')
+    sax.set_ylim(ymin=8e-3, ymax=sampling_rate / 2)
+    sax.set_ylabel('Frequency (Hz)')
+    # Set appropriate x-ticks for time span (also changes x limits)
+    sax.set_xticks(tm_x_ticks, tm_x_ticklabels, horizontalalignment='right')
+    sax.tick_params(axis='x', rotation=40)
+    plt.tight_layout()
+    spec_fig.savefig(plot_file)
+
+    return plot_file
+
+
 def spectrogram(trace, outdir, spec_win, overlap, sub_overlap=0.75, cmap=None, slim=[None, None], use_existing_plots=False):
     """
     Plot spectrogram of seismic data (as obspy.core.trace.Trace object)
@@ -255,33 +312,15 @@ def spectrogram(trace, outdir, spec_win, overlap, sub_overlap=0.75, cmap=None, s
 
     # Spectrogram plot from PSDs
     spectrogram_plot = os.path.join(outdir, 'spec_{0}.png'.format(trace.id))
-    # TODO: Set appropriate x-ticks for time span
     if not (use_existing_plots and os.path.isfile(spectrogram_plot)):
-        if cmap is None:
-            cmap = 'viridis'
-        npts = int(spec_win * trace.stats.sampling_rate)
-        nover = int(overlap * npts)
-
-        spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
         if seismometer:
-            spec_psds = 10. * np.log10(np.transpose(apsds))
+            spectrogram_plot = plot_spectrogram(apsds, freqs[0], times, trace.id, trace.stats.sampling_rate, spec_win,
+                                                overlap, trace.stats.start_time, trace.stats.end_time,
+                                                plot_file=spectrogram_plot, cmap=cmap, slim=slim)
         else:
-            spec_psds = 10. * np.log10(np.transpose(vpsds))
-        spec_psds = np.flipud(spec_psds)
-
-        pad_xextent = (npts - nover) / trace.stats.sampling_rate / 2
-        xextent = np.min(times) - pad_xextent, np.max(times) + pad_xextent
-        xmin, xmax = xextent
-        extent = xmin, xmax, freqs[0][0], freqs[0][-1]
-
-        im = sax.imshow(spec_psds, cmap=cmap, extent=extent, vmin=slim[0], vmax=slim[1], origin='upper')
-        sax.axis('auto')
-        sax._sci(im)
-        sax.set_yscale('log')
-        sax.set_ylim(ymin=8e-3, ymax=trace.stats.sampling_rate / 2)
-        sax.set_ylabel('Frequency (Hz)')
-        plt.tight_layout()
-        spec_fig.savefig(spectrogram_plot)
+            spectrogram_plot = plot_spectrogram(vpsds, freqs[0], times, trace.id, trace.stats.sampling_rate, spec_win,
+                                                overlap, trace.stats.start_time, trace.stats.end_time,
+                                                plot_file=spectrogram_plot, cmap=cmap, slim=slim)
 
     return spectrogram_plot
 
@@ -868,33 +907,16 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
                 # Spectrogram plot from PSDs
                 if not (use_existing_plots and os.path.isfile(plot_files[1])):
-                    sfrq = psd_temp_results['psd_freqs'][0]
-                    npts = int(spec_win * this_channel.stats.sampling_rate)
-                    nover = int(overlap * npts)
-
-                    spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
                     if hydrophone:
-                        spec_psds = 10. * np.log10(np.transpose(psd_temp_results['vpsd_array']))
+                        spec_plot = plot_spectrogram(psd_temp_results['vpsd_array'], psd_temp_results['psd_freqs'][0],
+                                                     psd_temp_results['psd_times'], this_channel.id, this_channel.stats.sampling_rate,
+                                                     spec_win, overlap, plot_start, plot_end, plot_file=plot_files[0],
+                                                     cmap=spec_cmap, slim=spec_lim)
                     else:
-                        spec_psds = 10. * np.log10(np.transpose(psd_temp_results['psd_array']))
-                    spec_psds = np.flipud(spec_psds)
-
-                    pad_xextent = (npts - nover) / this_channel.stats.sampling_rate / 2
-                    xextent = np.min(psd_temp_results['psd_times']) - pad_xextent, np.max(psd_temp_results['psd_times']) + pad_xextent
-                    xmin, xmax = xextent
-                    extent = xmin, xmax, sfrq[0], sfrq[-1]
-
-                    im = sax.imshow(spec_psds, cmap=spec_cmap, extent=extent, vmin=spec_lim[0], vmax=spec_lim[1], origin='upper')
-                    sax.axis('auto')
-                    sax._sci(im)
-                    sax.set_yscale('log')
-                    sax.set_ylim(ymin=8e-3, ymax=this_channel.stats.sampling_rate/2)
-                    sax.set_ylabel('Frequency (Hz)')
-                    # Set appropriate x-ticks for time span (also changes x-lim)
-                    sax.set_xticks(tm_x_ticks, tm_x_ticklabels, horizontalalignment='right')
-                    sax.tick_params(axis='x', rotation=40)
-                    plt.tight_layout()
-                    spec_fig.savefig(plot_files[1])
+                        spec_plot = plot_spectrogram(psd_temp_results['psd_array'], psd_temp_results['psd_freqs'][0],
+                                                     psd_temp_results['psd_times'], this_channel.id, this_channel.stats.sampling_rate,
+                                                     spec_win, overlap, plot_start, plot_end, plot_file=plot_files[0],
+                                                     cmap=spec_cmap, slim=spec_lim)
 
                 done_spec_psd = timeit.default_timer()
                 timing['spec_plot'] += done_spec_psd - report_add
