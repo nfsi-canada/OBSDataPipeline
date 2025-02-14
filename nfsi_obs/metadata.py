@@ -126,3 +126,11 @@ def get_channel_type(ch_code):
         channel_type = 'power'
 
     return channel_type
+
+
+def get_units(trace):
+    # Return string of physical units for input obspy.Trace object
+    if hasattr(trace.stats, 'response'):
+        return trace.stats.response.instrument_sensitivity.input_units
+    else:
+        return ''

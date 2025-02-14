@@ -22,7 +22,7 @@ from obspy.signal.trigger import trigger_onset, plot_trigger
 from ioos_qc import qartod
 
 import nfsi_obs as nf
-from utilities import config_handler, logger, ReportGenerator
+from utilities import config_handler, logger, ReportGenerator, time_period_string
 
 gc.set_debug(gc.DEBUG_UNCOLLECTABLE)
 feature_test = False    # set to True to test new features
@@ -453,9 +453,49 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 g_log.error('Error writing despiked data to file!')
                                 g_log.error(traceback.format_exc())
 
-                            # TODO: Include despiked plots in report
-                            despiked_plot = nf.plotting.trace_plot(despiked, output_dir, dmin, dmax, qc_config,
-                                                                   use_existing_plots)
+                            trace_info['despikedPlot'] = nf.plotting.trace_plot(despiked, output_dir, dmin, dmax, qc_config, use_existing_plots)
+
+                            # TODO: Create rolling window plot and include in report
+                            # Calculate rolling average of despiked data
+                            trace_length = tr.meta.endtime - tr.meta.starttime
+                            units = nf.metadata.get_units(tr)
+                            stat_window = 1
+                            vert_label = 'Average Value'
+                            if re.match(r'[A-Z]DO', tr.meta.channel):
+                                # External pressure
+                                g_log.info('Seafloor pressure ({}): mean {:.3f}, min {:.3f}, max {:.3f}, stdev {:.3f}'.format(units, np.mean(despiked.data), np.min(despiked.data), np.max(despiked.data), np.std(despiked.data)))
+                                vert_label = 'Average Seafloor Pressure ({})'.format(units)
+                                # 3-day rolling window of average seafloor pressure (uses 3 lunar days: 24 hours, 50 minutes)
+                                if trace_length > 5 * 24 * 60 * 60:
+                                    stat_window = 3 * (24 * 60 + 50) * 60
+                                else:
+                                    stat_window = trace_length * 0.6
+                            if re.match(r'[A-Z]KO', tr.meta.channel):
+                                # External temperature
+                                g_log.info('Seafloor temperature ({}): mean {:.3f}, min {:.3f}, max {:.3f}, stdev {:.3f}'.format(units, np.mean(despiked.data), np.min(despiked.data), np.max(despiked.data), np.std(despiked.data)))
+                                vert_label = 'Average Seafloor Temperature ({})'.format(units)
+                                # 3-day rolling window of average seafloor pressure (uses 3 lunar days: 24 hours, 50 minutes)
+                                if trace_length > 5 * 24 * 60 * 60:
+                                    stat_window = 3 * 24 * 60 * 60
+                                else:
+                                    stat_window = trace_length * 0.6
+
+                            trace_info['window_str'] = time_period_string(stat_window)
+                            roll_stats = nf.rolling_window_stats(despiked, window_length=stat_window, window_offset=stat_window/3, full=True)
+
+                            # Save rolling window statistics to CSV file
+                            ch_stats = pd.DataFrame(roll_stats, columns=['Start', 'End', 'Center', 'Min', 'Max', 'Avg', 'Gradient', 'R2_coef', 'Days_Deployed'])
+                            ch_stats.to_csv(os.path.join(output_dir, '{}_rolling_stats_{}_{}.csv'.format(tr.id, pd.to_datetime(ch_stats['Start'].min()).strftime('%Y-%m-%d'), pd.to_datetime(ch_stats['End'].max().strftime('%Y-%m-%d')))))
+
+                            # Plot rolling mean and add to report
+                            roll_plot = os.path.join(output_dir, '{}_mean.png'.format(tr.id))
+                            fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
+                            ch_stats.plot(x='Plot_Time', y='Avg', kind='line', ax=ax, xlabel='Date/Time', ylabel=vert_label, legend=False)
+                            ax.grid(True, ls=':')
+                            fig.tight_layout()
+                            fig.savefig(roll_plot)
+                            plt.close(fig)
+                            trace_info['rollPlot'] = roll_plot
 
                             # Add average seafloor readings to report
                             if re.match(r'[A-Z]DO', tr.meta.channel):
@@ -467,8 +507,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                             g_log.debug("Time spent despiking trace: {} seconds".format((tr_timing[-1] - tr_timing[-2])))
 
                         # Time series plot (applies instrument sensitivity in-place if response present in tr.meta)
-                        trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, dmin, dmax, qc_config,
-                                                                        use_existing_plots)
+                        trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, dmin, dmax, qc_config, use_existing_plots)
 
                         tr_timing.append(timeit.default_timer())
                         g_log.debug("Time spent plotting trace: {0} seconds".format((tr_timing[-1] - tr_timing[-2])))
@@ -607,10 +646,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     debug_info['timing']['trace_analysis'] += tr_timing[-1] - tr_timing[-2]
 
                     # Summary statistics
-                    if hasattr(tr.meta, 'response'):
-                        units = tr.meta.response.instrument_sensitivity.input_units
-                    else:
-                        units = ''
+                    units = nf.metadata.get_units(tr)
                     print("{0} | {1} - {2} | {3} | Average {4:.3f} {5}".format(
                         tr.id,
                         tr.meta.starttime.strftime('%Y-%m-%d %H:%M:%S.%f'),
@@ -638,7 +674,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     g_log.debug("Time spent processing data files: {0} seconds".format((timing_points[-1] - timing_points[-2])))
     debug_info['timing']['all_proc'] = timing_points[-1] - timing_points[-2]
 
-    # TODO: Add average seafloor temperature and pressure during deployment to report summary
     # TODO: Add expected hibernation date (once calculated properly) to report summary
     # TODO: Column formatting for report summary page (easier to read?)
 

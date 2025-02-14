@@ -169,10 +169,20 @@ SEED ID: {{ ch.seedID }}
 
 ![Recorded data for channel {{ ch.seedID }}]({{ ch.traceLoc }})
 
+{% if ch.despikedPlot %}
+This channel may show periodic spikes due to the data write cycle of the Aquarius, which are not representative of real environmental conditions.
+
+![Despiked data for channel {{ ch.seedID }}]({{ ch.despikedPlot }})
+
+{% endif %}
+{% if ch.rollPlot %}
+![Average reading for channel {{ ch.seedID }} calculated for a {{ ch.window_str }} rolling window]({{ ch.rollPlot }})
+
+{% endif %}
 {% if ch.qcPlotLoc %}
 ![Range check results for channel {{ ch.seedID }}]({{ ch.qcPlotLoc }})
-{% endif %}
 
+{% endif %}
 {% endfor %}
 
 \newpage{}

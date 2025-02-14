@@ -1,6 +1,8 @@
 import os
 from jinja2 import Environment, select_autoescape, FileSystemLoader
 
+from . import time_period_string
+
 CURRENT_PATH = os.path.abspath(__file__)
 
 
@@ -74,24 +76,10 @@ class ReportGenerator:
 
         if 'psdWindowLength' not in input_variables:
             if 'psdWindowSecs' in input_variables:
-                if input_variables['psdWindowSecs'] < 3*60:     # 3 minutes
-                    input_variables['psdWindowLength'] = '{0:d}-second'.format(input_variables['psdWindowSecs'])
-                elif input_variables['psdWindowSecs'] < 3*60*60:    # 3 hours
-                    input_variables['psdWindowLength'] = '{0}-minute'.format(input_variables['psdWindowSecs'] / 60)
-                elif input_variables['psdWindowSecs'] < 3*60*60*24:    # 3 days
-                    input_variables['psdWindowLength'] = '{0}-hour'.format(input_variables['psdWindowSecs'] / 60 / 60)
-                else:
-                    input_variables['psdWindowLength'] = '{0}-day'.format(input_variables['psdWindowSecs'] / 60 / 60 / 24)
+                input_variables['psdWindowLength'] = time_period_string(input_variables['psdWindowSecs'], factor=3)
 
         if 'battery_stats_window' in input_variables:
-            if input_variables['battery_stats_window'] > 24 * 60 * 60:
-                input_variables['batteryStats']['window_str'] = '{:.1f}-day'.format(input_variables['battery_stats_window'] / 60 / 60 / 24)
-            elif input_variables['battery_stats_window'] > 60 * 60:
-                input_variables['batteryStats']['window_str'] = '{:.1f}-hour'.format(input_variables['battery_stats_window'] / 60 / 60)
-            elif input_variables['battery_stats_window'] > 60:
-                input_variables['batteryStats']['window_str'] = '{:.1f}-minute'.format(input_variables['battery_stats_window'] / 60)
-            else:
-                input_variables['batteryStats']['window_str'] = '{:.1f}-second'.format(input_variables['battery_stats_window'])
+            input_variables['batteryStats']['window_str'] = time_period_string(input_variables['battery_stats_window'])
         else:
             input_variables['batteryStats']['window_str'] = '3-day'
 
