@@ -40,7 +40,7 @@ Recovery date: {{ recoverDate }}
 
 Recovery comments: {{ recoverComments }}
 
-Length of deployment (days): {{ deploymentDays }}
+Length of deployment (days): {{ deploymentDays }} | At seafloor: {{ seafloorDays }}
 
 Total clock drift (ms): {{ clockDrift }} ({{ clockDriftPerDay }} ms/day)
 

@@ -11,7 +11,6 @@ import pandas as pd
 import psutil
 import pypandoc
 import re
-import shutil
 import timeit
 import traceback
 import warnings
@@ -108,6 +107,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         g_log.warning("Start time {} greater than end time {} for data. Ignoring start/end times.".format(
             data_start.strftime('%Y-%m-%d %H:%M:%S'), data_end.strftime('%Y-%m-%d %H:%M:%S')))
         data_start, data_end = None, None
+
+    report_kwargs['seafloorDays'] = (data_end - data_start) / 60 / 60 / 24
 
     # Read station metadata file (dataless SEED or StationXML)
     station_info = None
@@ -621,7 +622,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     # TODO: Add average seafloor temperature and pressure during deployment to report summary
     # TODO: Add expected hibernation date (once calculated properly) to report summary
     # TODO: Column formatting for report summary page (easier to read?)
-    # TODO: Add time on seafloor (start/end) to report summary
 
     # Parse gap information for report
     if len(all_gaps) > 0:
@@ -1181,7 +1181,6 @@ if __name__ == '__main__':
         # TODO: Handle case of intermediate download (no "recovery" time yet)
         report_kwargs['recovered'] = pd.to_datetime(base_meta['Recovery Date/Time (UTC)'].values[0])
         report_kwargs['recoverComments'] = base_meta['Recovery Comments'].values[0]
-        # TODO: Make deployment length actual time on seafloor, if applicable
         deployed_days = (report_kwargs['recovered'] - report_kwargs['deployed']) / timedelta(days=1)
         report_kwargs['deploymentDays'] = '{:.3f}'.format(deployed_days)
         report_kwargs['clockDrift'] = '{:.0f}'.format(base_meta['Clock Offset on Deck (ms)'].values[0])
