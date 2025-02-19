@@ -49,7 +49,7 @@ Average power consumption (W): {{ meanPower }}
 Battery SOC: At deployment: {{ batteryLevel.start }}% | Remaining: {{ batteryLevel.end }}%
 
 {% if meanPressure or meanTemperature %}
-Average seafloor conditions: Pressure {% if meanPressure %}{{ meanPressure }} Pa{% else %}n/a{% endif %}, Temperature {% if meanTemperature %}{{ meanTemperature }} degC{% else %}n/a{% endif %}
+Average seafloor conditions: Pressure {% if meanPressure %}{{ meanPressure }} Pa{% else %}n/a{% endif %}, Temperature {% if meanTemperature %}{{ meanTemperature }} degC{% else %}n/a{% endif %} 
 
 {% endif %}
 {% if tiltAtRecovery %}

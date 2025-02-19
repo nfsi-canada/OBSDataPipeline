@@ -910,12 +910,12 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     if hydrophone:
                         spec_plot = plot_spectrogram(psd_temp_results['vpsd_array'], psd_temp_results['psd_freqs'][0],
                                                      psd_temp_results['psd_times'], this_channel.id, this_channel.stats.sampling_rate,
-                                                     spec_win, overlap, plot_start, plot_end, plot_file=plot_files[0],
+                                                     spec_win, overlap, plot_start, plot_end, plot_file=plot_files[1],
                                                      cmap=spec_cmap, slim=spec_lim)
                     else:
                         spec_plot = plot_spectrogram(psd_temp_results['psd_array'], psd_temp_results['psd_freqs'][0],
                                                      psd_temp_results['psd_times'], this_channel.id, this_channel.stats.sampling_rate,
-                                                     spec_win, overlap, plot_start, plot_end, plot_file=plot_files[0],
+                                                     spec_win, overlap, plot_start, plot_end, plot_file=plot_files[1],
                                                      cmap=spec_cmap, slim=spec_lim)
 
                 done_spec_psd = timeit.default_timer()

@@ -272,8 +272,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                 all_channels.append({
                     'id': trace_info['seedID'],
-                    'start': files_start.datetime.strftime('%Y-%m-%d %H:%M:%S.%f'),
-                    'end': files_end.datetime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                    'start': files_start.datetime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                    'end': files_end.datetime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
                     'sampling': '{:.1f}'.format(trace_info['samplingRate'])
                 })
                 all_gaps.extend(gaps)
@@ -485,12 +485,12 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                             # Save rolling window statistics to CSV file
                             ch_stats = pd.DataFrame(roll_stats, columns=['Start', 'End', 'Center', 'Min', 'Max', 'Avg', 'Gradient', 'R2_coef', 'Days_Deployed'])
-                            ch_stats.to_csv(os.path.join(output_dir, '{}_rolling_stats_{}_{}.csv'.format(tr.id, pd.to_datetime(ch_stats['Start'].min()).strftime('%Y-%m-%d'), pd.to_datetime(ch_stats['End'].max().strftime('%Y-%m-%d')))))
+                            ch_stats.to_csv(os.path.join(output_dir, '{}_rolling_stats_{}_{}.csv'.format(tr.id, pd.to_datetime(ch_stats['Start'].min()).strftime('%Y-%m-%d'), pd.to_datetime(ch_stats['End'].max()).strftime('%Y-%m-%d'))))
 
                             # Plot rolling mean and add to report
                             roll_plot = os.path.join(output_dir, '{}_mean.png'.format(tr.id))
                             fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-                            ch_stats.plot(x='Plot_Time', y='Avg', kind='line', ax=ax, xlabel='Date/Time', ylabel=vert_label, legend=False)
+                            ch_stats.plot(x='Center', y='Avg', kind='line', ax=ax, xlabel='Date/Time', ylabel=vert_label, legend=False)
                             ax.grid(True, ls=':')
                             fig.tight_layout()
                             fig.savefig(roll_plot)
@@ -658,8 +658,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                     all_channels.append({
                         'id': tr.id,
-                        'start': tr.meta.starttime.strftime('%Y-%m-%d %H:%M:%S.%f'),
-                        'end': tr.meta.endtime.strftime('%Y-%m-%d %H:%M:%S.%f'),
+                        'start': tr.meta.starttime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                        'end': tr.meta.endtime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
                         'sampling': '{:.1f}'.format(tr.meta.sampling_rate)
                     })
 
