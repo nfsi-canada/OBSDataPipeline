@@ -580,28 +580,13 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, density=False, u
 
     # Plot PSDs in sensor units (velocity or pressure)
     if not (use_existing_plots and os.path.isfile(psd_asis)):
-        psd_v_fig, vax = plt.subplots(1, 1, num=1, clear=True)
-        for f, v in zip(freqs, vpsds):
-            vax.plot(f, 10 * np.log10(v), c='0.7', lw=0.5, marker=None)
-        vax.set_xscale('log')
-        vax.set_xlabel('Frequency (Hz)')
-        vax.set_ylabel('Power Spectral Density (dB)')
-        psd_v_fig.savefig(psd_asis)
+        psd_asis = plot_psds(vpsds, freqs, outfile=psd_asis, density=density, noise_models=False, db_lims=[-220, -40])
 
     # Plot acceleration PSDs (if channel is a seismometer)
     if seismometer:
         if not (use_existing_plots and os.path.isfile(psd_a_plot)):
-            psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True)
-            aax.plot(NLNM[0], NLNM[1], c='k', lw=0.5, marker=None)
-            aax.plot(NHNM[0], NHNM[1], c='k', lw=0.5, marker=None)
-            for f, a in zip(freqs, apsds):
-                aax.plot(f, 10 * np.log10(a), c='0.8', lw=0.5, marker=None)
-            aax.set_xscale('log')
-            plt.grid(True, ls=':')
-            aax.set_xlabel('Frequency (Hz)')
-            aax.set_ylabel('Power Spectral Density (dB)')
-            aax.set_xlim(xmin=1e-3)
-            psd_a_fig.savefig(psd_a_plot)
+            psd_a_plot = plot_psds(apsds, freqs, outfile=psd_a_plot, density=density, noise_models=True, min_f=1e-3,
+                                 db_lims=[-180, -50])
 
         return psd_a_plot
 
