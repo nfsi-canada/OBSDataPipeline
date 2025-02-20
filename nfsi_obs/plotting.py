@@ -265,6 +265,7 @@ def plot_spectrogram(psds, freqs, times, traceID, sampling_rate, spec_win, overl
         cmap = 'viridis'
     npts = int(spec_win * sampling_rate)
     nover = int(overlap * npts)
+    # TODO: Add minor ticks every day (if time span long enough)?
     tm_x_ticks, tm_x_ticklabels = date_ticks(plot_start, plot_end)
 
     spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
@@ -378,6 +379,164 @@ def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False
         return acc_psds, vel_psds, freqs, times, next_win_start
     else:
         return acc_psds, vel_psds, freqs, times
+
+
+def setup_freq_bins(smoothing_width_octaves=1, step_octaves=0.125, f_limits=None, frequencies=None):
+    """
+    Generate bin edges to be used in psd_period_binning
+    """
+    if f_limits is None:
+        if frequencies is not None:
+            f_limits = [frequencies[0], frequencies[-1]]
+        else:
+            raise ValueError('Either frequency limits or list of frequencies must be provided.')
+
+    step_factor = 2 ** step_octaves
+    smoothing_width_factor = 2 ** smoothing_width_octaves
+    # Calculate edges and center of first frequency bin, such that the center frequency is the lower limit specified in function input
+    f_left = f_limits[0] / (smoothing_width_factor ** 0.5)
+    f_right = f_left * smoothing_width_factor
+    f_center = np.sqrt(f_left * f_right)
+    # Make lists of bin edges for full frequency range
+    f_octaves_left = [f_left]
+    f_octaves_right = [f_right]
+    f_octaves_center = [f_center]
+    while f_center < f_limits[1]:
+        f_left *= step_factor
+        f_right = f_left * smoothing_width_factor
+        f_center = np.sqrt(f_left * f_right)
+        # Append to lists
+        f_octaves_left.append(f_left)
+        f_octaves_right.append(f_right)
+        f_octaves_center.append(f_center)
+
+    f_octaves_left = np.array(f_octaves_left)
+    f_octaves_right = np.array(f_octaves_right)
+    f_octaves_center = np.array(f_octaves_center)
+    if frequencies is not None:
+        valid = f_octaves_right > frequencies[0]
+        valid &= f_octaves_left < frequencies[-1]
+        f_octaves_left = f_octaves_left[valid]
+        f_octaves_right = f_octaves_right[valid]
+        f_octaves_center = f_octaves_center[valid]
+
+    return np.vstack([f_octaves_left,
+                      f_octaves_center / (step_factor ** 0.5),
+                      f_octaves_center,
+                      f_octaves_center * (step_factor ** 0.5),
+                      f_octaves_right])
+
+
+def psd_period_binning(psds, freqs, f_bins):
+    """
+    Calculate smoothed/binned PSD curves (for PPSD-style 2D histogram plots). Input PSDs should be directly from
+    calc_psds(), i.e. not yet converted to dB.
+    """
+    # Convert PSDs to dB
+    spectra = 10 * np.log10(psds)
+
+    # Smooth PSDs according to bins setup by setup_freq_bins()
+    all_smooth = []
+    for spec in spectra:
+        smoothed_psd = []
+        for f_left, f_right in zip(f_bins[0, :], f_bins[4, :]):
+            bits = spec[(f_left <= freqs) & (freqs <= f_right)]
+            smoothed_psd.append(bits.mean())
+        smoothed_psd = np.array(smoothed_psd, dtype=np.float32)
+        all_smooth.append(smoothed_psd)
+    all_smooth = np.array(all_smooth, dtype=np.float32)
+
+    return all_smooth
+
+
+def calculate_psd_histogram(psds, freqs, db_bins=(-200,-50,1.)):
+    """
+    Calculate 2D histogram stack of PSD curves.
+    """
+    # DB bins
+    num_db_bins = int((db_bins[1] - db_bins[0]) / db_bins[2])
+    db_bin_edges = np.linspace(db_bins[0], db_bins[1], num_db_bins + 1, endpoint=True)
+
+    # Frequency bins
+    f_bins = setup_freq_bins(frequencies=freqs)
+    num_f_bins = len(f_bins[2, :])
+    f_bin_edges = np.concatenate([f_bins[1, 0:1], f_bins[3, :]])
+
+    # Bin/smooth PSDs along frequency axis
+    binned_psds = psd_period_binning(psds, freqs, f_bins)
+
+    # Initial setup of 2D histogram
+    hist_stack = np.zeros((num_f_bins, num_db_bins), dtype=np.uint64)
+
+    # Concatenate all used spectra, get index of amplitude bin each value belongs to
+    inds = np.hstack(binned_psds)
+    # Need -1 because searchsorted returns the insertion index in the array of bin edges, which is the index of the corresponding bin plus 1
+    inds = db_bin_edges.searchsorted(inds, side='left') - 1
+    # Values to the left of the first bin edge need to be moved back into the binning
+    inds[inds == -1] = 0
+    # Same for values right of the last bin edge
+    inds[inds == num_db_bins] -= 1
+    # Reshape to individual spectra
+    inds = inds.reshape((len(binned_psds), num_f_bins)).T
+    for i, inds_ in enumerate(inds):
+        # Count how often each amplitude bin has been hit for this period bin and set 2D histogram accordingly
+        hist_stack[i, :] = np.bincount(inds_, minlength=num_db_bins)
+
+    return hist_stack, f_bin_edges, db_bin_edges
+
+def plot_psds(psds, freqs, outfile=None, outdir=None, trace_id=None, density=True, cmap='magma_r', noise_models=True, min_f=1e-3, db_lims=[-200, -50]):
+    """
+    Plot PSDs of seismic data (as obspy.core.trace.Trace object). If the input trace is from a seismometer (channel code
+    "H"), the returned plot will be in acceleration. Otherwise, the plot will be in sensor units (e.g. pressure).
+    Defaults to plotting density of curves (probabilistic PSD).
+
+    :param psds: 2D array-like, all PSD curves (as returned by calc_psds)
+    :param freqs: 2D array-like (same shape as psds) of frequency values
+    :param outfile: path to output image file
+    :param outdir: path to output directory for image file, only used if outfile not specified
+    :param trace_id: trace identifier, preferably SEED code, only used in output file name if outfile not specified
+    :param density: if True, plot as probabilistic PSD (heatmap density of curves); True by default. Assumes all PSDs share the same frequency values (only freqs[0] used).
+    :param noise_models: include NLNM and NHNM noise model curves in plot; True by default
+    :param min_f: minimum frequency for plotting (X-axis)
+    :param db_lims: min/max value for dB binning; default [-200, -50]
+
+    :return: path to plot PNG file
+    """
+    if outfile is None:
+        if outdir is None:
+            outfile = 'psd_{}.png'.format(trace_id)
+        else:
+            outfile = os.path.join(outdir, 'psd_{}.png'.format(trace_id))
+
+    # Plot PSDs
+    psd_fig, ax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
+    if noise_models:
+        ax.plot(NLNM[0], NLNM[1], c='k', lw=0.5, marker=None)
+        ax.plot(NHNM[0], NHNM[1], c='k', lw=0.5, marker=None)
+
+    if density:
+        psd_hist, f_edges, db_edges = calculate_psd_histogram(psds, freqs[0, :], [*db_lims, 1.])
+        # Plot histogram as percentage of all possible curves within bin
+        data = psd_hist * 100.0 / psds.shape[0]
+        psd_mg = np.meshgrid(f_edges, db_edges)
+        ppsd = ax.pcolormesh(psd_mg[0], psd_mg[1], data.T, cmap=cmap, zorder=-1)
+        ppsd.set_clim(0, 30)
+    else:
+        for f, a in zip(freqs, psds):
+            ax.plot(f, 10 * np.log10(a), c='0.8', lw=0.5, marker=None)
+
+    ax.set_xscale('log')
+    if density:
+        plt.grid(True, ls=':', color='0.7')
+    else:
+        plt.grid(True, ls=':')
+    ax.set_xlabel('Frequency (Hz)')
+    ax.set_ylabel('Power Spectral Density (dB)')
+    ax.set_xlim(xmin=min_f)
+    plt.tight_layout()
+    psd_fig.savefig(outfile)
+
+    return outfile
 
 
 def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, density=False, use_existing_plots=False):
@@ -900,10 +1059,6 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 })
                 report_add = timeit.default_timer()
                 timing['report_info'] += report_add - done_psds
-
-                # X-axis ticks for spectrogram plots (actual date strings rather than timestamps)
-                # TODO: Add minor ticks every day?
-                tm_x_ticks, tm_x_ticklabels = date_ticks(plot_start, plot_end)
 
                 # Spectrogram plot from PSDs
                 if not (use_existing_plots and os.path.isfile(plot_files[1])):
