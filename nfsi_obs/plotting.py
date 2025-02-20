@@ -484,7 +484,7 @@ def calculate_psd_histogram(psds, freqs, db_bins=(-200,-50,1.)):
 
     return hist_stack, f_bin_edges, db_bin_edges
 
-def plot_psds(psds, freqs, outfile=None, outdir=None, trace_id=None, density=True, cmap='magma_r', noise_models=True, min_f=1e-3, db_lims=[-200, -50]):
+def plot_psds(psds, freqs, outfile=None, outdir=None, trace_id=None, density=True, cmap='magma_r', noise_models=True, min_f=1e-3, db_lims=[-200., -50.]):
     """
     Plot PSDs of seismic data (as obspy.core.trace.Trace object). If the input trace is from a seismometer (channel code
     "H"), the returned plot will be in acceleration. Otherwise, the plot will be in sensor units (e.g. pressure).
@@ -502,11 +502,18 @@ def plot_psds(psds, freqs, outfile=None, outdir=None, trace_id=None, density=Tru
 
     :return: path to plot PNG file
     """
+    # Output file name (if not provided)
     if outfile is None:
         if outdir is None:
             outfile = 'psd_{}.png'.format(trace_id)
         else:
             outfile = os.path.join(outdir, 'psd_{}.png'.format(trace_id))
+
+    # Check value of db_lims
+    if db_lims[0] is None:
+        db_lims[0] = -200
+    if db_lims[1] is None:
+        db_lims[1] = -50
 
     # Plot PSDs
     psd_fig, ax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
@@ -1023,32 +1030,14 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 else:
                     psd_asis = plot_files[3]
                 if not (use_existing_plots and os.path.isfile(psd_asis)):
-                    psd_v_fig, vax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
-                    for f, v in zip(psd_temp_results['psd_freqs'], psd_temp_results['vpsd_array']):
-                        vax.plot(f, 10. * np.log10(v), c='0.8', lw=0.5, marker=None)
-                    vax.set_xscale('log')
-                    plt.grid(True, ls=':')
-                    vax.set_xlabel('Frequency (Hz)')
-                    vax.set_ylabel('Power Spectral Density (dB)')
-                    vax.set_xlim(xmin=1e-3)
-                    plt.tight_layout()
-                    psd_v_fig.savefig(psd_asis)
+                    psd_asis = plot_psds(psd_temp_results['vpsd_array'], psd_temp_results['psd_freqs'],
+                                         outfile=psd_asis, density=True, noise_models=False, db_lims=spec_lim)
 
                 if not hydrophone:
                     psd_v_plots.append(psd_asis)
                     if not (use_existing_plots and os.path.isfile(plot_files[0])):
-                        psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
-                        aax.plot(NLNM[0], NLNM[1], c='k', lw=0.5, marker=None)
-                        aax.plot(NHNM[0], NHNM[1], c='k', lw=0.5, marker=None)
-                        for f, a in zip(psd_temp_results['psd_freqs'], psd_temp_results['psd_array']):
-                            aax.plot(f, 10. * np.log10(a), c='0.8', lw=0.5, marker=None)
-                        aax.set_xscale('log')
-                        plt.grid(True, ls=':')
-                        aax.set_xlabel('Frequency (Hz)')
-                        aax.set_ylabel('Power Spectral Density (dB)')
-                        aax.set_xlim(xmin=1e-3)
-                        plt.tight_layout()
-                        psd_a_fig.savefig(plot_files[0])
+                        psd_a_plot = plot_psds(psd_temp_results['psd_array'], psd_temp_results['psd_freqs'],
+                                             outfile=plot_files[0], density=True, noise_models=True, db_lims=spec_lim)
 
                 done_psds = timeit.default_timer()
                 timing['psd_plot'] += done_psds - get_filenames
