@@ -271,10 +271,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 channel_type = trace_info['channelType']
 
                 # TODO: Move string formatting into ReportGenerator class
+                # TODO: Start/end times of raw data are different from time on seafloor (TEST SOLUTION)
+                ch_start = max(files_start, data_start)
+                ch_end = min(files_end, data_end)
                 all_channels.append({
                     'id': trace_info['seedID'],
-                    'start': files_start.datetime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
-                    'end': files_end.datetime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                    'start': ch_start.datetime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                    'end': ch_end.datetime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
                     'sampling': '{:.1f}'.format(trace_info['samplingRate'])
                 })
                 all_gaps.extend(gaps)
