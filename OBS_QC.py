@@ -270,6 +270,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                 channel_type = trace_info['channelType']
 
+                # TODO: Move string formatting into ReportGenerator class
                 all_channels.append({
                     'id': trace_info['seedID'],
                     'start': files_start.datetime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
@@ -620,6 +621,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                         g_log.warning('Error encountered determining stats for trigger {}'.format(tt[0].strftime('%Y-%m-%d %H:%M:%S')))
                                         g_log.error(traceback.format_exc())
 
+                                    # TODO: Move string formatting into ReportGenerator class
                                     humidity_blips.append({
                                         'start': tt[0].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
                                         'end': tt[1].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
@@ -656,6 +658,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         units
                     ))
 
+                    # TODO: Move string formatting into ReportGenerator class
                     all_channels.append({
                         'id': tr.id,
                         'start': tr.meta.starttime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
@@ -689,6 +692,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             unique_gaps.update({gap_key: gap})
 
         gap_list = []
+        # TODO: Move string formatting into ReportGenerator class
         for gap in unique_gaps.values():
             gap_list.append({
                 'id': '.'.join(gap[0:4]),

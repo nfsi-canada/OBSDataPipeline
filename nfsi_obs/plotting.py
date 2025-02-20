@@ -576,8 +576,6 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, density=False, u
     # Calculate all PSDs
     apsds, vpsds, freqs, times = calc_psds(trace, win_len, overlap, sub_overlap, calc_acc=seismometer)
 
-    # TODO: Allow plot as probabilistic PSD (density of curves)
-
     # Plot PSDs in sensor units (velocity or pressure)
     if not (use_existing_plots and os.path.isfile(psd_asis)):
         psd_asis = plot_psds(vpsds, freqs, outfile=psd_asis, density=density, noise_models=False, db_lims=[-220, -40])
