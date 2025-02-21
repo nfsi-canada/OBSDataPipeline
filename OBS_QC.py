@@ -166,7 +166,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         config.write(configfile)
 
     timing_points.append(timeit.default_timer())
-    g_log.debug("Time spent searching for data files and backing up raw data: {0} seconds".format((timing_points[-1] - timing_points[-2])))
+    g_log.debug("Time spent searching for data files: {0} seconds".format((timing_points[-1] - timing_points[-2])))
     debug_info['timing']['file_search'] = timing_points[-1] - timing_points[-2]
 
     # label files by channel name

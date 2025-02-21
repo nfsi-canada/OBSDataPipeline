@@ -7,11 +7,13 @@ import os
 import re
 from scipy import signal
 import timeit
+import traceback
 
-from .waveform import WaveformPlotting
-from .metadata import get_channel_type, update_metadata
 from .extenders import cut_trace
+from .helpers import setup_freq_bins, psd_period_binning_multi
+from .metadata import get_channel_type, update_metadata
 from .parallel import calc_psds_thread_pool
+from .waveform import WaveformPlotting
 
 
 QARTOD_COLOURS = {
@@ -381,95 +383,25 @@ def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False
         return acc_psds, vel_psds, freqs, times
 
 
-def setup_freq_bins(smoothing_width_octaves=1, step_octaves=0.125, f_limits=None, frequencies=None):
+def calculate_psd_histogram(psds, freqs, db_bins=(-200,-50,1.), f_bins=None):
     """
-    Generate bin edges to be used in psd_period_binning
-    """
-    if f_limits is None:
-        if frequencies is not None:
-            f_limits = [frequencies[0], frequencies[-1]]
-        else:
-            raise ValueError('Either frequency limits or list of frequencies must be provided.')
-
-    step_factor = 2 ** step_octaves
-    smoothing_width_factor = 2 ** smoothing_width_octaves
-    # Calculate edges and center of first frequency bin, such that the center frequency is the lower limit specified in function input
-    f_left = f_limits[0] / (smoothing_width_factor ** 0.5)
-    f_right = f_left * smoothing_width_factor
-    f_center = np.sqrt(f_left * f_right)
-    # Make lists of bin edges for full frequency range
-    f_octaves_left = [f_left]
-    f_octaves_right = [f_right]
-    f_octaves_center = [f_center]
-    while f_center < f_limits[1]:
-        f_left *= step_factor
-        f_right = f_left * smoothing_width_factor
-        f_center = np.sqrt(f_left * f_right)
-        # Append to lists
-        f_octaves_left.append(f_left)
-        f_octaves_right.append(f_right)
-        f_octaves_center.append(f_center)
-
-    f_octaves_left = np.array(f_octaves_left)
-    f_octaves_right = np.array(f_octaves_right)
-    f_octaves_center = np.array(f_octaves_center)
-    if frequencies is not None:
-        valid = f_octaves_right > frequencies[0]
-        valid &= f_octaves_left < frequencies[-1]
-        f_octaves_left = f_octaves_left[valid]
-        f_octaves_right = f_octaves_right[valid]
-        f_octaves_center = f_octaves_center[valid]
-
-    return np.vstack([f_octaves_left,
-                      f_octaves_center / (step_factor ** 0.5),
-                      f_octaves_center,
-                      f_octaves_center * (step_factor ** 0.5),
-                      f_octaves_right])
-
-
-def psd_period_binning(psds, freqs, f_bins):
-    """
-    Calculate smoothed/binned PSD curves (for PPSD-style 2D histogram plots). Input PSDs should be directly from
-    calc_psds(), i.e. not yet converted to dB.
-    """
-    # Convert PSDs to dB
-    spectra = 10 * np.log10(psds)
-
-    # Smooth PSDs according to bins setup by setup_freq_bins()
-    all_smooth = []
-    for spec in spectra:
-        smoothed_psd = []
-        for f_left, f_right in zip(f_bins[0, :], f_bins[4, :]):
-            bits = spec[(f_left <= freqs) & (freqs <= f_right)]
-            smoothed_psd.append(bits.mean())
-        smoothed_psd = np.array(smoothed_psd, dtype=np.float32)
-        all_smooth.append(smoothed_psd)
-    all_smooth = np.array(all_smooth, dtype=np.float32)
-
-    return all_smooth
-
-
-def calculate_psd_histogram(psds, freqs, db_bins=(-200,-50,1.)):
-    """
-    Calculate 2D histogram stack of PSD curves.
+    Calculate 2D histogram stack of PSD curves. Input PSDs should already be binned/smoothed along frequency axis.
     """
     # DB bins
     num_db_bins = int((db_bins[1] - db_bins[0]) / db_bins[2])
     db_bin_edges = np.linspace(db_bins[0], db_bins[1], num_db_bins + 1, endpoint=True)
 
     # Frequency bins
-    f_bins = setup_freq_bins(frequencies=freqs)
+    if f_bins is None:
+        f_bins = setup_freq_bins(frequencies=freqs, smoothing_width_octaves=0.5)
     num_f_bins = len(f_bins[2, :])
     f_bin_edges = np.concatenate([f_bins[1, 0:1], f_bins[3, :]])
-
-    # Bin/smooth PSDs along frequency axis
-    binned_psds = psd_period_binning(psds, freqs, f_bins)
 
     # Initial setup of 2D histogram
     hist_stack = np.zeros((num_f_bins, num_db_bins), dtype=np.uint64)
 
-    # Concatenate all used spectra, get index of amplitude bin each value belongs to
-    inds = np.hstack(binned_psds)
+    # Concatenate all spectra, get index of amplitude bin each value belongs to
+    inds = np.hstack(psds)
     # Need -1 because searchsorted returns the insertion index in the array of bin edges, which is the index of the corresponding bin plus 1
     inds = db_bin_edges.searchsorted(inds, side='left') - 1
     # Values to the left of the first bin edge need to be moved back into the binning
@@ -477,14 +409,14 @@ def calculate_psd_histogram(psds, freqs, db_bins=(-200,-50,1.)):
     # Same for values right of the last bin edge
     inds[inds == num_db_bins] -= 1
     # Reshape to individual spectra
-    inds = inds.reshape((len(binned_psds), num_f_bins)).T
+    inds = inds.reshape((len(psds), num_f_bins)).T
     for i, inds_ in enumerate(inds):
         # Count how often each amplitude bin has been hit for this period bin and set 2D histogram accordingly
         hist_stack[i, :] = np.bincount(inds_, minlength=num_db_bins)
 
     return hist_stack, f_bin_edges, db_bin_edges
 
-def plot_psds(psds, freqs, outfile=None, outdir=None, trace_id=None, density=True, cmap='magma_r', noise_models=True, min_f=1e-3, db_lims=[-200., -50.]):
+def plot_psds(psds, freqs, outfile=None, outdir=None, trace_id=None, density=True, cmap='magma_r', noise_models=True, min_f=1e-3, db_lims=[-200., -50.], f_bins=None):
     """
     Plot PSDs of seismic data (as obspy.core.trace.Trace object). If the input trace is from a seismometer (channel code
     "H"), the returned plot will be in acceleration. Otherwise, the plot will be in sensor units (e.g. pressure).
@@ -522,9 +454,12 @@ def plot_psds(psds, freqs, outfile=None, outdir=None, trace_id=None, density=Tru
         ax.plot(NHNM[0], NHNM[1], c='k', lw=0.5, marker=None)
 
     if density:
-        psd_hist, f_edges, db_edges = calculate_psd_histogram(psds, freqs[0, :], [*db_lims, 1.])
+        psd_hist, f_edges, db_edges = calculate_psd_histogram(psds, freqs[0], [*db_lims, 1.], f_bins=f_bins)
+        # Convert to percentage and mask zeros
+        data = psd_hist * 100.0 / len(psds)
+        data = np.ma.masked_where(data == 0, data)
+        print('Maximum percentage in any cell: {}'.format(np.max(data)))
         # Plot histogram as percentage of all possible curves within bin
-        data = psd_hist * 100.0 / psds.shape[0]
         psd_mg = np.meshgrid(f_edges, db_edges)
         ppsd = ax.pcolormesh(psd_mg[0], psd_mg[1], data.T, cmap=cmap, zorder=-1)
         ppsd.set_clim(0, 30)
@@ -721,11 +656,14 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         'psd_array': None,
         'vpsd_array': None,
         'psd_freqs': None,
-        'psd_times': None
+        'psd_times': None,
+        'binned_asis': None,
+        'binned_acc': None
     }
     timing['setup'] += timeit.default_timer() - func_start
 
     proc_complete, all_data_read = False, False
+    f_bins = None
     while not proc_complete:
         try:
             loop_start = timeit.default_timer()
@@ -970,13 +908,14 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             psd_start = first_psd_start
             new_data = cut_trace(this_channel, psd_start, None, nearest_sample=True, pad=True)
             if parallel:
-                apsds, vpsds, freqs, times, next_psd_start = calc_psds_thread_pool(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), max_processes=max_processes)
+                apsds, vpsds, freqs, times, binned_vel, binned_acc, next_psd_start = calc_psds_thread_pool(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), binned=True, max_processes=max_processes, f_bins=f_bins)
             else:
+                # TODO: Add binning to non-parallelized calculation
                 apsds, vpsds, freqs, times, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone))
             psd_calc_time = timeit.default_timer()
             timing['psd_calc'] += psd_calc_time - plot_admin
 
-            for running, current in zip(['psd_array', 'vpsd_array', 'psd_freqs'], [apsds, vpsds, freqs]):
+            for running, current in zip(['psd_array', 'vpsd_array', 'psd_freqs', 'binned_asis', 'binned_acc'], [apsds, vpsds, freqs, binned_vel, binned_acc]):
                 if psd_temp_results[running] is None:
                     psd_temp_results[running] = current
                 else:
@@ -990,13 +929,19 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
             spec_calc_time = timeit.default_timer()
             timing['spec_calc'] += spec_calc_time - psd_arr_build
+
+            # Calculate frequency bin information if not done yet (reduce duplicated effort in future loop iterations)
+            if f_bins is None:
+                f_bins = setup_freq_bins(frequencies=freqs[0], smoothing_width_octaves=0.5)
         except Exception as e:
             # TODO: Separate error handling for data read and data analysis
             msg = 'nfsi_obs.plotting.buffer_seismic_data: Error processing raw data files, latest file: {0}'.format(files[i-1])
             g_log.error(str(e))
             g_log.error(msg)
+            print(traceback.print_exc())
 
         if make_plot:
+            g_log.debug('Generating plots...')
             try:
                 start_plotting = timeit.default_timer()
                 # TODO: Decide about trace plot, maybe downsample to 5Hz before plotting?
@@ -1013,14 +958,16 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 else:
                     psd_asis = plot_files[3]
                 if not (use_existing_plots and os.path.isfile(psd_asis)):
-                    psd_asis = plot_psds(psd_temp_results['vpsd_array'], psd_temp_results['psd_freqs'],
-                                         outfile=psd_asis, density=True, noise_models=False, db_lims=spec_lim)
+                    g_log.debug('Plotting PSDs in sensor units...')
+                    psd_asis = plot_psds(psd_temp_results['binned_asis'], psd_temp_results['psd_freqs'],
+                                         outfile=psd_asis, density=True, noise_models=False, db_lims=[-220,-40], f_bins=f_bins)
 
                 if not hydrophone:
                     psd_v_plots.append(psd_asis)
                     if not (use_existing_plots and os.path.isfile(plot_files[0])):
-                        psd_a_plot = plot_psds(psd_temp_results['psd_array'], psd_temp_results['psd_freqs'],
-                                             outfile=plot_files[0], density=True, noise_models=True, db_lims=spec_lim)
+                        g_log.debug('Plotting PSDs in acceleration...')
+                        psd_a_plot = plot_psds(psd_temp_results['binned_acc'], psd_temp_results['psd_freqs'],
+                                             outfile=plot_files[0], density=True, noise_models=True, db_lims=[-180,-50], f_bins=f_bins)
 
                 done_psds = timeit.default_timer()
                 timing['psd_plot'] += done_psds - get_filenames
@@ -1034,6 +981,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
                 # Spectrogram plot from PSDs
                 if not (use_existing_plots and os.path.isfile(plot_files[1])):
+                    g_log.debug('Plotting spectrogram...')
                     if hydrophone:
                         spec_plot = plot_spectrogram(psd_temp_results['vpsd_array'], psd_temp_results['psd_freqs'][0],
                                                      psd_temp_results['psd_times'], this_channel.id, this_channel.stats.sampling_rate,
@@ -1060,15 +1008,12 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 msg = 'nfsi_obs.plotting.buffer_seismic_data: Error creating plots, latest file: {0}'.format(files[i - 1])
                 g_log.error(str(e))
                 g_log.error(msg)
+                print(traceback.print_exc())
             finally:
                 final_start = timeit.default_timer()
                 # Reset temp arrays for PSDs
-                psd_temp_results = {
-                    'psd_array': None,
-                    'vpsd_array': None,
-                    'psd_freqs': None,
-                    'psd_times': None
-                }
+                for key in psd_temp_results:
+                    psd_temp_results[key] = None
 
                 # Reset temp arrays for spectrogram
                 reset_arr = timeit.default_timer()
