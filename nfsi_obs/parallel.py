@@ -258,6 +258,19 @@ def calc_psds_proc_pool(trace, win_len, overlap, sub_overlap, endtime=None, buff
 
 
 def calc_psds_plain(trace_window, calc_acc=False, binned=False, f_bins=None, **psd_kwargs):
+    """
+    Calculate PSD for data in trace_window.
+
+    :param trace_window: obspy.Trace object containing data to analyze
+    :param calc_acc: if True, assume input data is velocity (seismometer) and calculate PSD both as-is and in acceleration units
+    :param binned: if True, also calculate frequency-binned/smoothed version of PSD
+    :param f_bins: frequency bin information, as returned by .helpers.setup_freq_bins
+    :param smoothing_width_octaves: passed to setup_freq_bins
+    :param step_octaves: passed to setup_freq_bins
+    :param psd_kwargs: all remaining keyword arguments are passed to mlab.psd
+
+    :return: dictionary containing PSD data (arrays of frequency, amplitude, smoothed amplitude; timestamp at midpoint of window; frequency bin information)
+    """
     # default values for frequency binning
     smoothing_width = psd_kwargs.pop('smoothing_width_octaves', 0.5)
     step_octaves = psd_kwargs.pop('step_octaves', 0.125)
@@ -291,7 +304,7 @@ def calc_psds_plain(trace_window, calc_acc=False, binned=False, f_bins=None, **p
 
 def calc_psds_thread_pool(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False, calc_acc=False, binned=False, seg_len=pow(2, 17), max_processes=None, **kwargs):
     """
-    Calculate PSDs of seismic data (as obspy.core.trace.Trace object)
+    Calculate PSDs of seismic data (as obspy.core.trace.Trace object). Remaining keyword arguments are passed to calc_psds_plain.
 
     :param trace: input seismic data, measured as ground velocity
     :type trace: obspy.core.trace.Trace
@@ -301,10 +314,11 @@ def calc_psds_thread_pool(trace, win_len, overlap, sub_overlap, endtime=None, bu
     :param endtime: end time for calculation window (will analyze windows which include `endtime`), obspy.UTCDateTime
     :param bool buffered: whether the input data is being processed as part of a buffer or not
     :param calc_acc: if True, assume input data is velocity (seismometer) and convert to acceleration
+    :param binned: if True, also calculate frequency-binned/smoothed version of PSDs
     :param seg_len: length of PSD segment for average periodogram method (see matplotlib.mlab.psd) in data points
     :param max_processes: maximum number of parallel processes to use for PSD calculation
 
-    :returns: Calculated PSD curves in acceleration (if seismometer) and data units, corresponding frequencies, start of next window (if buffered is True)
+    :returns: Calculated PSD curves in acceleration (if seismometer) and data units, corresponding frequencies and timestamps, frequency-binned/smoothed versions of PSDs, start of next window (if buffered is True)
     """
     # Calculate PSDs in velocity
     psd_kwargs = kwargs.copy()
@@ -316,19 +330,6 @@ def calc_psds_thread_pool(trace, win_len, overlap, sub_overlap, endtime=None, bu
         'detrend': 'linear'
     })
 
-    """
-    # Add all data windows to processing Queue
-    print('Building data queue...')
-    trace_windows = []
-    num_windows = 0
-    for sect in trace.slide(win_len, win_len * (1 - overlap), nearest_sample=False):
-        if endtime is not None:
-            if sect.stats.starttime > endtime:
-                continue    # skip windows which start after `endtime` and reset next start to include last window in next section of buffer
-
-        trace_windows.append(sect)
-        num_windows += 1
-    """
     if endtime is not None:
         trace.trim(endtime=endtime+win_len+1)
     num_windows = int(((len(trace) / trace.meta.sampling_rate) - win_len) / (win_len * (1 - overlap)))

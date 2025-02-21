@@ -311,7 +311,7 @@ def spectrogram(trace, outdir, spec_win, overlap, sub_overlap=0.75, cmap=None, s
         seismometer = True
 
     # Calculate all PSDs
-    apsds, vpsds, freqs, times = calc_psds(trace, spec_win, overlap, sub_overlap, calc_acc=seismometer)
+    apsds, vpsds, freqs, times, bin_v, bin_a = calc_psds(trace, spec_win, overlap, sub_overlap, calc_acc=seismometer)
 
     # Spectrogram plot from PSDs
     spectrogram_plot = os.path.join(outdir, 'spec_{0}.png'.format(trace.id))
@@ -328,7 +328,7 @@ def spectrogram(trace, outdir, spec_win, overlap, sub_overlap=0.75, cmap=None, s
     return spectrogram_plot
 
 
-def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False, calc_acc=False, seg_len=pow(2, 17)):
+def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False, calc_acc=False, seg_len=pow(2, 17), binned=False, f_bins=None, **kwargs):
     """
     Calculate PSDs of seismic data (as obspy.core.trace.Trace object)
 
@@ -341,6 +341,12 @@ def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False
     :param bool buffered: whether the input data is being processed as part of a buffer or not
     :param calc_acc: if True, assume input data is velocity (seismometer) and convert to acceleration
     :param seg_len: length of PSD segment for average periodogram method (see matplotlib.mlab.psd) in data points
+    :param binned: if True, include frequency-binned/smoothed PSD in output
+    :param f_bins: (optional) frequency bin information, as returned by .helpers.setup_freq_bins
+
+    Other optional kwargs used to generate f_bins (if not specified):
+    - smoothing_width_octaves
+    - step_octaves
 
     :returns: Calculated PSD curves in acceleration (if seismometer) and data units, corresponding frequencies, start of next window (if buffered is True)
     """
@@ -370,22 +376,38 @@ def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False
     if hit_end:
         next_win_start = next_win_start - win_len * (1 - overlap)
 
+    acc_psds, binned_asis, binned_acc = [], [], []
+    if binned:
+        # default values for frequency binning
+        smoothing_width = kwargs.pop('smoothing_width_octaves', 0.5)
+        step_octaves = kwargs.pop('step_octaves', 0.125)
+        if f_bins is None:
+            f_bins = setup_freq_bins(frequencies=freqs[0], smoothing_width_octaves=smoothing_width, step_octaves=step_octaves)
+        binned_asis = psd_period_binning_multi([p[1:] for p in vel_psds], freqs[0][1:], f_bins)
     # Convert PSDs to acceleration (if necessary)
-    acc_psds = []
     if calc_acc:
         for f, p in zip(freqs, vel_psds):
             apsd = p * (2 * np.pi * f) * (2 * np.pi * f)
             acc_psds.append(apsd)
+        if binned:
+            binned_acc = psd_period_binning_multi([p[1:] for p in acc_psds], freqs[0][1:], f_bins)
 
     if buffered:
-        return acc_psds, vel_psds, freqs, times, next_win_start
+        return acc_psds, vel_psds, freqs, times, binned_asis, binned_acc, next_win_start
     else:
-        return acc_psds, vel_psds, freqs, times
+        return acc_psds, vel_psds, freqs, times, binned_asis, binned_acc
 
 
 def calculate_psd_histogram(psds, freqs, db_bins=(-200,-50,1.), f_bins=None):
     """
     Calculate 2D histogram stack of PSD curves. Input PSDs should already be binned/smoothed along frequency axis.
+
+    :param psds: PSD curves, binned/smoothed according to f_bins
+    :param freqs: 1D list-like, frequency values for each PSD curve (including DC term freqs[0]=0); used to generate f_bins if not provided
+    :param db_bins: (optional) min/max/step for dB amplitude bins; default (-200, -50, 1)
+    :param f_bins: (optional) frequency bin information, as returned by .helpers.setup_freq_bins
+
+    :returns: 2D histogram stack, frequency bin edges, dB amplitude bin edges
     """
     # DB bins
     num_db_bins = int((db_bins[1] - db_bins[0]) / db_bins[2])
@@ -422,15 +444,17 @@ def plot_psds(psds, freqs, outfile=None, outdir=None, trace_id=None, density=Tru
     "H"), the returned plot will be in acceleration. Otherwise, the plot will be in sensor units (e.g. pressure).
     Defaults to plotting density of curves (probabilistic PSD).
 
-    :param psds: 2D array-like, all PSD curves (as returned by calc_psds)
+    :param psds: 2D array-like, all PSD curves (as returned by calc_psds); if density=True, PSDs should already be binned/smoothed along the frequency axis according to f_bins
     :param freqs: 2D array-like (same shape as psds) of frequency values
     :param outfile: path to output image file
     :param outdir: path to output directory for image file, only used if outfile not specified
     :param trace_id: trace identifier, preferably SEED code, only used in output file name if outfile not specified
     :param density: if True, plot as probabilistic PSD (heatmap density of curves); True by default. Assumes all PSDs share the same frequency values (only freqs[0] used).
+    :param cmap: matplotlib colormap name; defaults to 'magma_r'.
     :param noise_models: include NLNM and NHNM noise model curves in plot; True by default
     :param min_f: minimum frequency for plotting (X-axis)
     :param db_lims: min/max value for dB binning; default [-200, -50]
+    :param f_bins: frequency bin information, as generated by .helpers.setup_freq_bins
 
     :return: path to plot PNG file
     """
@@ -486,6 +510,9 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, density=False, u
     Plot PSDs of seismic data (as obspy.core.trace.Trace object). If the input trace is from a seismometer (channel code
     "H"), the returned plot will be in acceleration. Otherwise, the plot will be in sensor units (e.g. pressure).
 
+    Currently only used in non-buffered analysis of seismometer/hydrophone channels in QC script. This case should only
+    occur when analyzing short time periods of data (3 or fewer data files per channel).
+
     :param trace: obspy.core.trace.Trace object
     :param outdir: path to output directory
     :param win_len: window length for each PSD curve
@@ -509,8 +536,9 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, density=False, u
             return psd_asis
 
     # Calculate all PSDs
-    apsds, vpsds, freqs, times = calc_psds(trace, win_len, overlap, sub_overlap, calc_acc=seismometer)
+    apsds, vpsds, freqs, times, bin_v, bin_a = calc_psds(trace, win_len, overlap, sub_overlap, calc_acc=seismometer, binned=density)
 
+    # TODO: Update for changes to PPSD density plot routines (WILL NOT WORK RIGHT NOW!)
     # Plot PSDs in sensor units (velocity or pressure)
     if not (use_existing_plots and os.path.isfile(psd_asis)):
         psd_asis = plot_psds(vpsds, freqs, outfile=psd_asis, density=density, noise_models=False, db_lims=[-220, -40])
@@ -544,6 +572,7 @@ def next_plot_window(prev_end, plot_length=None):
 
 
 def plot_filenames(outdir, ch_id, plot_start, plot_end, asis=False):
+    """ Generate full paths to output image files from PSD/spectrogram calculations """
     spec_psd_plot = os.path.join(outdir, 'spec_psd_{0}_{1}_to_{2}.png'.format(ch_id, plot_start.strftime('%Y-%m-%d'),
                                                                               (plot_end - 1).strftime('%Y-%m-%d')))
     spectrogram_plot = os.path.join(outdir, 'spec_{0}_{1}_to_{2}.png'.format(ch_id, plot_start.strftime('%Y-%m-%d'),
@@ -588,6 +617,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     :param spec_cmap: colormap to use for spectrogram plot
     :param use_existing_plots: check if plots exist and do not re-create if present, False by default
     :param parallel: run PSD calculation with multiprocessing parallelization
+    :param max_processes: maximum number of processes to spawn for parallel processing
 
     :return: dictionary of channel information for auto-report generation
     """
@@ -910,8 +940,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             if parallel:
                 apsds, vpsds, freqs, times, binned_vel, binned_acc, next_psd_start = calc_psds_thread_pool(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), binned=True, max_processes=max_processes, f_bins=f_bins)
             else:
-                # TODO: Add binning to non-parallelized calculation
-                apsds, vpsds, freqs, times, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone))
+                apsds, vpsds, freqs, times, binned_vel, binned_acc, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), binned=True, f_bins=f_bins)
             psd_calc_time = timeit.default_timer()
             timing['psd_calc'] += psd_calc_time - plot_admin
 

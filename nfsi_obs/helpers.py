@@ -3,7 +3,8 @@ import numpy as np
 
 def setup_freq_bins(f_limits=None, frequencies=None, smoothing_width_octaves=1, step_octaves=0.125):
     """
-    Generate bin edges to be used in psd_period_binning
+    Generate bin edges to be used in psd_period_binning. Identical process and output to
+    obspy.signal.spectral_estimation.PPSD._setup_period_binning
     """
     if f_limits is None:
         if frequencies is not None:
@@ -50,7 +51,14 @@ def setup_freq_bins(f_limits=None, frequencies=None, smoothing_width_octaves=1, 
 def psd_period_binning_single(psd, freqs, f_bins):
     """
     Calculate smoothed/binned PSD curve (for PPSD-style 2D histogram plots). Input PSD should be as output by
-    calc_psds(), i.e. not yet converted to dB, ignoring first entry (f=0). Output PSD is given in dB.
+    calc_psds(), i.e. not yet converted to dB, ignoring first entry (f=0). Output PSD is given in dB. Method copied
+    from obspy.signal.spectral_estimation.PPSD.__process
+
+    :param psd: input PSD, excluding DC term
+    :param freqs: frequency values corresponding to PSD
+    :param f_bins: frequency bin information, as returned by setup_freq_bins
+
+    :return: smoothed PSD
     """
     # Convert PSD to dB
     spec = 10 * np.log10(psd)
@@ -73,7 +81,14 @@ def psd_period_binning_single(psd, freqs, f_bins):
 def psd_period_binning_multi(psds, freqs, f_bins):
     """
     Calculate smoothed/binned PSD curves (for PPSD-style 2D histogram plots). Input PSDs should be directly from
-    calc_psds(), i.e. not yet converted to dB, ignoring first entry (f=0). Output PSDs are given in dB.
+    calc_psds(), i.e. not yet converted to dB, ignoring first entry (f=0). All PSDs must share the same frequency axis.
+    Output PSDs are given in dB. Calls psd_period_binning_single for each individual PSD.
+
+    :param psds: input PSDs, excluding DC term; 2D array-like
+    :param freqs: frequency values corresponding to PSD; 1D array-like
+    :param f_bins: frequency bin information, as returned by setup_freq_bins
+
+    :return: smoothed PSDs
     """
     # Smooth PSDs according to bins setup by setup_freq_bins()
     all_smooth = []
