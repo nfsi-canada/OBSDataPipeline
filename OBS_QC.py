@@ -108,7 +108,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
             data_start.strftime('%Y-%m-%d %H:%M:%S'), data_end.strftime('%Y-%m-%d %H:%M:%S')))
         data_start, data_end = None, None
 
-    report_kwargs['seafloorDays'] = '{:.3f}'.format((data_end - data_start) / 60 / 60 / 24)
+    report_params['seafloorDays'] = '{:.3f}'.format((data_end - data_start) / 60 / 60 / 24)
+    g_log.debug('Time at seafloor: {} days'.format(report_params['seafloorDays']))
 
     # Read station metadata file (dataless SEED or StationXML)
     station_info = None
