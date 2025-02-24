@@ -56,7 +56,6 @@ Average seafloor conditions: Pressure {% if meanPressure %}{{ meanPressure }} Pa
 Tilt from vertical at recovery: {{ tiltAtRecovery }} degrees
 
 {% endif %}
-Power spectral density curves are calculated using {{ psdWindowLength }} Hann windows, with {{ psdOverlapPercent }}% overlap.
 
 \newpage{}
 
@@ -72,8 +71,10 @@ Power spectral density curves are calculated using {{ psdWindowLength }} Hann wi
 
 # General QC
 
+This report analyzes data recorded while the instrument is physically at the seabed. Touchdown and release times are determined by manual inspection of the external pressure channel where possible. Throughout this report, power spectral density curves are calculated using {{ psdWindowLength }} Hann windows, with {{ psdOverlapPercent }}% overlap.
+
 {% if channelList %}
-Recorded data channels:
+Recorded data channels (time at seafloor):
 
 | Channel | Start Time | End Time | Sampling Rate (Hz) |
 |:--:|:---:|:---:|:--:|
@@ -147,11 +148,13 @@ SEED ID: {{ ch.seedID }}
 {% if ch.psdLoc %}
 ### Power Spectral Density
 
+PSD curves are binned by frequency and amplitude to generate density heatmaps. Black curves overlain on these plots are the Peterson high and low global noise models (NHNM and NLNM; Peterson, 1993).
+
 {% for psd in ch.psdLoc %}
 {% if ch.hydrophone %}
-![Power spectral density curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
+![PSD curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
 {% else %}
-![Acceleration power spectral density curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
+![Acceleration PSD curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
 {% endif %}
 
 {% endfor %}
@@ -176,7 +179,7 @@ This channel may show periodic spikes due to the data write cycle of the Aquariu
 
 {% endif %}
 {% if ch.rollPlot %}
-![Average reading for channel {{ ch.seedID }} calculated for a {{ ch.window_str }} rolling window]({{ ch.rollPlot }})
+![Average reading for channel {{ ch.seedID }} calculated for a {{ ch.window_str }} rolling window with 66% overlap]({{ ch.rollPlot }})
 
 {% endif %}
 {% if ch.qcPlotLoc %}
