@@ -202,6 +202,7 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
             net_id = metadata_args['network']
 
         if 'obs_log' in metadata_args:
+            # TODO: Use log info to optionally cut start/end times if not specified (add a flag for this behaviour)
             clock_info = metadata_args['obs_log'][['Recording Start Date/Time (UTC)', 'Date/Time Recording Stopped (UTC)', 'Clock Offset on Deck (ms)']]
 
     # Process data files by channel

@@ -146,6 +146,8 @@ SEED ID: {{ ch.seedID }}
 {% endif %}
 
 {% if ch.psdLoc %}
+\newpage{}
+
 ### Power Spectral Density
 
 PSD curves are binned by frequency and amplitude to generate density heatmaps. Black curves overlain on these plots are the Peterson high and low global noise models (NHNM and NLNM; Peterson, 1993).
@@ -179,7 +181,7 @@ This channel may show periodic spikes due to the data write cycle of the Aquariu
 
 {% endif %}
 {% if ch.rollPlot %}
-![Average reading for channel {{ ch.seedID }} calculated for a {{ ch.window_str }} rolling window with 66% overlap]({{ ch.rollPlot }})
+![Average reading for channel {{ ch.seedID }} for a {{ ch.window_str }} rolling window with 66% overlap]({{ ch.rollPlot }})
 
 {% endif %}
 {% if ch.qcPlotLoc %}
