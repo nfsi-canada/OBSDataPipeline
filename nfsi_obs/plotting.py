@@ -7,11 +7,13 @@ import os
 import re
 from scipy import signal
 import timeit
+import traceback
 
-from .waveform import WaveformPlotting
-from .metadata import get_channel_type, update_metadata
 from .extenders import cut_trace
+from .helpers import setup_freq_bins, psd_period_binning_multi
+from .metadata import get_channel_type, update_metadata
 from .parallel import calc_psds_thread_pool
+from .waveform import WaveformPlotting
 
 
 QARTOD_COLOURS = {
@@ -234,6 +236,64 @@ def qartod_plot(trace, outdir, check='gross_range_check', use_existing_plots=Fal
     return qc_plot
 
 
+def plot_spectrogram(psds, freqs, times, traceID, sampling_rate, spec_win, overlap, plot_start, plot_end, plot_file=None, outdir=None, cmap=None, slim=[None, None]):
+    """
+    Plot spectrogram of seismic data from pre-calculated PSDs
+
+    :param psds: array of PSD curves, as calculated by calc_psds()
+    :param freqs: array of frequencies, as calculated by calc_psds()
+    :param times: array of times, as calculated by calc_psds()
+    :param traceID: trace identifier (preferably valid SEED code)
+    :param sampling_rate: sampling rate in Hz
+    :param spec_win: spectrogram window in seconds
+    :param overlap: window overlap (0-1)
+    :param plot_start: plot start time, obspy.UTCDateTime
+    :param plot_end: plot end time, obspy.UTCDateTime
+    :param plot_file: path to output PNG file
+    :param outdir: path to output directory, only used if plot_file is None
+    :param cmap: Matplotlib colormap for spectrogram plot
+    :param slim: spectrogram amplitude limits for color scale, normally in dB
+
+    :return: path to plot PNG file (same as input plot_file if specified)
+    """
+    # Spectrogram plot from PSDs
+    if plot_file is None:
+        if outdir is not None:
+            plot_file = os.path.join(outdir, 'spec_{0}.png'.format(traceID))
+        else:
+            plot_file = 'spec_{0}.png'.format(traceID)
+
+    if cmap is None:
+        cmap = 'viridis'
+    npts = int(spec_win * sampling_rate)
+    nover = int(overlap * npts)
+    # TODO: Add minor ticks every day (if time span long enough)?
+    tm_x_ticks, tm_x_ticklabels = date_ticks(plot_start, plot_end)
+
+    spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
+    spec_psds = 10. * np.log10(np.transpose(psds))
+    spec_psds = np.flipud(spec_psds)
+
+    pad_xextent = (npts - nover) / sampling_rate / 2
+    xextent = np.min(times) - pad_xextent, np.max(times) + pad_xextent
+    xmin, xmax = xextent
+    extent = xmin, xmax, freqs[0], freqs[-1]
+
+    im = sax.imshow(spec_psds, cmap=cmap, extent=extent, vmin=slim[0], vmax=slim[1], origin='upper')
+    sax.axis('auto')
+    sax._sci(im)
+    sax.set_yscale('log')
+    sax.set_ylim(ymin=8e-3, ymax=sampling_rate / 2)
+    sax.set_ylabel('Frequency (Hz)')
+    # Set appropriate x-ticks for time span (also changes x limits)
+    sax.set_xticks(tm_x_ticks, tm_x_ticklabels, horizontalalignment='right')
+    sax.tick_params(axis='x', rotation=40)
+    plt.tight_layout()
+    spec_fig.savefig(plot_file)
+
+    return plot_file
+
+
 def spectrogram(trace, outdir, spec_win, overlap, sub_overlap=0.75, cmap=None, slim=[None, None], use_existing_plots=False):
     """
     Plot spectrogram of seismic data (as obspy.core.trace.Trace object)
@@ -251,42 +311,24 @@ def spectrogram(trace, outdir, spec_win, overlap, sub_overlap=0.75, cmap=None, s
         seismometer = True
 
     # Calculate all PSDs
-    apsds, vpsds, freqs, times = calc_psds(trace, spec_win, overlap, sub_overlap, calc_acc=seismometer)
+    apsds, vpsds, freqs, times, bin_v, bin_a = calc_psds(trace, spec_win, overlap, sub_overlap, calc_acc=seismometer)
 
     # Spectrogram plot from PSDs
     spectrogram_plot = os.path.join(outdir, 'spec_{0}.png'.format(trace.id))
-    # TODO: Set appropriate x-ticks for time span
     if not (use_existing_plots and os.path.isfile(spectrogram_plot)):
-        if cmap is None:
-            cmap = 'viridis'
-        npts = int(spec_win * trace.stats.sampling_rate)
-        nover = int(overlap * npts)
-
-        spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
         if seismometer:
-            spec_psds = 10. * np.log10(np.transpose(apsds))
+            spectrogram_plot = plot_spectrogram(apsds, freqs[0], times, trace.id, trace.stats.sampling_rate, spec_win,
+                                                overlap, trace.stats.start_time, trace.stats.end_time,
+                                                plot_file=spectrogram_plot, cmap=cmap, slim=slim)
         else:
-            spec_psds = 10. * np.log10(np.transpose(vpsds))
-        spec_psds = np.flipud(spec_psds)
-
-        pad_xextent = (npts - nover) / trace.stats.sampling_rate / 2
-        xextent = np.min(times) - pad_xextent, np.max(times) + pad_xextent
-        xmin, xmax = xextent
-        extent = xmin, xmax, freqs[0][0], freqs[0][-1]
-
-        im = sax.imshow(spec_psds, cmap=cmap, extent=extent, vmin=slim[0], vmax=slim[1], origin='upper')
-        sax.axis('auto')
-        sax._sci(im)
-        sax.set_yscale('log')
-        sax.set_ylim(ymin=8e-3, ymax=trace.stats.sampling_rate / 2)
-        sax.set_ylabel('Frequency (Hz)')
-        plt.tight_layout()
-        spec_fig.savefig(spectrogram_plot)
+            spectrogram_plot = plot_spectrogram(vpsds, freqs[0], times, trace.id, trace.stats.sampling_rate, spec_win,
+                                                overlap, trace.stats.start_time, trace.stats.end_time,
+                                                plot_file=spectrogram_plot, cmap=cmap, slim=slim)
 
     return spectrogram_plot
 
 
-def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False, calc_acc=False, seg_len=pow(2, 17)):
+def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False, calc_acc=False, seg_len=pow(2, 17), binned=False, f_bins=None, **kwargs):
     """
     Calculate PSDs of seismic data (as obspy.core.trace.Trace object)
 
@@ -299,6 +341,12 @@ def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False
     :param bool buffered: whether the input data is being processed as part of a buffer or not
     :param calc_acc: if True, assume input data is velocity (seismometer) and convert to acceleration
     :param seg_len: length of PSD segment for average periodogram method (see matplotlib.mlab.psd) in data points
+    :param binned: if True, include frequency-binned/smoothed PSD in output
+    :param f_bins: (optional) frequency bin information, as returned by .helpers.setup_freq_bins
+
+    Other optional kwargs used to generate f_bins (if not specified):
+    - smoothing_width_octaves
+    - step_octaves
 
     :returns: Calculated PSD curves in acceleration (if seismometer) and data units, corresponding frequencies, start of next window (if buffered is True)
     """
@@ -328,30 +376,150 @@ def calc_psds(trace, win_len, overlap, sub_overlap, endtime=None, buffered=False
     if hit_end:
         next_win_start = next_win_start - win_len * (1 - overlap)
 
+    acc_psds, binned_asis, binned_acc = [], [], []
+    if binned:
+        # default values for frequency binning
+        smoothing_width = kwargs.pop('smoothing_width_octaves', 0.5)
+        step_octaves = kwargs.pop('step_octaves', 0.125)
+        if f_bins is None:
+            f_bins = setup_freq_bins(frequencies=freqs[0], smoothing_width_octaves=smoothing_width, step_octaves=step_octaves)
+        binned_asis = psd_period_binning_multi([p[1:] for p in vel_psds], freqs[0][1:], f_bins)
     # Convert PSDs to acceleration (if necessary)
-    acc_psds = []
     if calc_acc:
         for f, p in zip(freqs, vel_psds):
             apsd = p * (2 * np.pi * f) * (2 * np.pi * f)
             acc_psds.append(apsd)
+        if binned:
+            binned_acc = psd_period_binning_multi([p[1:] for p in acc_psds], freqs[0][1:], f_bins)
 
     if buffered:
-        return acc_psds, vel_psds, freqs, times, next_win_start
+        return acc_psds, vel_psds, freqs, times, binned_asis, binned_acc, next_win_start
     else:
-        return acc_psds, vel_psds, freqs, times
+        return acc_psds, vel_psds, freqs, times, binned_asis, binned_acc
 
 
-def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, use_existing_plots=False):
+def calculate_psd_histogram(psds, freqs, db_bins=(-200,-50,1.), f_bins=None):
+    """
+    Calculate 2D histogram stack of PSD curves. Input PSDs should already be binned/smoothed along frequency axis.
+
+    :param psds: PSD curves, binned/smoothed according to f_bins
+    :param freqs: 1D list-like, frequency values for each PSD curve (including DC term freqs[0]=0); used to generate f_bins if not provided
+    :param db_bins: (optional) min/max/step for dB amplitude bins; default (-200, -50, 1)
+    :param f_bins: (optional) frequency bin information, as returned by .helpers.setup_freq_bins
+
+    :returns: 2D histogram stack, frequency bin edges, dB amplitude bin edges
+    """
+    # DB bins
+    num_db_bins = int((db_bins[1] - db_bins[0]) / db_bins[2])
+    db_bin_edges = np.linspace(db_bins[0], db_bins[1], num_db_bins + 1, endpoint=True)
+
+    # Frequency bins
+    if f_bins is None:
+        f_bins = setup_freq_bins(frequencies=freqs, smoothing_width_octaves=0.5)
+    num_f_bins = len(f_bins[2, :])
+    f_bin_edges = np.concatenate([f_bins[1, 0:1], f_bins[3, :]])
+
+    # Initial setup of 2D histogram
+    hist_stack = np.zeros((num_f_bins, num_db_bins), dtype=np.uint64)
+
+    # Concatenate all spectra, get index of amplitude bin each value belongs to
+    inds = np.hstack(psds)
+    # Need -1 because searchsorted returns the insertion index in the array of bin edges, which is the index of the corresponding bin plus 1
+    inds = db_bin_edges.searchsorted(inds, side='left') - 1
+    # Values to the left of the first bin edge need to be moved back into the binning
+    inds[inds == -1] = 0
+    # Same for values right of the last bin edge
+    inds[inds == num_db_bins] -= 1
+    # Reshape to individual spectra
+    inds = inds.reshape((len(psds), num_f_bins)).T
+    for i, inds_ in enumerate(inds):
+        # Count how often each amplitude bin has been hit for this period bin and set 2D histogram accordingly
+        hist_stack[i, :] = np.bincount(inds_, minlength=num_db_bins)
+
+    return hist_stack, f_bin_edges, db_bin_edges
+
+def plot_psds(psds, freqs, outfile=None, outdir=None, trace_id=None, density=True, cmap='magma_r', noise_models=True, min_f=1e-3, db_lims=[-200., -50.], f_bins=None):
     """
     Plot PSDs of seismic data (as obspy.core.trace.Trace object). If the input trace is from a seismometer (channel code
     "H"), the returned plot will be in acceleration. Otherwise, the plot will be in sensor units (e.g. pressure).
+    Defaults to plotting density of curves (probabilistic PSD).
+
+    :param psds: 2D array-like, all PSD curves (as returned by calc_psds); if density=True, PSDs should already be binned/smoothed along the frequency axis according to f_bins
+    :param freqs: 2D array-like (same shape as psds) of frequency values
+    :param outfile: path to output image file
+    :param outdir: path to output directory for image file, only used if outfile not specified
+    :param trace_id: trace identifier, preferably SEED code, only used in output file name if outfile not specified
+    :param density: if True, plot as probabilistic PSD (heatmap density of curves); True by default. Assumes all PSDs share the same frequency values (only freqs[0] used).
+    :param cmap: matplotlib colormap name; defaults to 'magma_r'.
+    :param noise_models: include NLNM and NHNM noise model curves in plot; True by default
+    :param min_f: minimum frequency for plotting (X-axis)
+    :param db_lims: min/max value for dB binning; default [-200, -50]
+    :param f_bins: frequency bin information, as generated by .helpers.setup_freq_bins
+
+    :return: path to plot PNG file
+    """
+    # Output file name (if not provided)
+    if outfile is None:
+        if outdir is None:
+            outfile = 'psd_{}.png'.format(trace_id)
+        else:
+            outfile = os.path.join(outdir, 'psd_{}.png'.format(trace_id))
+
+    # Check value of db_lims
+    if db_lims[0] is None:
+        db_lims[0] = -200
+    if db_lims[1] is None:
+        db_lims[1] = -50
+
+    # Plot PSDs
+    psd_fig, ax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
+    if noise_models:
+        ax.plot(NLNM[0], NLNM[1], c='k', lw=0.5, marker=None)
+        ax.plot(NHNM[0], NHNM[1], c='k', lw=0.5, marker=None)
+
+    if density:
+        psd_hist, f_edges, db_edges = calculate_psd_histogram(psds, freqs[0], [*db_lims, 1.], f_bins=f_bins)
+        # Convert to percentage and mask zeros
+        data = psd_hist * 100.0 / len(psds)
+        data = np.ma.masked_where(data == 0, data)
+        print('Maximum percentage in any cell: {}'.format(np.max(data)))
+        # Plot histogram as percentage of all possible curves within bin
+        psd_mg = np.meshgrid(f_edges, db_edges)
+        ppsd = ax.pcolormesh(psd_mg[0], psd_mg[1], data.T, cmap=cmap, zorder=-1)
+        ppsd.set_clim(0, 30)
+    else:
+        for f, a in zip(freqs, psds):
+            ax.plot(f, 10 * np.log10(a), c='0.8', lw=0.5, marker=None)
+
+    ax.set_xscale('log')
+    if density:
+        plt.grid(True, ls=':', color='0.7')
+    else:
+        plt.grid(True, ls=':')
+    ax.set_xlabel('Frequency (Hz)')
+    ax.set_ylabel('Power Spectral Density (dB)')
+    ax.set_xlim(xmin=min_f)
+    plt.tight_layout()
+    psd_fig.savefig(outfile)
+
+    return outfile
+
+
+def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, density=False, use_existing_plots=False):
+    """
+    Plot PSDs of seismic data (as obspy.core.trace.Trace object). If the input trace is from a seismometer (channel code
+    "H"), the returned plot will be in acceleration. Otherwise, the plot will be in sensor units (e.g. pressure).
+
+    Currently only used in non-buffered analysis of seismometer/hydrophone channels in QC script. This case should only
+    occur when analyzing short time periods of data (3 or fewer data files per channel).
 
     :param trace: obspy.core.trace.Trace object
     :param outdir: path to output directory
     :param win_len: window length for each PSD curve
     :param overlap: fractional window overlap (0-1)
     :param sub_overlap: fractional overlap for sub-windows used in PSD calculation (Welch's average periodogram method)
-    :param use_existing_plots: check if plots exist and do not re-create if present, False by default
+    :param density: if True, plot as probabilistic PSD (heatmap density of curves); False by default
+    :param use_existing_plots: check if plots exist and do not re-create if present; False by default
 
     :return: path to plot PNG file
     """
@@ -368,32 +536,18 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, use_existing_plo
             return psd_asis
 
     # Calculate all PSDs
-    apsds, vpsds, freqs, times = calc_psds(trace, win_len, overlap, sub_overlap, calc_acc=seismometer)
+    apsds, vpsds, freqs, times, bin_v, bin_a = calc_psds(trace, win_len, overlap, sub_overlap, calc_acc=seismometer, binned=density)
 
+    # TODO: Update for changes to PPSD density plot routines (WILL NOT WORK RIGHT NOW!)
     # Plot PSDs in sensor units (velocity or pressure)
     if not (use_existing_plots and os.path.isfile(psd_asis)):
-        psd_v_fig, vax = plt.subplots(1, 1, num=1, clear=True)
-        for f, v in zip(freqs, vpsds):
-            vax.plot(f, 10 * np.log10(v), c='0.7', lw=0.5, marker=None)
-        vax.set_xscale('log')
-        vax.set_xlabel('Frequency (Hz)')
-        vax.set_ylabel('Power Spectral Density (dB)')
-        psd_v_fig.savefig(psd_asis)
+        psd_asis = plot_psds(vpsds, freqs, outfile=psd_asis, density=density, noise_models=False, db_lims=[-220, -40])
 
     # Plot acceleration PSDs (if channel is a seismometer)
     if seismometer:
         if not (use_existing_plots and os.path.isfile(psd_a_plot)):
-            psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True)
-            aax.plot(NLNM[0], NLNM[1], c='k', lw=0.5, marker=None)
-            aax.plot(NHNM[0], NHNM[1], c='k', lw=0.5, marker=None)
-            for f, a in zip(freqs, apsds):
-                aax.plot(f, 10 * np.log10(a), c='0.8', lw=0.5, marker=None)
-            aax.set_xscale('log')
-            plt.grid(True, ls=':')
-            aax.set_xlabel('Frequency (Hz)')
-            aax.set_ylabel('Power Spectral Density (dB)')
-            aax.set_xlim(xmin=1e-3)
-            psd_a_fig.savefig(psd_a_plot)
+            psd_a_plot = plot_psds(apsds, freqs, outfile=psd_a_plot, density=density, noise_models=True, min_f=1e-3,
+                                 db_lims=[-180, -50])
 
         return psd_a_plot
 
@@ -418,6 +572,7 @@ def next_plot_window(prev_end, plot_length=None):
 
 
 def plot_filenames(outdir, ch_id, plot_start, plot_end, asis=False):
+    """ Generate full paths to output image files from PSD/spectrogram calculations """
     spec_psd_plot = os.path.join(outdir, 'spec_psd_{0}_{1}_to_{2}.png'.format(ch_id, plot_start.strftime('%Y-%m-%d'),
                                                                               (plot_end - 1).strftime('%Y-%m-%d')))
     spectrogram_plot = os.path.join(outdir, 'spec_{0}_{1}_to_{2}.png'.format(ch_id, plot_start.strftime('%Y-%m-%d'),
@@ -462,9 +617,12 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     :param spec_cmap: colormap to use for spectrogram plot
     :param use_existing_plots: check if plots exist and do not re-create if present, False by default
     :param parallel: run PSD calculation with multiprocessing parallelization
+    :param max_processes: maximum number of processes to spawn for parallel processing
 
     :return: dictionary of channel information for auto-report generation
     """
+    # TODO: Error on last file if after end date/time (see AQU-C760 drifter (2S.L129) data)
+
     func_start = timeit.default_timer()
     timing = {
         'setup': 0.,
@@ -528,11 +686,14 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         'psd_array': None,
         'vpsd_array': None,
         'psd_freqs': None,
-        'psd_times': None
+        'psd_times': None,
+        'binned_asis': None,
+        'binned_acc': None
     }
     timing['setup'] += timeit.default_timer() - func_start
 
     proc_complete, all_data_read = False, False
+    f_bins = None
     while not proc_complete:
         try:
             loop_start = timeit.default_timer()
@@ -679,6 +840,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
             report_info['seedID'] = this_channel.id
             report_info['channelName'] = this_channel.id
+            report_info['samplingRate'] = this_channel.stats.sampling_rate
             for metaKey, reportKey in zip(['description', 'azimuth', 'dip'], ['channelName', 'azimuth', 'dip']):
                 if hasattr(this_channel.meta, metaKey):
                     report_info[reportKey] = this_channel.meta[metaKey]
@@ -776,13 +938,13 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             psd_start = first_psd_start
             new_data = cut_trace(this_channel, psd_start, None, nearest_sample=True, pad=True)
             if parallel:
-                apsds, vpsds, freqs, times, next_psd_start = calc_psds_thread_pool(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), max_processes=max_processes)
+                apsds, vpsds, freqs, times, binned_vel, binned_acc, next_psd_start = calc_psds_thread_pool(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), binned=True, max_processes=max_processes, f_bins=f_bins)
             else:
-                apsds, vpsds, freqs, times, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone))
+                apsds, vpsds, freqs, times, binned_vel, binned_acc, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), binned=True, f_bins=f_bins)
             psd_calc_time = timeit.default_timer()
             timing['psd_calc'] += psd_calc_time - plot_admin
 
-            for running, current in zip(['psd_array', 'vpsd_array', 'psd_freqs'], [apsds, vpsds, freqs]):
+            for running, current in zip(['psd_array', 'vpsd_array', 'psd_freqs', 'binned_asis', 'binned_acc'], [apsds, vpsds, freqs, binned_vel, binned_acc]):
                 if psd_temp_results[running] is None:
                     psd_temp_results[running] = current
                 else:
@@ -796,13 +958,19 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
             spec_calc_time = timeit.default_timer()
             timing['spec_calc'] += spec_calc_time - psd_arr_build
+
+            # Calculate frequency bin information if not done yet (reduce duplicated effort in future loop iterations)
+            if f_bins is None:
+                f_bins = setup_freq_bins(frequencies=freqs[0], smoothing_width_octaves=0.5)
         except Exception as e:
             # TODO: Separate error handling for data read and data analysis
             msg = 'nfsi_obs.plotting.buffer_seismic_data: Error processing raw data files, latest file: {0}'.format(files[i-1])
             g_log.error(str(e))
             g_log.error(msg)
+            print(traceback.print_exc())
 
         if make_plot:
+            g_log.debug('Generating plots...')
             try:
                 start_plotting = timeit.default_timer()
                 # TODO: Decide about trace plot, maybe downsample to 5Hz before plotting?
@@ -819,32 +987,16 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 else:
                     psd_asis = plot_files[3]
                 if not (use_existing_plots and os.path.isfile(psd_asis)):
-                    psd_v_fig, vax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
-                    for f, v in zip(psd_temp_results['psd_freqs'], psd_temp_results['vpsd_array']):
-                        vax.plot(f, 10. * np.log10(v), c='0.8', lw=0.5, marker=None)
-                    vax.set_xscale('log')
-                    plt.grid(True, ls=':')
-                    vax.set_xlabel('Frequency (Hz)')
-                    vax.set_ylabel('Power Spectral Density (dB)')
-                    vax.set_xlim(xmin=1e-3)
-                    plt.tight_layout()
-                    psd_v_fig.savefig(psd_asis)
+                    g_log.debug('Plotting PSDs in sensor units...')
+                    psd_asis = plot_psds(psd_temp_results['binned_asis'], psd_temp_results['psd_freqs'],
+                                         outfile=psd_asis, density=True, noise_models=False, db_lims=[-220,-40], f_bins=f_bins)
 
                 if not hydrophone:
                     psd_v_plots.append(psd_asis)
                     if not (use_existing_plots and os.path.isfile(plot_files[0])):
-                        psd_a_fig, aax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
-                        aax.plot(NLNM[0], NLNM[1], c='k', lw=0.5, marker=None)
-                        aax.plot(NHNM[0], NHNM[1], c='k', lw=0.5, marker=None)
-                        for f, a in zip(psd_temp_results['psd_freqs'], psd_temp_results['psd_array']):
-                            aax.plot(f, 10. * np.log10(a), c='0.8', lw=0.5, marker=None)
-                        aax.set_xscale('log')
-                        plt.grid(True, ls=':')
-                        aax.set_xlabel('Frequency (Hz)')
-                        aax.set_ylabel('Power Spectral Density (dB)')
-                        aax.set_xlim(xmin=1e-3)
-                        plt.tight_layout()
-                        psd_a_fig.savefig(plot_files[0])
+                        g_log.debug('Plotting PSDs in acceleration...')
+                        psd_a_plot = plot_psds(psd_temp_results['binned_acc'], psd_temp_results['psd_freqs'],
+                                             outfile=plot_files[0], density=True, noise_models=True, db_lims=[-180,-50], f_bins=f_bins)
 
                 done_psds = timeit.default_timer()
                 timing['psd_plot'] += done_psds - get_filenames
@@ -856,39 +1008,19 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 report_add = timeit.default_timer()
                 timing['report_info'] += report_add - done_psds
 
-                # X-axis ticks for spectrogram plots (actual date strings rather than timestamps)
-                # TODO: Add minor ticks every day?
-                tm_x_ticks, tm_x_ticklabels = date_ticks(plot_start, plot_end)
-
                 # Spectrogram plot from PSDs
                 if not (use_existing_plots and os.path.isfile(plot_files[1])):
-                    sfrq = psd_temp_results['psd_freqs'][0]
-                    npts = int(spec_win * this_channel.stats.sampling_rate)
-                    nover = int(overlap * npts)
-
-                    spec_fig, sax = plt.subplots(1, 1, num=1, clear=True, figsize=(8, 4.8))
+                    g_log.debug('Plotting spectrogram...')
                     if hydrophone:
-                        spec_psds = 10. * np.log10(np.transpose(psd_temp_results['vpsd_array']))
+                        spec_plot = plot_spectrogram(psd_temp_results['vpsd_array'], psd_temp_results['psd_freqs'][0],
+                                                     psd_temp_results['psd_times'], this_channel.id, this_channel.stats.sampling_rate,
+                                                     spec_win, overlap, plot_start, plot_end, plot_file=plot_files[1],
+                                                     cmap=spec_cmap, slim=spec_lim)
                     else:
-                        spec_psds = 10. * np.log10(np.transpose(psd_temp_results['psd_array']))
-                    spec_psds = np.flipud(spec_psds)
-
-                    pad_xextent = (npts - nover) / this_channel.stats.sampling_rate / 2
-                    xextent = np.min(psd_temp_results['psd_times']) - pad_xextent, np.max(psd_temp_results['psd_times']) + pad_xextent
-                    xmin, xmax = xextent
-                    extent = xmin, xmax, sfrq[0], sfrq[-1]
-
-                    im = sax.imshow(spec_psds, cmap=spec_cmap, extent=extent, vmin=spec_lim[0], vmax=spec_lim[1], origin='upper')
-                    sax.axis('auto')
-                    sax._sci(im)
-                    sax.set_yscale('log')
-                    sax.set_ylim(ymin=8e-3, ymax=this_channel.stats.sampling_rate/2)
-                    sax.set_ylabel('Frequency (Hz)')
-                    # Set appropriate x-ticks for time span (also changes x-lim)
-                    sax.set_xticks(tm_x_ticks, tm_x_ticklabels, horizontalalignment='right')
-                    sax.tick_params(axis='x', rotation=40)
-                    plt.tight_layout()
-                    spec_fig.savefig(plot_files[1])
+                        spec_plot = plot_spectrogram(psd_temp_results['psd_array'], psd_temp_results['psd_freqs'][0],
+                                                     psd_temp_results['psd_times'], this_channel.id, this_channel.stats.sampling_rate,
+                                                     spec_win, overlap, plot_start, plot_end, plot_file=plot_files[1],
+                                                     cmap=spec_cmap, slim=spec_lim)
 
                 done_spec_psd = timeit.default_timer()
                 timing['spec_plot'] += done_spec_psd - report_add
@@ -905,15 +1037,12 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 msg = 'nfsi_obs.plotting.buffer_seismic_data: Error creating plots, latest file: {0}'.format(files[i - 1])
                 g_log.error(str(e))
                 g_log.error(msg)
+                print(traceback.print_exc())
             finally:
                 final_start = timeit.default_timer()
                 # Reset temp arrays for PSDs
-                psd_temp_results = {
-                    'psd_array': None,
-                    'vpsd_array': None,
-                    'psd_freqs': None,
-                    'psd_times': None
-                }
+                for key in psd_temp_results:
+                    psd_temp_results[key] = None
 
                 # Reset temp arrays for spectrogram
                 reset_arr = timeit.default_timer()
