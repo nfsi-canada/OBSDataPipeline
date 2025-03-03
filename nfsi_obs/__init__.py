@@ -151,19 +151,19 @@ def ewma_fb(column, span):
     return fb_ewma
 
 
-def remove_outliers(input, fbewma, delta):
+def remove_outliers(raw_data, average, delta):
     """
-    Remove data points from `input` that differ from `fbewma` by greater than +/- `delta`
+    Remove data points from `raw_data` that differ from `average` by greater than +/- `delta`
 
-    :param input: array-like
-    :param fbewma: array-like
+    :param raw_data: array-like
+    :param average: array-like
     :param delta: np.float
     :return: np.array
     """
-    np_input = np.array(input)
-    np_fbewma = np.array(fbewma)
-    cond_delta = (np.abs(np_input - np_fbewma) > delta)
-    no_outliers = np.where(cond_delta, np.nan, np_input)
+    np_raw = np.array(raw_data)
+    np_average = np.array(average)
+    cond_delta = (np.abs(np_raw - np_average) > delta)
+    no_outliers = np.where(cond_delta, np.nan, np_raw)
     return no_outliers
 
 def remove_write_spikes(trace, range_clips=None, delta=1, span=None, qcplot=False, savedf=False, dfpath=None):

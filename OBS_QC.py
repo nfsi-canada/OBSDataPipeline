@@ -272,7 +272,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 channel_type = trace_info['channelType']
 
                 # TODO: Move string formatting into ReportGenerator class
-                # TODO: Start/end times of raw data are different from time on seafloor (TEST SOLUTION)
                 ch_start = max(files_start, data_start)
                 ch_end = min(files_end, data_end)
                 all_channels.append({
@@ -460,7 +459,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                             trace_info['despikedPlot'] = nf.plotting.trace_plot(despiked, output_dir, dmin, dmax, qc_config, use_existing_plots)
 
-                            # TODO: Create rolling window plot and include in report
                             # Calculate rolling average of despiked data
                             trace_length = tr.meta.endtime - tr.meta.starttime
                             units = nf.metadata.get_units(tr)

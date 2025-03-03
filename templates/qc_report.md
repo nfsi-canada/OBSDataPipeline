@@ -71,7 +71,7 @@ Tilt from vertical at recovery: {{ tiltAtRecovery }} degrees
 
 # General QC
 
-This report analyzes data recorded while the instrument is physically at the seabed. Touchdown and release times are determined by manual inspection of the external pressure channel where possible. Throughout this report, power spectral density curves are calculated using {{ psdWindowLength }} Hann windows, with {{ psdOverlapPercent }}% overlap.
+This report analyzes data recorded while the instrument is physically at the seabed. Touchdown and release times are determined by manual inspection of the external pressure channel where possible. Throughout this report, power spectral density curves are calculated using {{ psdWindowLength }} Hann windows with {{ psdOverlapPercent }}% overlap, following an average periodogram method similar to that described by McNamara & Buland (2004).
 
 {% if channelList %}
 Recorded data channels (time at seafloor):

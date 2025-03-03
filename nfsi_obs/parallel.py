@@ -318,7 +318,7 @@ def calc_psds_thread_pool(trace, win_len, overlap, sub_overlap, endtime=None, bu
     :param seg_len: length of PSD segment for average periodogram method (see matplotlib.mlab.psd) in data points
     :param max_processes: maximum number of parallel processes to use for PSD calculation
 
-    :returns: Calculated PSD curves in acceleration (if seismometer) and data units, corresponding frequencies and timestamps, frequency-binned/smoothed versions of PSDs, start of next window (if buffered is True)
+    :returns: Calculated PSD curves in acceleration (if seismometer) and data units, corresponding frequencies and timestamps, frequency-binned/smoothed versions of PSDs (if binned is True), start of next window (if buffered is True)
     """
     # Calculate PSDs in velocity
     psd_kwargs = kwargs.copy()
