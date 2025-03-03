@@ -246,8 +246,6 @@ if __name__ == '__main__':
                              "paths.")
     parser.add_argument('--output_dir', dest="out_dir", help="Directory where output files are to be stored.")
     parser.add_argument('--log_dir', dest="log_dir", help="Directory to store log files.")
-    parser.add_argument('--network', dest="network_id", default='XX',
-                        help="Network identifier assigned by FDSN for this project. Default 'XX' for test data.")
     parser.add_argument('--relative_paths', dest="relative_paths", action="store_true",
                         help="Specify all file paths relative to in_dir.")
     parser.add_argument('--xml', dest="aqu_xml",
@@ -281,8 +279,15 @@ if __name__ == '__main__':
         if args.in_dir:
             input_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.in_dir)))
 
+        if args.relative_paths:
+            if input_dir is None:
+                raise RuntimeError('Missing command-line argument: Cannot use relative paths if in_dir not specified.')
+
         if args.aqu_xml:
-            xml_files = [os.path.abspath(os.path.expanduser(os.path.expandvars(args.aqu_xml)))]
+            if args.relative_paths:
+                xml_files = [os.path.abspath(os.path.expanduser(os.path.expandvars(os.path.join(input_dir, args.aqu_xml))))]
+            else:
+                xml_files = [os.path.abspath(os.path.expanduser(os.path.expandvars(args.aqu_xml)))]
         elif input_dir is not None:
             if args.is_dataless:
                 xml_files = glob(os.path.join(input_dir, '**', '*.dataless'), recursive=True)
@@ -290,10 +295,6 @@ if __name__ == '__main__':
                 xml_files = glob(os.path.join(input_dir, '**', '*.xml'), recursive=True)
         else:
             raise SyntaxError('No input file or directory specified!')
-
-        if args.relative_paths:
-            if input_dir is None:
-                raise RuntimeError('Missing command-line argument: Cannot use relative paths if in_dir not specified.')
 
         out_dir = None
         if args.out_dir:
