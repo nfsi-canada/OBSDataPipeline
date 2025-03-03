@@ -72,10 +72,19 @@ def parse_obs_log(log_file, delimiter=',', network='XX', names_in_file=False):
             df.dropna(subset=['Station', 'OBS Name'], inplace=True)     # Remove blank lines and stations not launched if present
             df.set_index('Station', drop=False, inplace=True)
 
-        loc_info = locations[['Station', 'OBS Name', 'OBS ID', 'Launch Date/Time (UTC)', 'Date/Time on Seafloor (UTC)',
-                              'Date/Time Released (UTC)', 'Recovery Date/Time (UTC)']].copy()
-        dep_info = deployment[['Battery SOC at Deployment (%)', 'Deployment Comments']].copy()
-        rec_info = recovery[['Deployed Latitude', 'Deployed Longitude', 'Water Depth (m)', 'Clock Offset on Deck (ms)',
+        # TODO: Return subset of columns that actually exist
+        if 'Survey Calculation Method' in locations.columns:
+            loc_info = locations[['Station', 'OBS Name', 'OBS ID', 'Launch Date/Time (UTC)',
+                                  'Date/Time on Seafloor (UTC)', 'Date/Time Released (UTC)', 'Recovery Date/Time (UTC)',
+                                  'Survey Calculation Method']].copy()
+        else:
+            loc_info = locations[['Station', 'OBS Name', 'OBS ID', 'Launch Date/Time (UTC)',
+                                  'Date/Time on Seafloor (UTC)', 'Date/Time Released (UTC)',
+                                  'Recovery Date/Time (UTC)']].copy()
+        dep_info = deployment[['Recording Start Date/Time (UTC)', 'Battery SOC at Deployment (%)',
+                               'Deployment Comments']].copy()
+        rec_info = recovery[['Deployed Latitude', 'Deployed Longitude', 'Water Depth (m)',
+                             'Date/Time Recording Stopped (UTC)', 'Clock Offset on Deck (ms)',
                              'Battery SOC at Recovery (%)', 'Recovery Comments']].copy()
         dm_info = pd.concat([loc_info, dep_info, rec_info], axis=1)
 

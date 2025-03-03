@@ -4,6 +4,23 @@ from jinja2 import Environment, select_autoescape, FileSystemLoader
 CURRENT_PATH = os.path.abspath(__file__)
 
 
+def time_period_string(deltaT, factor=1):
+    """
+    Generate string representation of the length of a time period (given in seconds). The breakpoints between units of
+    time (days, hours, minutes, seconds) are controlled by the constant `factor`. For example, a factor of 2 will cause
+    periods of less than 2 minutes to be represented as a number of seconds, and periods between 2 minutes and 2 hours
+    to be represented as a number of minutes.
+    """
+    if deltaT > factor * 24 * 60 * 60:
+        return '{:.1f}-day'.format(deltaT / 60 / 60 / 24)
+    elif deltaT > factor * 60 * 60:
+        return '{:.1f}-hour'.format(deltaT / 60 / 60)
+    elif deltaT > factor * 60:
+        return '{:.1f}-minute'.format(deltaT / 60)
+    else:
+        return '{:.1f}-second'.format(deltaT)
+
+
 class ReportGenerator:
     """
     Class to generate reports in Markdown and PDF formats for OBS data.
@@ -62,6 +79,8 @@ class ReportGenerator:
                     input_variables['lonString'] = '{0:.6f} E'.format(input_variables['longitude'])
             else:
                 input_variables['lonString'] = 'none'
+        if 'waterDepth' in input_variables:
+            input_variables['depthString'] = '{:.1f}'.format(input_variables['waterDepth'])
 
         if 'deployDate' not in input_variables:
             if 'deployed' in input_variables:
@@ -72,14 +91,12 @@ class ReportGenerator:
 
         if 'psdWindowLength' not in input_variables:
             if 'psdWindowSecs' in input_variables:
-                if input_variables['psdWindowSecs'] < 3*60:     # 3 minutes
-                    input_variables['psdWindowLength'] = '{0:d}-second'.format(input_variables['psdWindowSecs'])
-                elif input_variables['psdWindowSecs'] < 3*60*60:    # 3 hours
-                    input_variables['psdWindowLength'] = '{0}-minute'.format(input_variables['psdWindowSecs'] / 60)
-                elif input_variables['psdWindowSecs'] < 3*60*60*24:    # 3 days
-                    input_variables['psdWindowLength'] = '{0}-hour'.format(input_variables['psdWindowSecs'] / 60 / 60)
-                else:
-                    input_variables['psdWindowLength'] = '{0}-day'.format(input_variables['psdWindowSecs'] / 60 / 60 / 24)
+                input_variables['psdWindowLength'] = time_period_string(input_variables['psdWindowSecs'], factor=3)
+
+        if 'battery_stats_window' in input_variables:
+            input_variables['batteryStats']['window_str'] = time_period_string(input_variables['battery_stats_window'])
+        else:
+            input_variables['batteryStats']['window_str'] = '3-day'
 
         report_str = (self.env.render(
             **input_variables

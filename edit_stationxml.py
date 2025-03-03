@@ -17,7 +17,7 @@ import re
 import traceback
 
 from obspy.io.stationxml.core import validate_stationxml
-from obspy.core.inventory import Inventory, Network, Station, Channel
+from obspy.core.inventory import Inventory, Network, Station, Channel, Operator, Person, Equipment, PhoneNumber
 
 import nfsi_obs as nf
 from utilities import logger
@@ -35,7 +35,7 @@ def filter_inventory(inv, channel_list):
     return inv.copy()
 
 
-def map_and_filter_xml(sxml_file, channel_list=None, channel_map=None):
+def map_and_filter_xml(sxml_file, channel_list=None, channel_map=None, is_dataless=False):
     """
     Filter StationXML file to only channels included in list of channels, applying ID mapping specified in
     `channel_map`. If `channel_list` is not specified, filter to only channels which appear in `channel_map`. If no
@@ -44,13 +44,19 @@ def map_and_filter_xml(sxml_file, channel_list=None, channel_map=None):
     :param sxml_file: Path to StationXML file
     :param channel_list: List of channel IDs
     :param channel_map: pandas.DataFrame mapping existing channel IDs to corrected IDs
+    :param is_dataless: bool, set to True if `sxml_file` is a dataless SEED file
     :return: obspy.Inventory
     """
-    is_sxml = validate_stationxml(sxml_file)
-    if not is_sxml:
-        raise TypeError('Input file {} is not a valid StationXML file.'.format(sxml_file))
+    # Read input metadata file to obspy.Inventory object
+    if is_dataless:
+        input_inv = nf.metadata.read_dataless(sxml_file)
+    else:
+        is_sxml = validate_stationxml(sxml_file)
+        if not is_sxml:
+            raise TypeError('Input file {} is not a valid StationXML file.'.format(sxml_file))
 
-    input_inv = obspy.read_inventory(sxml_file)
+        input_inv = obspy.read_inventory(sxml_file)
+
     if channel_list is None and channel_map is None:
         # No filtering to be done, return inventory as-is
         return input_inv
@@ -136,13 +142,40 @@ def map_and_filter_xml(sxml_file, channel_list=None, channel_map=None):
     return filter_inventory(input_inv, channel_list)
 
 
-def update_station_xml(inv, obs_log=None, extra_info=None):
+def update_station_xml(inv, obs_log=None, extra_info=None, nfsi_fields=False, survey_method='Triangulation'):
     """
     Add/update info in obspy.Inventory to fit StationXML standard. Station/channel coordinates are taken from `obs_log`.
     Various other metadata fields are in the `extra_info` dictionary.
     """
+    if nfsi_fields:
+        # General information, NFSI-specific
+        inv.source = 'NFSI'
+        inv.module = 'OBSDataPipeline 0.4.0'
+        inv.module_uri = 'https://github.com/nfsi-canada/OBSDataPipeline'
+
     # Station/channel coordinates
     for n in inv.networks:
+        if nfsi_fields:
+            n.operators = [Operator('NFSI',
+                                  contacts=[
+                                      Person(agencies=['NFSI'],
+                                             emails=['nfsi@nfsi.ca'],
+                                             phones=[PhoneNumber(902, '494-6130', country_code=1)]),
+                                  ],
+                                  website='https://nfsi.ca')]
+
+        net_info = None
+        if 'network_{}'.format(n.code) in extra_info:
+            net_info = extra_info['network_{}'.format(n.code)]
+            if 'source_id' in net_info:
+                n.source_id = net_info['source_id']
+            if 'restricted_status' in net_info:
+                n.restricted_status = net_info['restricted_status']
+            if 'description' in net_info:
+                n.description = net_info['description']
+            if 'identifiers' in net_info:
+                n.identifiers = ['{0}:{1}'.format(idf['type'], idf['value']) for idf in net_info['identifiers']]
+
         for s in n.stations:
             base_meta = obs_log['basic'].loc[obs_log['basic']['Station'] == s.code]
             lat = base_meta['Deployed Latitude'].values[0]
@@ -150,56 +183,69 @@ def update_station_xml(inv, obs_log=None, extra_info=None):
             elev = -base_meta['Water Depth (m)'].values[0]
             start = obspy.UTCDateTime(pd.to_datetime(base_meta['Date/Time on Seafloor (UTC)'].values[0]))
             end = obspy.UTCDateTime(pd.to_datetime(base_meta['Date/Time Released (UTC)'].values[0]))
+            try:
+                survey_method = base_meta['Survey Calculation Method'].values[0]
+            except (KeyError, IndexError):
+                # Column not present, use default
+                pass
+
             s.latitude = lat
             s.longitude = lon
             s.elevation = elev
+            s.latitude.__setattr__('measurement_method', survey_method)
+            s.longitude.__setattr__('measurement_method', survey_method)
+            s.elevation.__setattr__('measurement_method', survey_method)
+            s.water_level = 0
+
+            sta_info = None
+            if net_info is not None:
+                if 'station_{}'.format(s.code) in net_info:
+                    sta_info = net_info['station_{}'.format(s.code)]
+                    if 'water_level' in sta_info:
+                        s.water_level = sta_info['water_level']
+
             for c in s.channels:
                 c.latitude = lat
                 c.longitude = lon
                 c.elevation = elev
+                c.latitude.__setattr__('measurement_method', survey_method)
+                c.longitude.__setattr__('measurement_method', survey_method)
+                c.elevation.__setattr__('measurement_method', survey_method)
                 c.start_date = start
                 c.end_date = end
 
-    # Other metadata from dictionary
-    """
-    for key in extra_info:
-        if re.match(r'network_[A-Z0-9]+', key):
-            continue
+                if nfsi_fields:
+                    if c.code == 'MDO':
+                        # External pressure sensor, have serial numbers for Keller sensors
+                        c.sensor = Equipment(description='Piezoresistive absolute pressure transducer',
+                                             manufacturer='KELLER', model='PA-10L', serial_number='FILL_FROM_DB')
+                    elif c.code == 'HDH':
+                        # Broadband hydrophone
+                        c.sensor = Equipment(description='Ultra low frequency broadband hydrophone',
+                                             manufacturer='High Tech, Inc.', model='HTI-04-PCA/ULF',
+                                             serial_number='FILL_FROM_DB')
+                    else:
+                        # Same sensor/equipment info as Station (Aquarius)
+                        c.sensor = None
 
-        inv[key] = extra_info[key]
-            # Inventory
-            ## source
-            ## module (obspy)
-            ## created date/time
-            # Network
-            ## startDate
-            ## endDate (if applicable)
-            ## restricted status
-            ## sourceID?
-            ## identifier (DOI)
-            ## description
-            ## operator (agency, contact > email, website)
-            # Station
-            ## site?
-            ## water level = 0 (generally)
-            # Channel
-            ## depth = 0
-            ## water level
-            ## sensor (if applicable -> Keller, hydrophone)
-    """
+                if sta_info is not None:
+                    if 'channel_{}'.format(c.code) in sta_info:
+                        ch_info = sta_info['channel_{}'.format(c.code)]
+                        if 'sensor' in ch_info:
+                            if 'serial_number' in ch_info['sensor']:
+                                c.sensor.serial_number = ch_info['sensor']['serial_number']
 
     return inv
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Pre-process OBS data and perform basic QC')
+    parser = argparse.ArgumentParser(description='Complete StationXML files using partial files created by Aquarius '
+                                                 'OBS and supplemental metadata files.')
     parser.add_argument('--input_dir', dest="in_dir",
                         help="Directory where input StationXML files are stored, and/or base directory for relative "
                              "paths.")
     parser.add_argument('--output_dir', dest="out_dir", help="Directory where output files are to be stored.")
     parser.add_argument('--log_dir', dest="log_dir", help="Directory to store log files.")
-    parser.add_argument('--network', dest="network_id", default='XX',
-                        help="Network identifier assigned by FDSN for this project. Default 'XX' for test data.")
     parser.add_argument('--relative_paths', dest="relative_paths", action="store_true",
                         help="Specify all file paths relative to in_dir.")
     parser.add_argument('--xml', dest="aqu_xml",
@@ -219,6 +265,10 @@ if __name__ == '__main__':
                              "specified, all channels will be output.")
     parser.add_argument('--other_meta', dest="other_metadata",
                         help="JSON file with various metadata to be added to StationXML files.")
+    parser.add_argument('--dataless', action='store_true', dest="is_dataless",
+                        help="Flag to set if input files are dataless SEED rather than StationXML (legacy option).")
+    parser.add_argument('--survey', dest="survey_method", default='Triangulation',
+                        help="Survey method used for determining seafloor locations. Default 'Triangulation'.")
 
     try:
         args = parser.parse_args()
@@ -229,16 +279,22 @@ if __name__ == '__main__':
         if args.in_dir:
             input_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.in_dir)))
 
-        if args.aqu_xml:
-            xml_files = [os.path.abspath(os.path.expanduser(os.path.expandvars(args.aqu_xml)))]
-        elif input_dir is not None:
-            xml_files = glob(os.path.join(input_dir, '**', '*.xml'), recursive=True)
-        else:
-            raise SyntaxError('No input file or directory specified!')
-
         if args.relative_paths:
             if input_dir is None:
                 raise RuntimeError('Missing command-line argument: Cannot use relative paths if in_dir not specified.')
+
+        if args.aqu_xml:
+            if args.relative_paths:
+                xml_files = [os.path.abspath(os.path.expanduser(os.path.expandvars(os.path.join(input_dir, args.aqu_xml))))]
+            else:
+                xml_files = [os.path.abspath(os.path.expanduser(os.path.expandvars(args.aqu_xml)))]
+        elif input_dir is not None:
+            if args.is_dataless:
+                xml_files = glob(os.path.join(input_dir, '**', '*.dataless'), recursive=True)
+            else:
+                xml_files = glob(os.path.join(input_dir, '**', '*.xml'), recursive=True)
+        else:
+            raise SyntaxError('No input file or directory specified!')
 
         out_dir = None
         if args.out_dir:
@@ -265,7 +321,10 @@ if __name__ == '__main__':
         g_log.info("\n\n=====================================================================")
         g_log.info("Starting job: {0}".format(str(args)))
 
-        g_log.info("Found {} XML files to edit".format(len(xml_files)))
+        if args.is_dataless:
+            g_log.info("Found {} dataless SEED files to edit".format(len(xml_files)))
+        else:
+            g_log.info("Found {} XML files to edit".format(len(xml_files)))
 
         # Channel list (if specified separately)
         channels = None
@@ -320,14 +379,13 @@ if __name__ == '__main__':
         for xf in xml_files:
             print(xf)
             # Fix channel identifiers and filter to channels of interest
-            good_channels = map_and_filter_xml(xf, channels, channel_map)
+            good_channels = map_and_filter_xml(xf, channels, channel_map, args.is_dataless)
             num_chan = int(np.sum([len(s.channels) for n in good_channels.networks for s in n.stations]))
             print('Filtered channels: {}'.format(num_chan))
             if num_chan < 1:
                 continue
 
-            # TODO: Correct other metadata in StationXML (coordinates, etc.)
-            complete_metadata = update_station_xml(good_channels, obs_log_info, extra_meta)
+            complete_metadata = update_station_xml(good_channels, obs_log_info, extra_meta, nfsi_fields=True, survey_method=args.survey_method)
 
             # Save output XML file
             if len(complete_metadata.networks) > 1:
@@ -355,6 +413,7 @@ if __name__ == '__main__':
             complete_metadata.write(out_path, format='STATIONXML', validate=True)
 
         g_log.info("Processing complete!")
+        # TODO: Combine individual stations into full-network StationXML file
         logger.close_logs()
     except Exception as e:
         print(traceback.print_exc())

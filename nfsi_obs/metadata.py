@@ -10,6 +10,8 @@ def convert_dataless_to_stationxml(dataless_file, base_meta, output_dir, channel
     """
     Convert a dataless SEED file to StationXML format.
 
+    NOTE: The utility of this is covered by edit_stationxml.py in main module. Likely don't need to finish this function here.
+
     :param dataless_file: Path to dataless SEED file
     :param base_meta: Basic metadata from OBS field log (single row from result of io.parse_obs_log())
     :type base_meta: pd.Series
@@ -72,15 +74,20 @@ def update_metadata(data, network_id, log=None, station_info=None, channel_map=N
 
             # Get orientations of seismic channels
             if re.match(r'[A-Z]H[1-3ABCENRTUVWZ]', tr.meta.channel):
-                orient = station_info.get_orientation(tr.id)
-                for key in ['azimuth', 'dip']:
-                    tr.stats[key] = orient[key]
+                try:
+                    orient = station_info.get_orientation(tr.id)
+                    for key in ['azimuth', 'dip']:
+                        tr.stats[key] = orient[key]
+                except Exception:
+                    warnings.warn('Matching orientation info for channel {} not found.'.format(tr.id))
 
         # Fix channel/station/network codes if necessary (N/E/Z vs 1/2/3)
         if channel_map is not None:
-            ch_info = channel_map.loc[tr.id]
-            if ch_info.empty:   # channel not in map, leave unchanged
-                continue
+            try:
+                ch_info = channel_map.loc[tr.id]
+            except KeyError:   # channel not in map, leave unchanged
+                log.warning('Channel {} not present in ID map'.format(tr.id))
+                pass
             for code in ['Network', 'Station', 'Location', 'Channel', 'Description']:
                 if ch_info[code] is not None and ~check_nan(ch_info[code]):
                     tr.meta[code.lower()] = ch_info[code]
@@ -112,10 +119,18 @@ def get_channel_type(ch_code):
         channel_type = 'seismic'
     elif ch_code in ['LKO', 'MDO', 'MDU']:
         # oceanographic data (external P/T, include APG if present)
-        # TODO: Would like this to be more general, but internal temperature is also labeled with "KO" source/subsource code by default
+        # TODO: Would like this to be more general, but internal temperature is also labeled with "KO" source/subsource code by default (check if used before or after code correction).
         channel_type = 'ocean'
     elif ch_code in ['LE3', 'ME4']:
         # battery voltage and power consumption
         channel_type = 'power'
 
     return channel_type
+
+
+def get_units(trace):
+    # Return string of physical units for input obspy.Trace object
+    if hasattr(trace.stats, 'response'):
+        return trace.stats.response.instrument_sensitivity.input_units
+    else:
+        return ''

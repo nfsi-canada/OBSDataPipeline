@@ -24,7 +24,7 @@ BUFFER_MAX = 10
 
 
 def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None, correct_meta=False, net_id='XX',
-                   station_info=None, ch_map=None, proj_meta=None):
+                   station_info=None, ch_map=None, proj_meta=None, clock_drift=None):
     full_data = obspy.Stream()
     for df in file_list:
         g_log.info('Reading {}...'.format(df))
@@ -42,21 +42,59 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
     g_log.info(full_data)
     full_data.print_gaps()
 
+    # Remove channels not from this station (weird corrupt behaviour one time...)
+    this_station = obspy.Stream()
+    station_ids = [x.code for n in station_info.networks for x in n.stations]
+    for tr in full_data:
+        try:
+            station_info.get_channel_metadata(tr.id)
+            this_station.append(tr)
+        except Exception as e:
+            if tr.meta.station in station_ids:
+                this_station.append(tr)
+                g_log.warning('Channel {} not present in metadata file, but is from this station.'.format(tr.id))
+            else:
+                g_log.warning('Channel {} not present in metadata file, skipping...'.format(tr.id))
+
     # Correct metadata (if applicable)
     if correct_meta:
         g_log.info('Updating metadata...')
-        full_data = nf.metadata.update_metadata(full_data, net_id, g_log, station_info, ch_map, proj_meta)
+        this_station = nf.metadata.update_metadata(this_station, net_id, g_log, station_info, ch_map, proj_meta)
 
     # Cut and save day-long miniSEED files in SDS archive structure
-    for tr in full_data:
+    for tr in this_station:
         start_time = tr.stats.starttime.datetime
         end_time = tr.stats.endtime.datetime + timedelta(days=1)
         start_day = start_time.date()
         end_day = end_time.date()
 
+        total_clock_drift, recording_start, recording_end = np.nan, obspy.UTCDateTime(start_time), obspy.UTCDateTime(end_time)
+        if clock_drift is not None:
+            try:
+                clock_correction = clock_drift.loc[tr.stats.station]
+                # TODO: Handle multiple entries with same station ID in a single deployment summary (should only occur in land test data)
+                recording_start = obspy.UTCDateTime(pd.to_datetime(clock_correction['Recording Start Date/Time (UTC)']))
+                recording_end = obspy.UTCDateTime(pd.to_datetime(clock_correction['Date/Time Recording Stopped (UTC)']))
+                total_clock_drift = clock_correction['Clock Offset on Deck (ms)']
+            except Exception as e:
+                print(e)
+                g_log.error('Unable to read clock drift information from deployment summary. No clock correction will '
+                            'be applied.')
+                total_clock_drift, recording_start, recording_end = 0, obspy.UTCDateTime(start_time), obspy.UTCDateTime(end_time)
+
+        if np.isnan(total_clock_drift):
+            g_log.warning('No clock drift measurement provided in deployment summary for station {}.'.format(tr.stats.station))
+            total_clock_drift = 0
+
         cut = obspy.UTCDateTime(start_day)
         while cut < end_day:
-            temp = tr.slice(cut, cut + 24 * 60 * 60, nearest_sample=False)
+            # Timestamp which would become start of day after clock drift correction (negative = OBS clock behind GPS)
+            shift = total_clock_drift * (cut - recording_start) / (recording_end - recording_start)
+            cut_shifted = cut + (shift / 1000)
+            g_log.debug('Clock shift: {0} milliseconds | Day "start": {1}'.format(
+                shift, cut_shifted.strftime('%Y-%m-%d %H:%M:%S.%f')))
+
+            temp = tr.slice(cut_shifted, cut_shifted + 24 * 60 * 60, nearest_sample=False)
             stt = temp.split()  # deal with traces with gaps
             g_log.info(stt)
 
@@ -65,6 +103,14 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
                                           tr.stats.channel)
                 if not os.path.exists(output_dir):
                     os.makedirs(output_dir)
+
+                # Correct time stamps for clock drift, if necessary (negative drift == OBS clock behind GPS)
+                if abs(total_clock_drift) > 0:
+                    for st in stt:
+                        time_shift = total_clock_drift * (st.stats.starttime - recording_start) / (recording_end - recording_start)
+                        st.stats.starttime -= (time_shift / 1000)
+                    g_log.info('Time series shifted for clock drift correction.')
+                    g_log.info(stt)
 
                 outfile = os.path.join(output_dir, '{}.{}.{}.mseed'.format(tr.id, cut.year, cut.julday))
                 if os.path.isfile(outfile):
@@ -124,7 +170,7 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
     g_log.info("Files contain data for {0} unique set(s) of channels".format(len(np.unique(labeled_files['channel'].values))))
 
     # Read metadata files (if necessary)
-    station_info, ch_map, proj_meta = None, None, None
+    station_info, ch_map, proj_meta, clock_info = None, None, None, None
     net_id = 'XX'
     if correct_meta:
         if not isinstance(metadata_args, dict):
@@ -155,6 +201,10 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
         if 'network' in metadata_args:
             net_id = metadata_args['network']
 
+        if 'obs_log' in metadata_args:
+            # TODO: Use log info to optionally cut start/end times if not specified (add a flag for this behaviour)
+            clock_info = metadata_args['obs_log'][['Recording Start Date/Time (UTC)', 'Date/Time Recording Stopped (UTC)', 'Clock Offset on Deck (ms)']]
+
     # Process data files by channel
     for label, files in labeled_files.groupby('channel'):
         g_log.info('Processing channel {}...'.format(label))
@@ -171,12 +221,12 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
                     buffer_files = all_files[idf:idf+BUFFER_MAX]
                     idf += BUFFER_MAX
 
-                read_and_recut(buffer_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta)
+                read_and_recut(buffer_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta, clock_info)
 
                 if idf > len(all_files):
                     done_read = True
         else:
-            read_and_recut(all_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta)
+            read_and_recut(all_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta, clock_info)
 
 
 if __name__ == '__main__':
@@ -208,6 +258,17 @@ if __name__ == '__main__':
                         help="Optional JSON file with extra description and QC information. Station/channel codes "
                              "should match the corrected trace IDs in channel_map, if applicable.")
     parser.add_argument('--log_dir', dest="log_dir", help="Directory to save log files.")
+    parser.add_argument('--datalog', dest="datalog",
+                        help="Log file from deployment/recovery. Must include station identifiers and clock drift "
+                             "measurements. If not specified, assumed to be a file called 'log.xlsx' in the data "
+                             "directory. Preferred format is XLSX (or similar spreadsheet) following NFSI template.")
+    parser.add_argument('--logdelimiter', dest="log_delim",
+                        help="If the OBS log file is delimited text (other than comma-delimited), use this to specify "
+                             "the column delimiter.")
+    parser.add_argument('--legacylogcols', dest="obslog_column_names_legacy", action="store_true",
+                        help="Use legacy column names for OBS deployment log file.")
+    parser.add_argument('--debug', dest='debug', action='store_true',
+                        help="Activate debug mode (more verbose logging).")
 
     try:
         args = parser.parse_args()
@@ -215,9 +276,9 @@ if __name__ == '__main__':
 
         if args.log_dir:
             logs_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(args.log_dir)))
-            g_log = logger.get_general_logger(run_start, 'SDS', logs_dir=logs_dir)
+            g_log = logger.get_general_logger(run_start, 'SDS', debug=args.debug, logs_dir=logs_dir)
         else:
-            g_log = logger.get_general_logger(run_start, 'SDS')
+            g_log = logger.get_general_logger(run_start, 'SDS', debug=args.debug)
 
         g_log.info("\n\n=====================================================================")
         g_log.info("Starting job: {0}".format(str(args)))
@@ -246,13 +307,13 @@ if __name__ == '__main__':
         startdate, enddate = None, None
         if args.start is not None:
             try:
-                if len(args.start) == 6:
+                if len(args.start) == 8:
                     startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d'))
-                elif len(args.start) == 8:
-                    startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H'))
                 elif len(args.start) == 10:
-                    startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M'))
+                    startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H'))
                 elif len(args.start) == 12:
+                    startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M'))
+                elif len(args.start) == 14:
                     startdate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M%S'))
                 else:
                     raise TypeError('Unknown timestamp format')
@@ -262,20 +323,22 @@ if __name__ == '__main__':
                 pass
         if args.end is not None:
             try:
-                if len(args.end) == 6:
-                    enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d') + timedelta(days=1))
-                elif len(args.end) == 8:
-                    enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H') + timedelta(hours=1))
+                if len(args.end) == 8:
+                    enddate = obspy.UTCDateTime(datetime.strptime(args.end, '%Y%m%d') + timedelta(days=1))
                 elif len(args.end) == 10:
-                    enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M') + timedelta(minutes=1))
+                    enddate = obspy.UTCDateTime(datetime.strptime(args.end, '%Y%m%d%H') + timedelta(hours=1))
                 elif len(args.end) == 12:
-                    enddate = obspy.UTCDateTime(datetime.strptime(args.start, '%Y%m%d%H%M%S') + timedelta(seconds=1))
+                    enddate = obspy.UTCDateTime(datetime.strptime(args.end, '%Y%m%d%H%M') + timedelta(minutes=1))
+                elif len(args.end) == 14:
+                    enddate = obspy.UTCDateTime(datetime.strptime(args.end, '%Y%m%d%H%M%S') + timedelta(seconds=1))
                 else:
                     raise TypeError('Unknown timestamp format')
             except Exception as e:
                 enddate = None
                 g_log.warning('Invalid end date specified: {}'.format(args.end))
                 pass
+
+        g_log.info('Start: {}, End: {}'.format(startdate.strftime('%Y-%m-%d %H:%M:%S'), enddate.strftime('%Y-%m-%d %H:%M:%S')))
 
         # Metadata files
         meta_args = None
@@ -302,11 +365,23 @@ if __name__ == '__main__':
                 else:
                     project_meta = os.path.abspath(os.path.expanduser(os.path.expandvars(args.extra_meta)))
 
+            obs_log_data = None
+            if args.datalog:
+                if args.relative_paths:
+                    data_log_file = os.path.normpath(os.path.join(data_dir, args.datalog))
+                else:
+                    data_log_file = os.path.normpath(
+                        os.path.abspath(os.path.expanduser(os.path.expandvars(args.datalog))))
+                g_log.info('Reading project metadata from {0}...'.format(data_log_file))
+                obs_log_info = nf.io.parse_obs_log(data_log_file, names_in_file=not args.obslog_column_names_legacy)
+                obs_log_data = obs_log_info['basic']
+
             meta_args = {
                 'channel_map': channel_map,
                 'metadata_file': metadata_file,
                 'extra_meta': project_meta,
-                'network': args.network_id
+                'network': args.network_id,
+                'obs_log': obs_log_data
             }
 
         # Split data into day-long miniSEED files saved in archive_dir (SDS folder structure)

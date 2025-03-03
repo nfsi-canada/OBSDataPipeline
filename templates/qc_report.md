@@ -30,7 +30,7 @@ Station name: {{ stationName }}
 
 Location (lat/lon): {{ latString }}, {{ lonString }}
 
-Water depth (m): {{ waterDepth }}
+Water depth (m): {{ depthString }}
 
 Deployment date: {{ deployDate }}
 
@@ -40,7 +40,7 @@ Recovery date: {{ recoverDate }}
 
 Recovery comments: {{ recoverComments }}
 
-Length of deployment (days): {{ deploymentDays }}
+Length of deployment (days): {{ deploymentDays }} | At seafloor: {{ seafloorDays }}
 
 Total clock drift (ms): {{ clockDrift }} ({{ clockDriftPerDay }} ms/day)
 
@@ -48,11 +48,14 @@ Average power consumption (W): {{ meanPower }}
 
 Battery SOC: At deployment: {{ batteryLevel.start }}% | Remaining: {{ batteryLevel.end }}%
 
+{% if meanPressure or meanTemperature %}
+Average seafloor conditions: Pressure {% if meanPressure %}{{ meanPressure }} Pa{% else %}n/a{% endif %}, Temperature {% if meanTemperature %}{{ meanTemperature }} degC{% else %}n/a{% endif %} 
+
+{% endif %}
 {% if tiltAtRecovery %}
 Tilt from vertical at recovery: {{ tiltAtRecovery }} degrees
 
 {% endif %}
-Power spectral density curves are calculated using {{ psdWindowLength }} Hann windows, with {{ psdOverlapPercent }}% overlap.
 
 \newpage{}
 
@@ -67,6 +70,19 @@ Power spectral density curves are calculated using {{ psdWindowLength }} Hann wi
 {% endif %}
 
 # General QC
+
+This report analyzes data recorded while the instrument is physically at the seabed. Touchdown and release times are determined by manual inspection of the external pressure channel where possible. Throughout this report, power spectral density curves are calculated using {{ psdWindowLength }} Hann windows with {{ psdOverlapPercent }}% overlap, following an average periodogram method similar to that described by McNamara & Buland (2004).
+
+{% if channelList %}
+Recorded data channels (time at seafloor):
+
+| Channel | Start Time | End Time | Sampling Rate (Hz) |
+|:--:|:---:|:---:|:--:|
+{% for ch in channelList %}
+| {{ ch.id }} | {{ ch.start }} | {{ ch.end }} | {{ ch.sampling }} |
+{% endfor %}
+
+{% endif %}
 
 {% if gapList %}
 The following gaps/overlaps were observed in the recorded data.
@@ -110,10 +126,6 @@ Abnormal change(s) in humidity were observed during this deployment.
 ## {{ ch.channelName }}
 SEED ID: {{ ch.seedID }}
 
-{% if ch.azimuth %}
-Orientation: {{ ch.azimuth }} / {{ ch.dip }}
-{% endif %}
-
 {% if ch.traceLoc %}
 ### Full trace
 
@@ -134,13 +146,17 @@ Orientation: {{ ch.azimuth }} / {{ ch.dip }}
 {% endif %}
 
 {% if ch.psdLoc %}
+\newpage{}
+
 ### Power Spectral Density
+
+PSD curves are binned by frequency and amplitude to generate density heatmaps. Black curves overlain on these plots are the Peterson high and low global noise models (NHNM and NLNM; Peterson, 1993).
 
 {% for psd in ch.psdLoc %}
 {% if ch.hydrophone %}
-![Power spectral density curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
+![PSD curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
 {% else %}
-![Acceleration power spectral density curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
+![Acceleration PSD curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
 {% endif %}
 
 {% endfor %}
@@ -158,10 +174,20 @@ SEED ID: {{ ch.seedID }}
 
 ![Recorded data for channel {{ ch.seedID }}]({{ ch.traceLoc }})
 
+{% if ch.despikedPlot %}
+This channel may show periodic spikes due to the data write cycle of the Aquarius, which are not representative of real environmental conditions.
+
+![Despiked data for channel {{ ch.seedID }}]({{ ch.despikedPlot }})
+
+{% endif %}
+{% if ch.rollPlot %}
+![Average reading for channel {{ ch.seedID }} for a {{ ch.window_str }} rolling window with 66% overlap]({{ ch.rollPlot }})
+
+{% endif %}
 {% if ch.qcPlotLoc %}
 ![Range check results for channel {{ ch.seedID }}]({{ ch.qcPlotLoc }})
-{% endif %}
 
+{% endif %}
 {% endfor %}
 
 \newpage{}
