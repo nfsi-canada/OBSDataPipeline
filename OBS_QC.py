@@ -491,6 +491,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                             ch_stats.to_csv(os.path.join(output_dir, '{}_rolling_stats_{}_{}.csv'.format(tr.id, pd.to_datetime(ch_stats['Start'].min()).strftime('%Y-%m-%d'), pd.to_datetime(ch_stats['End'].max()).strftime('%Y-%m-%d'))))
 
                             # Plot rolling mean and add to report
+                            # TODO: Make x-lims start and end dates of data
                             roll_plot = os.path.join(output_dir, '{}_mean.png'.format(tr.id))
                             fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
                             ch_stats.plot(x='Center', y='Avg', kind='line', ax=ax, xlabel='Date/Time', ylabel=vert_label, legend=False)
@@ -738,6 +739,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                                                 pd.to_datetime(power_stats['End'].max()).strftime('%Y-%m-%d'))
         power_stats.to_csv(os.path.join(output_dir, csv_name))
 
+        # TODO: Make x-lims start and end dates of data
         # Average power vs time
         avgpow_plot = os.path.join(output_dir, 'power_mean_{0}.png'.format(obs_log['OBS ID'].values[0]))
         if not (use_existing_plots and os.path.isfile(avgpow_plot)):
