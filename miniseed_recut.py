@@ -99,6 +99,7 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
             g_log.info(stt)
 
             if len(stt) > 0:
+                # TODO: Optionally separate auxiliary channels to "_AUX" directory
                 output_dir = os.path.join(archive_dir, str(cut.year), tr.stats.network, tr.stats.station,
                                           tr.stats.channel)
                 if not os.path.exists(output_dir):
@@ -112,6 +113,7 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
                     g_log.info('Time series shifted for clock drift correction.')
                     g_log.info(stt)
 
+                # TODO: SeisComP expected format does not include mseed file extension; data channels want ".D." between channel code and year (not necessary for aux channels)
                 outfile = os.path.join(output_dir, '{}.{}.{}.mseed'.format(tr.id, cut.year, cut.julday))
                 if os.path.isfile(outfile):
                     g_log.info('Found existing SDS format data for date {0:04d}/{1:02d}/{2:02d}. Combining...'.format(
