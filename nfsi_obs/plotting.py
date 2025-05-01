@@ -988,8 +988,12 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                     psd_asis = plot_files[3]
                 if not (use_existing_plots and os.path.isfile(psd_asis)):
                     g_log.debug('Plotting PSDs in sensor units...')
+                    if hydrophone:
+                        db_lims = spec_lim
+                    else:
+                        db_lims = [-220,-40]
                     psd_asis = plot_psds(psd_temp_results['binned_asis'], psd_temp_results['psd_freqs'],
-                                         outfile=psd_asis, density=True, noise_models=False, db_lims=[-220,-40], f_bins=f_bins)
+                                         outfile=psd_asis, density=True, noise_models=False, db_lims=db_lims, f_bins=f_bins)
 
                 if not hydrophone:
                     psd_v_plots.append(psd_asis)

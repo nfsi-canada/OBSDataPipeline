@@ -734,7 +734,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         power_stats['Days_Deployed'] = vlt['Days_Deployed']
 
         # Save statistics to CSV for further analysis
-        csv_name = 'voltage_power_stats_{0}_{1}_{2}.csv'.format(report_params['obsId'],
+        csv_name = 'voltage_power_stats_{0}_{1}_{2}_{3}.csv'.format(report_params['stationName'], report_params['obsId'],
                                                                 pd.to_datetime(power_stats['Start'].min()).strftime('%Y-%m-%d'),
                                                                 pd.to_datetime(power_stats['End'].max()).strftime('%Y-%m-%d'))
         power_stats.to_csv(os.path.join(output_dir, csv_name))

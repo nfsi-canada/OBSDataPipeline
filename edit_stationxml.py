@@ -109,7 +109,7 @@ def map_and_filter_xml(sxml_file, channel_list=None, channel_map=None, is_datale
 
         new_ch = ch_info['Correct channel ID']
         new_codes = new_ch.split('.')
-        if new_codes[0] not in [n.code for n in input_inv.networks]:
+        if (new_codes[0] not in [n.code for n in input_inv.networks]) or ('Net_{}'.format(new_codes[0]) not in obj_refs):
             # Network not present in inventory, copy from original coded Network (no stations/channels)
             old_network = input_inv.select(network=codes[0])
             new_net = old_network.networks[0].copy()
