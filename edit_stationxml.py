@@ -196,6 +196,8 @@ def update_station_xml(inv, obs_log=None, extra_info=None, nfsi_fields=False, su
             s.longitude.__setattr__('measurement_method', survey_method)
             s.elevation.__setattr__('measurement_method', survey_method)
             s.water_level = 0
+            s.start_date = start
+            s.end_date = end
 
             sta_info = None
             if net_info is not None:
@@ -414,6 +416,7 @@ if __name__ == '__main__':
 
         g_log.info("Processing complete!")
         # TODO: Combine individual stations into full-network StationXML file
+        # TODO: Full-network StationXML should have start/end dates for network equal to earliest start and latest end for any station
         logger.close_logs()
     except Exception as e:
         print(traceback.print_exc())
