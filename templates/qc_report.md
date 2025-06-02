@@ -49,11 +49,19 @@ Average power consumption (W): {{ meanPower }}
 Battery SOC: At deployment: {{ batteryLevel.start }}% | Remaining: {{ batteryLevel.end }}%
 
 {% if meanPressure or meanTemperature %}
-Average seafloor conditions: Pressure {% if meanPressure %}{{ meanPressure }} Pa{% else %}n/a{% endif %}, Temperature {% if meanTemperature %}{{ meanTemperature }} degC{% else %}n/a{% endif %} 
+Average seafloor conditions: Pressure {% if meanPressure %}{{ meanPressure }} Pa{% else %}n/a{% endif %}, Temperature {% if meanTemperature %}{{ meanTemperature }} &deg;C{% else %}n/a{% endif %} 
+
+{% endif %}
+{% if tiltAtDeploy %}
+Tilt from vertical at deployment: Angle {{ tiltAtDeploy.angle }}&deg;, Direction {{ tiltAtDeploy.azimuth }}&deg;
 
 {% endif %}
 {% if tiltAtRecovery %}
-Tilt from vertical at recovery: {{ tiltAtRecovery }} degrees
+Tilt from vertical at recovery: Angle {{ tiltAtRecovery.angle }}&deg;, Direction {{ tiltAtRecovery.azimuth }}&deg;
+
+{% endif %}
+{% if tiltRotation %}
+Apparent tilt rotation over deployment period: {{ tiltRotation }}&deg;
 
 {% endif %}
 
