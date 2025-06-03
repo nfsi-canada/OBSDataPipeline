@@ -1279,7 +1279,7 @@ if __name__ == '__main__':
                     'angle': '{:.3f}'.format(rec_tilt[0]),
                     'azimuth': '{:.1f}'.format(rec_tilt[1])
                 }
-                g_log.info('Tilt from vertical at recover: {:.3f} / {:.1f}'.format(rec_tilt[0], rec_tilt[1]))
+                g_log.info('Tilt from vertical at recovery: {:.3f} / {:.1f}'.format(rec_tilt[0], rec_tilt[1]))
         if dep_tilt is not None and rec_tilt is not None:
             # apparent tilt rotation
             tilt_rot = nf.calc_tilt_rotation(dep_meta, rec_meta)
