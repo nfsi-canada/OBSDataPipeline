@@ -117,6 +117,50 @@ def rolling_window_stats(trace, window_length=3*24*60*60, window_offset=24*60*60
     return window_stats
 
 
+def calc_tilt_from_mems(meta_df):
+    """
+    Calculate OBS tilt from vertical using 3-component MEMS accelerometer/tiltmeter reading.
+
+    :param meta_df: DataFrame including columns 'AccZ', 'AccN' and 'AccE' for accelerometer reading
+    :return: tilt angle from vertical and bearing (clockwise from OBS North)
+    """
+    try:
+        if {'AccZ', 'AccN', 'AccE'}.issubset(meta_df.columns):
+            mems_acc = [meta_df[c].values[0] for c in ['AccZ', 'AccN', 'AccE']]
+            if abs(mems_acc[0]) > 0:
+                tilt_deg = np.degrees(np.arctan(np.sqrt(mems_acc[1] ** 2 + mems_acc[2] ** 2) / mems_acc[0]))
+                tilt_az = np.degrees(np.arctan2(mems_acc[2], mems_acc[1]))
+                if tilt_az < 0:
+                    tilt_az += 360
+                return tilt_deg, tilt_az
+        else:
+            warnings.warn("MEMS reading not provided for tilt calculation. Expected columns 'AccZ', 'AccN' and 'AccE'.")
+            return None
+    except TypeError as e:
+        # TypeError if AccZ is None (from abs(None))
+        warnings.warn('Invalid MEMS reading provided: {}'.format(mems_acc))
+        return None
+
+
+def calc_tilt_rotation(dep_meta, rec_meta):
+    """
+    Calculate apparent rotation of tilt axis between 2 MEMS readings. Input DataFrames must include columns 'AccZ', 'AccN' and 'AccE'.
+
+    :param dep_meta: initial tilt measurement, pandas.DataFrame
+    :param rec_meta: final tilt measurement, pandas.DataFrame
+    :return: 3-D rotation angle between tilt axis vectors in degrees
+    """
+    mems_1 = [dep_meta[c].values[0] for c in ['AccZ', 'AccN', 'AccE']]
+    mems_2 = [rec_meta[c].values[0] for c in ['AccZ', 'AccN', 'AccE']]
+
+    # Inverse cosine of normalized dot product
+    rotation = np.degrees(np.arccos(
+        (mems_1[0]*mems_2[0] + mems_1[1]*mems_2[1] + mems_1[2]*mems_2[2]) /
+        (np.sqrt(mems_1[0]**2 + mems_1[1]**2 + mems_1[2]**2) * np.sqrt(mems_2[0]**2 + mems_2[1]**2 + mems_2[2]**2))
+    ))
+    return rotation
+
+
 def clip_data(unclipped, low_clip, high_clip):
     """
     Remove values from input data that are above `high_clip` and below `low_clip`. Returned series (np.array) has np.nan
