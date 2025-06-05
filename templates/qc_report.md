@@ -158,13 +158,13 @@ SEED ID: {{ ch.seedID }}
 
 ### Power Spectral Density
 
-PSD curves are binned by frequency and amplitude to generate density heatmaps. Black curves overlain on these plots are the Peterson high and low global noise models (NHNM and NLNM; Peterson, 1993).
+PSD curves are binned by frequency and amplitude to generate density heatmaps (probabilistic power spectral density).{% if not ch.hydrophone %} Black curves overlain on these plots are the Peterson high and low global noise models (NHNM and NLNM; Peterson, 1993).{% endif %} 
 
 {% for psd in ch.psdLoc %}
 {% if ch.hydrophone %}
-![PSD curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
+![PPSD plot for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
 {% else %}
-![Acceleration PSD curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
+![Acceleration PPSD plot for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
 {% endif %}
 
 {% endfor %}
