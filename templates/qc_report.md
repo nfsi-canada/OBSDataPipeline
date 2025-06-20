@@ -49,11 +49,19 @@ Average power consumption (W): {{ meanPower }}
 Battery SOC: At deployment: {{ batteryLevel.start }}% | Remaining: {{ batteryLevel.end }}%
 
 {% if meanPressure or meanTemperature %}
-Average seafloor conditions: Pressure {% if meanPressure %}{{ meanPressure }} Pa{% else %}n/a{% endif %}, Temperature {% if meanTemperature %}{{ meanTemperature }} degC{% else %}n/a{% endif %} 
+Average seafloor conditions: Pressure {% if meanPressure %}{{ meanPressure }} Pa{% else %}n/a{% endif %}, Temperature {% if meanTemperature %}{{ meanTemperature }} &deg;C{% else %}n/a{% endif %} 
+
+{% endif %}
+{% if tiltAtDeploy %}
+Tilt from vertical at deployment: Angle {{ tiltAtDeploy.angle }}&deg;, Direction {{ tiltAtDeploy.azimuth }}&deg;
 
 {% endif %}
 {% if tiltAtRecovery %}
-Tilt from vertical at recovery: {{ tiltAtRecovery }} degrees
+Tilt from vertical at recovery: Angle {{ tiltAtRecovery.angle }}&deg;, Direction {{ tiltAtRecovery.azimuth }}&deg;
+
+{% endif %}
+{% if tiltRotation %}
+Apparent tilt rotation over deployment period: {{ tiltRotation }}&deg;
 
 {% endif %}
 
@@ -71,7 +79,7 @@ Tilt from vertical at recovery: {{ tiltAtRecovery }} degrees
 
 # General QC
 
-This report analyzes data recorded while the instrument is physically at the seabed. Touchdown and release times are determined by manual inspection of the external pressure channel where possible. Throughout this report, power spectral density curves are calculated using {{ psdWindowLength }} Hann windows with {{ psdOverlapPercent }}% overlap, following an average periodogram method similar to that described by McNamara & Buland (2004).
+This report analyzes data recorded while the instrument is physically at the seabed. Touchdown and release times are determined by manual inspection of the auxiliary data channels where possible. Throughout this report, power spectral density curves are calculated using {{ psdWindowLength }} Hann windows with {{ psdOverlapPercent }}% overlap, following an average periodogram method similar to that described by McNamara & Buland (2004).
 
 {% if channelList %}
 Recorded data channels (time at seafloor):
@@ -150,13 +158,13 @@ SEED ID: {{ ch.seedID }}
 
 ### Power Spectral Density
 
-PSD curves are binned by frequency and amplitude to generate density heatmaps. Black curves overlain on these plots are the Peterson high and low global noise models (NHNM and NLNM; Peterson, 1993).
+PSD curves are binned by frequency and amplitude to generate density heatmaps (probabilistic power spectral density).{% if not ch.hydrophone %} Black curves overlain on these plots are the Peterson high and low global noise models (NHNM and NLNM; Peterson, 1993).{% endif %} 
 
 {% for psd in ch.psdLoc %}
 {% if ch.hydrophone %}
-![PSD curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
+![PPSD plot for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
 {% else %}
-![Acceleration PSD curves for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
+![Acceleration PPSD plot for channel {{ ch.seedID }} for {{ psd.start }} to {{ psd.end }}]({{ psd.image }})
 {% endif %}
 
 {% endfor %}

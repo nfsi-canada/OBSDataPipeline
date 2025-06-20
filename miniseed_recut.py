@@ -67,6 +67,7 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
         end_time = tr.stats.endtime.datetime + timedelta(days=1)
         start_day = start_time.date()
         end_day = end_time.date()
+        ch_type = nf.metadata.get_channel_type(tr.stats.channel)
 
         total_clock_drift, recording_start, recording_end = np.nan, obspy.UTCDateTime(start_time), obspy.UTCDateTime(end_time)
         if clock_drift is not None:
@@ -99,8 +100,13 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
             g_log.info(stt)
 
             if len(stt) > 0:
-                output_dir = os.path.join(archive_dir, str(cut.year), tr.stats.network, tr.stats.station,
-                                          tr.stats.channel)
+                # TODO: Optionally separate auxiliary channels to "_AUX" directory
+                if ch_type == 'seismic':
+                    output_dir = os.path.join(archive_dir, str(cut.year), tr.stats.network, tr.stats.station,
+                                              '{}.D'.format(tr.stats.channel))
+                else:
+                    output_dir = os.path.join(archive_dir, str(cut.year), tr.stats.network, tr.stats.station,
+                                              tr.stats.channel)
                 if not os.path.exists(output_dir):
                     os.makedirs(output_dir)
 
@@ -112,7 +118,11 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
                     g_log.info('Time series shifted for clock drift correction.')
                     g_log.info(stt)
 
-                outfile = os.path.join(output_dir, '{}.{}.{}.mseed'.format(tr.id, cut.year, cut.julday))
+                # TODO: SeisComP expected format does not include mseed file extension
+                if ch_type == 'seismic':
+                    outfile = os.path.join(output_dir, '{}.D.{}.{:03d}'.format(tr.id, cut.year, cut.julday))
+                else:
+                    outfile = os.path.join(output_dir, '{}.{}.{:03d}'.format(tr.id, cut.year, cut.julday))
                 if os.path.isfile(outfile):
                     g_log.info('Found existing SDS format data for date {0:04d}/{1:02d}/{2:02d}. Combining...'.format(
                         cut.year, cut.month, cut.day))
