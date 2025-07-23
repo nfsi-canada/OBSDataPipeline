@@ -239,8 +239,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         g_log.info("{0} data file(s) in list".format(len(files.index)))
 
         try:
-            # Data file buffering for long time periods (should only be needed for seismic data)
             if len(files.index) > 3:
+                # Data file buffering for long time periods (should only be needed for seismic data)
+                # TODO: Allow this to work for other types of data channels also (possibility to analyze non-Aquarius data packages)
+                if ignore_seismic:
+                    g_log.info("Seismic data analysis ignored, skipping channel.")
+                    continue
+
                 filetimes = []
                 for rf in files['path'].values:
                     times = get_start_and_end_time(rf)
@@ -313,6 +318,18 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                         data.append(tr)
                 data.merge()
 
+                # Remove any seismic channels if explicitly ignored
+                if ignore_seismic:
+                    for tr in data:
+                        ch_type = nf.metadata.get_channel_type(tr.meta.channel)
+                        if ch_type == 'seismic':
+                            data.remove(tr)
+
+                    # Check if there is still data to analyze left
+                    if len(data.traces) < 1:
+                        g_log.info('No non-seismic traces present, skipping.')
+                        continue
+
                 proc_timing.append(timeit.default_timer())
                 g_log.debug("Time spent reading data file(s): {0} seconds".format((proc_timing[-1] - proc_timing[-2])))
                 debug_info['timing']['file_read'] += proc_timing[-1] - proc_timing[-2]
@@ -356,6 +373,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     channel_type = nf.metadata.get_channel_type(tr.meta.channel)
 
                     if ignore_seismic and channel_type == 'seismic':
+                        # Just in case, shouldn't actually get to this point from previous check
+                        g_log.info("Seismic data analysis ignored, skipping channel.")
                         continue
 
                     tr_timing.append(timeit.default_timer())
@@ -405,6 +424,11 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                     # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
                     if channel_type == 'seismic':
+                        if ignore_seismic:
+                            g_log.debug('How did the code even get to this point? Had to miss 2 previous checks to ignore seismic data.')
+                            g_log.info('Ignoring seismic data.')
+                            continue
+
                         # Time series plot (applies instrument sensitivity in-place if response present in tr.meta)
                         trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, dmin, dmax, qc_config,
                                                                         use_existing_plots)
