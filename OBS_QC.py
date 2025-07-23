@@ -36,7 +36,7 @@ if not os.path.isdir(resource_dir):
 
 def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, project_meta=None,
             full=True, detrend=False, cmap=None, use_existing_plots=False, parallel=False, max_proc=None,
-            flags_from_config=False, **kwargs):
+            ignore_seismic=False, limited_seismic=False, flags_from_config=False, **kwargs):
     """
     Extra keyword arguments are included as report parameters (must match variables in template file).
     """
@@ -54,6 +54,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         detrend = config.getboolean('dataset', 'detrend_seismic', fallback=False)
         use_existing_plots = config.getboolean('dataset', 'use_existing_plots', fallback=False)
         parallel = config.getboolean('dataset', 'parallel', fallback=False)
+        ignore_seismic = config.getboolean('dataset', 'ignore_seismic', fallback=False)
+        limited_seismic = config.getboolean('dataset', 'limited_seismic', fallback=False)
 
     # Initialize report parameters dictionary with input keywords
     report_params = {}
@@ -61,6 +63,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     # Add empty lists for channel-specific information
     for key in ['seismic_channels', 'ocean_channels', 'power_channels', 'health_channels']:
         report_params[key] = []
+
+    # Remove seismic info from report if ignored flag is True
+    if ignore_seismic:
+        report_params.pop('seismic_channels')
+        report_params['seismic_ignored'] = True
+    if limited_seismic:
+        report_params['seismic_limited'] = True
 
     # Windowing parameters for seismic data
     win_len = 3600
@@ -345,6 +354,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                     # Channel type determines what analysis gets run on this trace
                     channel_type = nf.metadata.get_channel_type(tr.meta.channel)
+
+                    if ignore_seismic and channel_type == 'seismic':
+                        continue
 
                     tr_timing.append(timeit.default_timer())
                     g_log.debug("Time spent assigning to channel group: {0} seconds".format((tr_timing[-1] - tr_timing[-2])))
@@ -939,6 +951,12 @@ if __name__ == '__main__':
                              "buffered seismic data.")
     parser.add_argument('--max_processes', dest='max_proc', type=int, default=0,
                         help="Maximum number of processes/threads to be used in parallelized analysis.")
+    parser.add_argument('--ignore_seismic', dest='ignore_seismic', action='store_true',
+                        help="If set, do not perform analysis of seismic channels. A stock message will appear in the "
+                             "report to indicate these channels are ignored, regardless of whether they are present.")
+    parser.add_argument('--limited_seismic', dest='limited_seismic', action='store_true',
+                        help="Limit seismic analysis to assessment of data extent, readability and gaps. Generally "
+                             "only used for projects with data security concerns.")
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help="Activate debug mode (more verbose logging). Command-line only.")
 
@@ -1011,7 +1029,7 @@ if __name__ == '__main__':
         full_config['dataset']['obsid'] = obs_identifier
 
         # Runtime flags
-        for flag, key in zip([args.function_check, args.detrend_seis, args.use_existing_plots, args.debug, args.obslog_column_names, args.parallel], ['function_check', 'detrend_seismic', 'use_existing_plots', 'debug', 'logcolnames', 'parallel']):
+        for flag, key in zip([args.function_check, args.detrend_seis, args.use_existing_plots, args.debug, args.obslog_column_names, args.parallel, args.ignore_seismic, args.limited_seismic], ['function_check', 'detrend_seismic', 'use_existing_plots', 'debug', 'logcolnames', 'parallel', 'ignore_seismic', 'limited_seismic']):
             config_flag = config.getboolean('dataset', key, fallback=False)
             # only overwrite existing flags if CL arguments are present and different from config
             if flag and not config_flag:

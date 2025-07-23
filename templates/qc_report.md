@@ -83,6 +83,14 @@ Tilt estimates in OBS's internal reference frame (angle measured from Earth vert
 
 This report analyzes data recorded while the instrument is physically at the seabed. Touchdown and release times are determined by manual inspection of the auxiliary data channels where possible. Throughout this report, power spectral density curves are calculated using {{ psdWindowLength }} Hann windows with {{ psdOverlapPercent }}% overlap, following an average periodogram method similar to that described by McNamara & Buland (2004).
 
+{% if seismic_ignored %}
+Seismic-type data (seismometer and/or hydrophone) may or may not exist in the data package analyzed. Such data channels have been ignored in preparing this report.
+
+{% elif seismic_limited %}
+Analysis of seismic data channels (seismometer and/or hydrophone), if present in this data package, is limited to assessment of data extent and readability. No other analysis or plots have been generated for such channels in preparing this report.
+
+{% endif %}
+
 {% if channelList %}
 Recorded data channels (time at seafloor):
 
@@ -130,6 +138,7 @@ Abnormal change(s) in humidity were observed during this deployment.
 
 \newpage{}
 
+{% if seismic_channels %}
 # Seismic Data
 
 {% for ch in seismic_channels %}
@@ -175,6 +184,7 @@ PSD curves are binned by frequency and amplitude to generate density heatmaps (p
 \newpage{}
 
 {% endfor %}
+{% endif %}
 
 # Oceanographic Data
 
