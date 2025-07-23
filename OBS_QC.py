@@ -152,10 +152,18 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     # Find data files
     raw_files = glob(os.path.join(data_dir, '**/*.mseed'), recursive=True)
+    # Ignore any files calculated by previous QC script runs
     try:
         raw_files.remove(os.path.join(data_dir, 'calculated_current.mseed'))
     except ValueError:
         pass
+
+    dspk = glob(os.path.join(data_dir, '**/*_despiked.mseed'), recursive=True)
+    for df in dspk:
+        try:
+            raw_files.remove(df)
+        except ValueError:
+            pass
 
     g_log.info("Found {0} miniSEED file(s) in data directory and sub-folders".format(len(raw_files)))
     debug_info['num_files'] = len(raw_files)
@@ -492,6 +500,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                             # Plot rolling mean and add to report
                             # TODO: Make x-lims start and end dates of data
+                            g_log.debug('Creating plot of rolling stats...')
                             roll_plot = os.path.join(output_dir, '{}_mean.png'.format(tr.id))
                             fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
                             ch_stats.plot(x='Center', y='Avg', kind='line', ax=ax, xlabel='Date/Time', ylabel=vert_label, legend=False)
@@ -598,6 +607,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 plot_trigger(tr, hum.data, 3, 1.5, show=False)
                                 fig = plt.gcf()
                                 fig.savefig(os.path.join(output_dir, 'triggered_{0}.png'.format(tr.id)))
+                                plt.close(fig)
 
                                 trig_secs = triggers * hum.stats.delta
                                 trig_times = [[hum.stats.starttime + float(y) for y in x] for x in trig_secs]
@@ -1112,6 +1122,7 @@ if __name__ == '__main__':
         if deploy_start is not None:
             base_meta = base_meta.loc[(base_meta['Launch Date/Time (UTC)'] >= deploy_start) &
                                       (base_meta['Launch Date/Time (UTC)'] < deploy_start + timedelta(days=1))]
+            # TODO: Account for test case where launch/on-deck are not applicable
             dep_meta = dep_meta.loc[(dep_meta['Launch Date/Time (UTC)'] == base_meta['Launch Date/Time (UTC)'].values[0])]
             rec_meta = rec_meta.loc[(rec_meta['On-Deck Date/Time (UTC)'] == base_meta['Recovery Date/Time (UTC)'].values[0])]
         if base_meta.shape[0] > 1:
@@ -1243,9 +1254,11 @@ if __name__ == '__main__':
         report_kwargs['stationName'] = base_meta['Station'].values[0]
         report_kwargs['obsName'] = base_meta['OBS Name'].values[0]
         report_kwargs['obsId'] = base_meta['OBS ID'].values[0]
+        # TODO: Allow no location specified (test recording, not super important)
         report_kwargs['latitude'] = base_meta['Deployed Latitude'].values[0]
         report_kwargs['longitude'] = base_meta['Deployed Longitude'].values[0]
         report_kwargs['waterDepth'] = base_meta['Water Depth (m)'].values[0]
+        # TODO: Allow launch/recover times to be not specified (test recording sometimes)
         report_kwargs['deployed'] = pd.to_datetime(base_meta['Launch Date/Time (UTC)'].values[0])
         report_kwargs['deployComments'] = base_meta['Deployment Comments'].values[0]
         # TODO: Handle case of intermediate download (no "recovery" time yet)

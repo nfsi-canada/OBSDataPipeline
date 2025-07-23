@@ -52,17 +52,19 @@ Battery SOC: At deployment: {{ batteryLevel.start }}% | Remaining: {{ batteryLev
 Average seafloor conditions: Pressure {% if meanPressure %}{{ meanPressure }} Pa{% else %}n/a{% endif %}, Temperature {% if meanTemperature %}{{ meanTemperature }} &deg;C{% else %}n/a{% endif %} 
 
 {% endif %}
-{% if tiltAtDeploy %}
-Tilt from vertical at deployment: Angle {{ tiltAtDeploy.angle }}&deg;, Direction {{ tiltAtDeploy.azimuth }}&deg;
+{% if tiltAtDeploy or tiltAtRecovery %}
+Tilt estimates in OBS's internal reference frame (angle measured from Earth vertical): 
 
+{% if tiltAtDeploy %}
+- At deployment: Angle {{ tiltAtDeploy.angle }}&deg;, Direction {{ tiltAtDeploy.azimuth }}&deg;
 {% endif %}
 {% if tiltAtRecovery %}
-Tilt from vertical at recovery: Angle {{ tiltAtRecovery.angle }}&deg;, Direction {{ tiltAtRecovery.azimuth }}&deg;
-
+- At recovery: Angle {{ tiltAtRecovery.angle }}&deg;, Direction {{ tiltAtRecovery.azimuth }}&deg;
 {% endif %}
 {% if tiltRotation %}
-Apparent tilt rotation over deployment period: {{ tiltRotation }}&deg;
+- Apparent tilt rotation over deployment period: {{ tiltRotation }}&deg;
 
+{% endif %}
 {% endif %}
 
 \newpage{}
