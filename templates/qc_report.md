@@ -145,6 +145,28 @@ Abnormal change(s) in humidity were observed during this deployment.
 ## {{ ch.channelName }}
 SEED ID: {{ ch.seedID }}
 
+{% if seismic_limited %}
+Data details:
+
+- Start timestamp: {{ ch.start_string }}
+- End timestamp: {{ ch.end_string }}
+- Sampling rate: {{ ch.sampling }} Hz
+
+{% if ch.gaps %}
+The following data gaps are present in the recorded data:
+
+| Channel | Start Time | End Time | Length (s) | Samples |
+|:--|:---|:---|-:|-:|
+{% for gap in ch.gaps %}
+| {{ gap.id }} | {{ gap.start }} | {{ gap.end }} | {{ gap.sec }} | {{ gap.samp }} |
+{% endfor %}
+
+{% else %}
+No gaps are present in the recorded data.
+
+{% endif %}
+
+{% else %}
 {% if ch.traceLoc %}
 ### Full trace
 
@@ -179,6 +201,7 @@ PSD curves are binned by frequency and amplitude to generate density heatmaps (p
 {% endif %}
 
 {% endfor %}
+{% endif %}
 {% endif %}
 
 \newpage{}

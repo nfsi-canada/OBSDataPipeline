@@ -64,7 +64,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     for key in ['seismic_channels', 'ocean_channels', 'power_channels', 'health_channels']:
         report_params[key] = []
 
-    # Remove seismic info from report if ignored flag is True
+    # Remove seismic info from report if ignored flag is True, set appropriate flags in report info
     if ignore_seismic:
         report_params.pop('seismic_channels')
         report_params['seismic_ignored'] = True
