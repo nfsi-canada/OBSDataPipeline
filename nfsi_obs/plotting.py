@@ -592,7 +592,7 @@ def plot_filenames(outdir, ch_id, plot_start, plot_end, asis=False):
 def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, channel_map=None, project_meta=None,
                         psd_win=3600, spec_win=3600, overlap=0.5, psd_over=0.75, plot_length=None, ch_id=None,
                         start=None, end=None, detrend=False, spec_cmap=None, use_existing_plots=False, parallel=False,
-                        max_processes=None):
+                        max_processes=None, limit_analysis=False):
     """
     Analyze seismic data stored in raw data files and create PSD and spectrogram plots. File paths in *files* should be
     listed in chronological order. Files must be readable by obspy.read()
@@ -618,6 +618,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     :param use_existing_plots: check if plots exist and do not re-create if present, False by default
     :param parallel: run PSD calculation with multiprocessing parallelization
     :param max_processes: maximum number of processes to spawn for parallel processing
+    :param limit_analysis: limit analysis of data to only data extent and gaps (reads all data to check what is present)
 
     :return: dictionary of channel information for auto-report generation
     """
@@ -645,7 +646,11 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         'report_info': 0.,
         'array_reset': 0.,
     }
-    report_info = {'order': 100}
+    report_info = {
+        'order': 100,
+        'start': None,
+        'end': None,
+    }
     channel_info = None
     hydrophone = False
     if ch_id is not None:
@@ -844,6 +849,11 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             for metaKey, reportKey in zip(['description', 'azimuth', 'dip'], ['channelName', 'azimuth', 'dip']):
                 if hasattr(this_channel.meta, metaKey):
                     report_info[reportKey] = this_channel.meta[metaKey]
+            # Update overall start/end times, if applicable
+            if report_info['start'] is None or this_channel.stats.starttime < report_info['start']:
+                report_info['start'] = this_channel.stats.starttime
+            if report_info['end'] is None or this_channel.stats.endtime > report_info['end']:
+                report_info['end'] = this_channel.stats.endtime
 
             # Check that this is a seismic channel
             channel_type = get_channel_type(this_channel.stats.channel)
@@ -892,76 +902,77 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             gap_time = timeit.default_timer()
             timing['gap_test'] += gap_time - more_meta
 
-            # Apply channel sensitivity and remove linear trend, if applicable
-            if hasattr(this_channel.meta, 'response'):
-                this_channel.remove_sensitivity()
-            if detrend:
-                this_channel.detrend('linear')
-            data_clean = timeit.default_timer()
-            timing['data_clean'] += data_clean - gap_time
+            if not limit_analysis:
+                # Apply channel sensitivity and remove linear trend, if applicable
+                if hasattr(this_channel.meta, 'response'):
+                    this_channel.remove_sensitivity()
+                if detrend:
+                    this_channel.detrend('linear')
+                data_clean = timeit.default_timer()
+                timing['data_clean'] += data_clean - gap_time
 
-            if last_start is not None:
-                # Windows start from midnight UTC on the first day of data collection
-                start_of_day = round_obspy_date(this_channel.stats.starttime)
-                if first_psd_start is None:
-                    pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / (psd_win * (1 - overlap)))
-                    first_psd_start = start_of_day + pre_windows * psd_win * (1 - overlap)
-                if first_spec_start is None:
-                    pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / (spec_win * (1 - overlap)))
-                    first_spec_start = start_of_day + pre_windows * spec_win * (1 - overlap)
+                if last_start is not None:
+                    # Windows start from midnight UTC on the first day of data collection
+                    start_of_day = round_obspy_date(this_channel.stats.starttime)
+                    if first_psd_start is None:
+                        pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / (psd_win * (1 - overlap)))
+                        first_psd_start = start_of_day + pre_windows * psd_win * (1 - overlap)
+                    if first_spec_start is None:
+                        pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / (spec_win * (1 - overlap)))
+                        first_spec_start = start_of_day + pre_windows * spec_win * (1 - overlap)
 
-                # If "last_end" timestamps are set from previous loop iteration, use those as "first_start" timestamps
-                if next_psd_start is not None:
-                    first_psd_start = next_psd_start
+                    # If "last_end" timestamps are set from previous loop iteration, use those as "first_start" timestamps
+                    if next_psd_start is not None:
+                        first_psd_start = next_psd_start
 
-                if next_spec_start is not None:
-                    first_spec_start = next_spec_start
+                    if next_spec_start is not None:
+                        first_spec_start = next_spec_start
 
-            if this_channel.stats.starttime > plot_end:
-                # Update plot time window if all data is out of range
-                if plot_length is None:
-                    # default behaviour plots a single calendar month in each image
-                    plot_start, plot_end = month_start_end(this_channel.stats.starttime)
+                if this_channel.stats.starttime > plot_end:
+                    # Update plot time window if all data is out of range
+                    if plot_length is None:
+                        # default behaviour plots a single calendar month in each image
+                        plot_start, plot_end = month_start_end(this_channel.stats.starttime)
+                    else:
+                        # time window in days specified by plot_length
+                        plot_start = round_obspy_date(this_channel.stats.starttime)
+                        plot_end = plot_start + (plot_length * 24 * 60 * 60)
+
+                if (this_channel.stats.endtime > plot_end) or (i >= len(files)):
+                    # data in buffer spans a plot breakpoint, or last file read => make plots this pass
+                    make_plot = True
+
+                plot_admin = timeit.default_timer()
+                timing['plot_admin'] += plot_admin - data_clean
+
+                # Calculate PSDs and save to running lists
+                psd_start = first_psd_start
+                new_data = cut_trace(this_channel, psd_start, None, nearest_sample=True, pad=True)
+                if parallel:
+                    apsds, vpsds, freqs, times, binned_vel, binned_acc, next_psd_start = calc_psds_thread_pool(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), binned=True, max_processes=max_processes, f_bins=f_bins)
                 else:
-                    # time window in days specified by plot_length
-                    plot_start = round_obspy_date(this_channel.stats.starttime)
-                    plot_end = plot_start + (plot_length * 24 * 60 * 60)
+                    apsds, vpsds, freqs, times, binned_vel, binned_acc, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), binned=True, f_bins=f_bins)
+                psd_calc_time = timeit.default_timer()
+                timing['psd_calc'] += psd_calc_time - plot_admin
 
-            if (this_channel.stats.endtime > plot_end) or (i >= len(files)):
-                # data in buffer spans a plot breakpoint, or last file read => make plots this pass
-                make_plot = True
-
-            plot_admin = timeit.default_timer()
-            timing['plot_admin'] += plot_admin - data_clean
-
-            # Calculate PSDs and save to running lists
-            psd_start = first_psd_start
-            new_data = cut_trace(this_channel, psd_start, None, nearest_sample=True, pad=True)
-            if parallel:
-                apsds, vpsds, freqs, times, binned_vel, binned_acc, next_psd_start = calc_psds_thread_pool(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), binned=True, max_processes=max_processes, f_bins=f_bins)
-            else:
-                apsds, vpsds, freqs, times, binned_vel, binned_acc, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), binned=True, f_bins=f_bins)
-            psd_calc_time = timeit.default_timer()
-            timing['psd_calc'] += psd_calc_time - plot_admin
-
-            for running, current in zip(['psd_array', 'vpsd_array', 'psd_freqs', 'binned_asis', 'binned_acc'], [apsds, vpsds, freqs, binned_vel, binned_acc]):
-                if psd_temp_results[running] is None:
-                    psd_temp_results[running] = current
+                for running, current in zip(['psd_array', 'vpsd_array', 'psd_freqs', 'binned_asis', 'binned_acc'], [apsds, vpsds, freqs, binned_vel, binned_acc]):
+                    if psd_temp_results[running] is None:
+                        psd_temp_results[running] = current
+                    else:
+                        psd_temp_results[running] = np.concatenate((psd_temp_results[running], current), axis=0)
+                if psd_temp_results['psd_times'] is None:
+                    psd_temp_results['psd_times'] = times
                 else:
-                    psd_temp_results[running] = np.concatenate((psd_temp_results[running], current), axis=0)
-            if psd_temp_results['psd_times'] is None:
-                psd_temp_results['psd_times'] = times
-            else:
-                psd_temp_results['psd_times'] = np.concatenate((psd_temp_results['psd_times'], times), axis=None)
-            psd_arr_build = timeit.default_timer()
-            timing['psd_buffer'] += psd_arr_build - psd_calc_time
+                    psd_temp_results['psd_times'] = np.concatenate((psd_temp_results['psd_times'], times), axis=None)
+                psd_arr_build = timeit.default_timer()
+                timing['psd_buffer'] += psd_arr_build - psd_calc_time
 
-            spec_calc_time = timeit.default_timer()
-            timing['spec_calc'] += spec_calc_time - psd_arr_build
+                spec_calc_time = timeit.default_timer()
+                timing['spec_calc'] += spec_calc_time - psd_arr_build
 
-            # Calculate frequency bin information if not done yet (reduce duplicated effort in future loop iterations)
-            if f_bins is None:
-                f_bins = setup_freq_bins(frequencies=freqs[0], smoothing_width_octaves=0.5)
+                # Calculate frequency bin information if not done yet (reduce duplicated effort in future loop iterations)
+                if f_bins is None:
+                    f_bins = setup_freq_bins(frequencies=freqs[0], smoothing_width_octaves=0.5)
         except Exception as e:
             # TODO: Separate error handling for data read and data analysis
             msg = 'nfsi_obs.plotting.buffer_seismic_data: Error processing raw data files, latest file: {0}'.format(files[i-1])
@@ -1063,9 +1074,32 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 gc.collect()
 
     add_to_report = timeit.default_timer()
-    report_info['psdLoc'] = psd_a_plots
-    report_info['specLoc'] = spec_plots
+    if not limit_analysis:
+        report_info['psdLoc'] = psd_a_plots
+        report_info['specLoc'] = spec_plots
     report_info['hydrophone'] = hydrophone
+    report_info['start_string'] = report_info['start'].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+    report_info['end_string'] = report_info['end'].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+    report_info['sampling'] = str(int(report_info['samplingRate']))
+    # Check for duplicate gap info
+    unique_gaps = {}
+    for gap in all_gaps:
+        gap_key = '_'.join(['.'.join(gap[0:4]), gap[4].strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+                            gap[5].strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]])
+        unique_gaps.update({gap_key: gap})
+    gap_list = [unique_gaps[gk] for gk in unique_gaps.keys()]
+    # Create string representation for gaps in case of limited analysis (otherwise incorporated in other lists externally)
+    if limit_analysis:
+        report_info['gaps'] = []
+        for gap in unique_gaps.values():
+            report_info['gaps'].append({
+                'id': '.'.join(gap[0:4]),
+                'start': gap[4].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                'end': gap[5].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                'sec': '{:.3f}'.format(gap[6]),
+                'samp': gap[7]
+            })
+
     timing['report_info'] += timeit.default_timer() - add_to_report
     timing['trace_analysis'] = timeit.default_timer() - func_start
-    return report_info, all_gaps, timing
+    return report_info, gap_list, timing

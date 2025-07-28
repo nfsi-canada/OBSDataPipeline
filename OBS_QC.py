@@ -284,7 +284,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                                                               plot_length=plot_len, start=data_start,
                                                                               end=data_end, spec_cmap=cmap, detrend=detrend,
                                                                               use_existing_plots=use_existing_plots,
-                                                                              parallel=parallel, max_processes=max_proc)
+                                                                              parallel=parallel, max_processes=max_proc,
+                                                                              limit_analysis=limited_seismic)
                 for key in buff_time:
                     if key in debug_info['timing']:
                         debug_info['timing'][key] += buff_time[key]
