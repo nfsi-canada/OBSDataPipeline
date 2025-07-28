@@ -155,10 +155,10 @@ Data details:
 {% if ch.gaps %}
 The following data gaps are present in the recorded data:
 
-| Channel | Start Time | End Time | Length (s) | Samples |
-|:--|:---|:---|-:|-:|
+| Start Time | End Time | Length (s) | Samples |
+|:---|:---|-:|-:|
 {% for gap in ch.gaps %}
-| {{ gap.id }} | {{ gap.start }} | {{ gap.end }} | {{ gap.sec }} | {{ gap.samp }} |
+| {{ gap.start }} | {{ gap.end }} | {{ gap.sec }} | {{ gap.samp }} |
 {% endfor %}
 
 {% else %}

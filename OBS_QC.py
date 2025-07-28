@@ -429,51 +429,67 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                             g_log.info('Ignoring seismic data.')
                             continue
 
-                        # Time series plot (applies instrument sensitivity in-place if response present in tr.meta)
-                        trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, dmin, dmax, qc_config,
-                                                                        use_existing_plots)
+                        if limited_seismic:
+                            trace_info['start_string'] = tr.stats.starttime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                            trace_info['end_string'] = tr.stats.endtime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                            trace_info['sampling'] = str(int(tr.stats.sampling_rate))
 
-                        tr_timing.append(timeit.default_timer())
-                        g_log.debug("Time spent plotting trace: {0} seconds".format((tr_timing[-1] - tr_timing[-2])))
-                        debug_info['timing']['trace_plot'] += tr_timing[-1] - tr_timing[-2]
+                            if len(gaps) > 0:
+                                trace_info['gaps'] = []
+                                for g in gaps:
+                                    trace_info['gaps'].append({
+                                        'id': '.'.join(g[0:4]),
+                                        'start': g[4].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                                        'end': g[5].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                                        'sec': '{:.3f}'.format(g[6]),
+                                        'samp': g[7]
+                                    })
+                        else:
+                            # Time series plot (applies instrument sensitivity in-place if response present in tr.meta)
+                            trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, dmin, dmax, qc_config,
+                                                                            use_existing_plots)
 
-                        for metaKey, reportKey in zip(['azimuth', 'dip'], ['azimuth', 'dip']):
-                            if hasattr(tr.meta, metaKey):
-                                trace_info[reportKey] = tr.meta[metaKey]
+                            tr_timing.append(timeit.default_timer())
+                            g_log.debug("Time spent plotting trace: {0} seconds".format((tr_timing[-1] - tr_timing[-2])))
+                            debug_info['timing']['trace_plot'] += tr_timing[-1] - tr_timing[-2]
 
-                        # Detrend seismic data (RMS linear fit)
-                        if detrend:
-                            tr.detrend('linear')
-                            demean_data_plot = os.path.join(output_dir, 'demean_{0}.png'.format(tr.id))
-                            if not (use_existing_plots and os.path.isfile(demean_data_plot)):
-                                data.plot(outfile=demean_data_plot)
+                            for metaKey, reportKey in zip(['azimuth', 'dip'], ['azimuth', 'dip']):
+                                if hasattr(tr.meta, metaKey):
+                                    trace_info[reportKey] = tr.meta[metaKey]
 
-                        start_plots = timeit.default_timer()    # TODO
-                        # TODO: Combine spectrogram and PSD creation to save runtime and memory (like when buffering)
-                        # Spectrogram
-                        trace_info['specLoc'] = [{
-                            'image': nf.plotting.spectrogram(tr, output_dir, spec_win, overlap, use_existing_plots),
-                            'start': tr.stats.starttime.strftime('%Y-%m-%d'),
-                            'end': tr.stats.endtime.strftime('%Y-%m-%d')
-                        }]
-                        done_spec = timeit.default_timer()  # TODO
-                        debug_info['timing']['spec_plot'] += done_spec - start_plots
+                            # Detrend seismic data (RMS linear fit)
+                            if detrend:
+                                tr.detrend('linear')
+                                demean_data_plot = os.path.join(output_dir, 'demean_{0}.png'.format(tr.id))
+                                if not (use_existing_plots and os.path.isfile(demean_data_plot)):
+                                    data.plot(outfile=demean_data_plot)
 
-                        # Plot PSDs of data
-                        trace_info['psdLoc'] = [{
-                            'image': nf.plotting.psd_plot(tr, output_dir, win_len, overlap, use_existing_plots),
-                            'start': tr.stats.starttime.strftime('%Y-%m-%d'),
-                            'end': tr.stats.endtime.strftime('%Y-%m-%d')
-                        }]
-                        done_psd = timeit.default_timer()   # TODO
-                        debug_info['timing']['psd_plot'] += done_psd - done_spec
+                            start_plots = timeit.default_timer()    # TODO
+                            # TODO: Combine spectrogram and PSD creation to save runtime and memory (like when buffering)
+                            # Spectrogram
+                            trace_info['specLoc'] = [{
+                                'image': nf.plotting.spectrogram(tr, output_dir, spec_win, overlap, use_existing_plots),
+                                'start': tr.stats.starttime.strftime('%Y-%m-%d'),
+                                'end': tr.stats.endtime.strftime('%Y-%m-%d')
+                            }]
+                            done_spec = timeit.default_timer()  # TODO
+                            debug_info['timing']['spec_plot'] += done_spec - start_plots
 
-                        if full:
-                            # TODO: Decide if the same operations are appropriate for the hydrophone data or not
-                            # TODO: Save hourly PSDs
-                            # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
-                            # TODO: Linearity of PSD curves
-                            g_log.warning("Full QC of seismic noise not yet implemented")
+                            # Plot PSDs of data
+                            trace_info['psdLoc'] = [{
+                                'image': nf.plotting.psd_plot(tr, output_dir, win_len, overlap, use_existing_plots),
+                                'start': tr.stats.starttime.strftime('%Y-%m-%d'),
+                                'end': tr.stats.endtime.strftime('%Y-%m-%d')
+                            }]
+                            done_psd = timeit.default_timer()   # TODO
+                            debug_info['timing']['psd_plot'] += done_psd - done_spec
+
+                            if full:
+                                # TODO: Decide if the same operations are appropriate for the hydrophone data or not
+                                # TODO: Save hourly PSDs
+                                # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
+                                # TODO: Linearity of PSD curves
+                                g_log.warning("Full QC of seismic noise not yet implemented")
 
                     else:
                         if channel_type == 'ocean':
