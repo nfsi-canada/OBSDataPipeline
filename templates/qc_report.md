@@ -84,15 +84,15 @@ Tilt estimates in OBS's internal reference frame (angle measured from Earth vert
 This report analyzes data recorded while the instrument is physically at the seabed. Touchdown and release times are determined by manual inspection of the auxiliary data channels where possible. Throughout this report, power spectral density curves are calculated using {{ psdWindowLength }} Hann windows with {{ psdOverlapPercent }}% overlap, following an average periodogram method similar to that described by McNamara & Buland (2004).
 
 {% if seismic_ignored %}
-Seismic-type data (seismometer and/or hydrophone) may or may not exist in the data package analyzed. Such data channels have been ignored in preparing this report.
+Seismoacoustic data (seismometer and/or hydrophone) may or may not exist in the data package analyzed. Such data channels have been ignored in preparing this report.
 
 {% elif seismic_limited %}
-Analysis of seismic data channels (seismometer and/or hydrophone), if present in this data package, is limited to assessment of data extent and readability. No other analysis or plots have been generated for such channels in preparing this report.
+Analysis of seismoacoustic data channels (seismometer and/or hydrophone), if present in this data package, is limited to assessment of data extent and readability. No other analysis or plots have been generated for such channels in preparing this report.
 
 {% endif %}
 
 {% if channelList %}
-Recorded data channels (time at seafloor):
+Recorded data channels analyzed (time at seafloor):
 
 | Channel | Start Time | End Time | Sampling Rate (Hz) |
 |:--:|:---:|:---:|:--:|
@@ -148,9 +148,11 @@ SEED ID: {{ ch.seedID }}
 {% if seismic_limited %}
 Data details:
 
-- Start timestamp: {{ ch.start_string }}
-- End timestamp: {{ ch.end_string }}
-- Sampling rate: {{ ch.sampling }} Hz
+----------------  ----------------------
+Start timestamp    {{ ch.start_string }}
+End timestamp        {{ ch.end_string }}
+Sampling rate       {{ ch.sampling }} Hz
+----------------  ----------------------
 
 {% if ch.gaps %}
 The following data gaps are present in the recorded data:
@@ -202,11 +204,14 @@ PSD curves are binned by frequency and amplitude to generate density heatmaps (p
 
 {% endfor %}
 {% endif %}
-{% endif %}
 
 \newpage{}
+{% endif %}
 
 {% endfor %}
+{% if seismic_limited %}
+\newpage{}
+{% endif %}
 {% endif %}
 
 # Oceanographic Data

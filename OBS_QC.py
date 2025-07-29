@@ -905,8 +905,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     # Sort channel information by specified order
     for ch_type in ['seismic', 'ocean', 'power', 'health']:
-        sorted_channels = sorted(report_params[ch_type + '_channels'], key=lambda d: d['order'])
-        report_params[ch_type + '_channels'] = sorted_channels
+        if (ch_type + '_channels') in report_params:
+            sorted_channels = sorted(report_params[ch_type + '_channels'], key=lambda d: d['order'])
+            report_params[ch_type + '_channels'] = sorted_channels
 
     if obs_log['Station'].values[0] != obs_log['OBS ID'].values[0]:
         id_str = '_'.join([obs_log['Station'].values[0], obs_log['OBS ID'].values[0]])

@@ -902,6 +902,23 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             gap_time = timeit.default_timer()
             timing['gap_test'] += gap_time - more_meta
 
+            if this_channel.stats.starttime > plot_end:
+                # Update plot time window if all data is out of range
+                if plot_length is None:
+                    # default behaviour plots a single calendar month in each image
+                    plot_start, plot_end = month_start_end(this_channel.stats.starttime)
+                else:
+                    # time window in days specified by plot_length
+                    plot_start = round_obspy_date(this_channel.stats.starttime)
+                    plot_end = plot_start + (plot_length * 24 * 60 * 60)
+
+            if (this_channel.stats.endtime > plot_end) or (i >= len(files)):
+                # data in buffer spans a plot breakpoint, or last file read => make plots this pass
+                make_plot = True
+
+            plot_admin = timeit.default_timer()
+            timing['plot_admin'] += plot_admin - gap_time
+
             if not limit_analysis:
                 # Apply channel sensitivity and remove linear trend, if applicable
                 if hasattr(this_channel.meta, 'response'):
@@ -909,7 +926,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 if detrend:
                     this_channel.detrend('linear')
                 data_clean = timeit.default_timer()
-                timing['data_clean'] += data_clean - gap_time
+                timing['data_clean'] += data_clean - plot_admin
 
                 if last_start is not None:
                     # Windows start from midnight UTC on the first day of data collection
@@ -927,23 +944,6 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
 
                     if next_spec_start is not None:
                         first_spec_start = next_spec_start
-
-                if this_channel.stats.starttime > plot_end:
-                    # Update plot time window if all data is out of range
-                    if plot_length is None:
-                        # default behaviour plots a single calendar month in each image
-                        plot_start, plot_end = month_start_end(this_channel.stats.starttime)
-                    else:
-                        # time window in days specified by plot_length
-                        plot_start = round_obspy_date(this_channel.stats.starttime)
-                        plot_end = plot_start + (plot_length * 24 * 60 * 60)
-
-                if (this_channel.stats.endtime > plot_end) or (i >= len(files)):
-                    # data in buffer spans a plot breakpoint, or last file read => make plots this pass
-                    make_plot = True
-
-                plot_admin = timeit.default_timer()
-                timing['plot_admin'] += plot_admin - data_clean
 
                 # Calculate PSDs and save to running lists
                 psd_start = first_psd_start
@@ -981,72 +981,73 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             print(traceback.print_exc())
 
         if make_plot:
-            g_log.debug('Generating plots...')
             try:
-                start_plotting = timeit.default_timer()
-                # TODO: Decide about trace plot, maybe downsample to 5Hz before plotting?
-                trace_time = timeit.default_timer()
-                timing['trace_plot'] += trace_time - start_plotting
+                if not limit_analysis:
+                    g_log.debug('Generating plots...')
+                    start_plotting = timeit.default_timer()
+                    # TODO: Decide about trace plot, maybe downsample to 5Hz before plotting?
+                    trace_time = timeit.default_timer()
+                    timing['trace_plot'] += trace_time - start_plotting
 
-                plot_files = plot_filenames(outdir, this_channel.id, plot_start, plot_end, asis=hydrophone)
-                get_filenames = timeit.default_timer()
-                timing['plot_admin'] += get_filenames - trace_time
+                    plot_files = plot_filenames(outdir, this_channel.id, plot_start, plot_end, asis=hydrophone)
+                    get_filenames = timeit.default_timer()
+                    timing['plot_admin'] += get_filenames - trace_time
 
-                # PSD plots
-                if hydrophone:
-                    psd_asis = plot_files[0]
-                else:
-                    psd_asis = plot_files[3]
-                if not (use_existing_plots and os.path.isfile(psd_asis)):
-                    g_log.debug('Plotting PSDs in sensor units...')
+                    # PSD plots
                     if hydrophone:
-                        db_lims = spec_lim
+                        psd_asis = plot_files[0]
                     else:
-                        db_lims = [-220,-40]
-                    psd_asis = plot_psds(psd_temp_results['binned_asis'], psd_temp_results['psd_freqs'],
-                                         outfile=psd_asis, density=True, noise_models=False, db_lims=db_lims, f_bins=f_bins)
+                        psd_asis = plot_files[3]
+                    if not (use_existing_plots and os.path.isfile(psd_asis)):
+                        g_log.debug('Plotting PSDs in sensor units...')
+                        if hydrophone:
+                            db_lims = spec_lim
+                        else:
+                            db_lims = [-220,-40]
+                        psd_asis = plot_psds(psd_temp_results['binned_asis'], psd_temp_results['psd_freqs'],
+                                             outfile=psd_asis, density=True, noise_models=False, db_lims=db_lims, f_bins=f_bins)
 
-                if not hydrophone:
-                    psd_v_plots.append(psd_asis)
-                    if not (use_existing_plots and os.path.isfile(plot_files[0])):
-                        g_log.debug('Plotting PSDs in acceleration...')
-                        psd_a_plot = plot_psds(psd_temp_results['binned_acc'], psd_temp_results['psd_freqs'],
-                                             outfile=plot_files[0], density=True, noise_models=True, db_lims=[-180,-50], f_bins=f_bins)
+                    if not hydrophone:
+                        psd_v_plots.append(psd_asis)
+                        if not (use_existing_plots and os.path.isfile(plot_files[0])):
+                            g_log.debug('Plotting PSDs in acceleration...')
+                            psd_a_plot = plot_psds(psd_temp_results['binned_acc'], psd_temp_results['psd_freqs'],
+                                                 outfile=plot_files[0], density=True, noise_models=True, db_lims=[-180,-50], f_bins=f_bins)
 
-                done_psds = timeit.default_timer()
-                timing['psd_plot'] += done_psds - get_filenames
-                psd_a_plots.append({
-                    'image': plot_files[0],
-                    'start': plot_start.strftime('%Y-%m-%d'),
-                    'end': (plot_end - 1).strftime('%Y-%m-%d')
-                })
-                report_add = timeit.default_timer()
-                timing['report_info'] += report_add - done_psds
+                    done_psds = timeit.default_timer()
+                    timing['psd_plot'] += done_psds - get_filenames
+                    psd_a_plots.append({
+                        'image': plot_files[0],
+                        'start': plot_start.strftime('%Y-%m-%d'),
+                        'end': (plot_end - 1).strftime('%Y-%m-%d')
+                    })
+                    report_add = timeit.default_timer()
+                    timing['report_info'] += report_add - done_psds
 
-                # Spectrogram plot from PSDs
-                if not (use_existing_plots and os.path.isfile(plot_files[1])):
-                    g_log.debug('Plotting spectrogram...')
-                    if hydrophone:
-                        spec_plot = plot_spectrogram(psd_temp_results['vpsd_array'], psd_temp_results['psd_freqs'][0],
-                                                     psd_temp_results['psd_times'], this_channel.id, this_channel.stats.sampling_rate,
-                                                     spec_win, overlap, plot_start, plot_end, plot_file=plot_files[1],
-                                                     cmap=spec_cmap, slim=spec_lim)
-                    else:
-                        spec_plot = plot_spectrogram(psd_temp_results['psd_array'], psd_temp_results['psd_freqs'][0],
-                                                     psd_temp_results['psd_times'], this_channel.id, this_channel.stats.sampling_rate,
-                                                     spec_win, overlap, plot_start, plot_end, plot_file=plot_files[1],
-                                                     cmap=spec_cmap, slim=spec_lim)
+                    # Spectrogram plot from PSDs
+                    if not (use_existing_plots and os.path.isfile(plot_files[1])):
+                        g_log.debug('Plotting spectrogram...')
+                        if hydrophone:
+                            spec_plot = plot_spectrogram(psd_temp_results['vpsd_array'], psd_temp_results['psd_freqs'][0],
+                                                         psd_temp_results['psd_times'], this_channel.id, this_channel.stats.sampling_rate,
+                                                         spec_win, overlap, plot_start, plot_end, plot_file=plot_files[1],
+                                                         cmap=spec_cmap, slim=spec_lim)
+                        else:
+                            spec_plot = plot_spectrogram(psd_temp_results['psd_array'], psd_temp_results['psd_freqs'][0],
+                                                         psd_temp_results['psd_times'], this_channel.id, this_channel.stats.sampling_rate,
+                                                         spec_win, overlap, plot_start, plot_end, plot_file=plot_files[1],
+                                                         cmap=spec_cmap, slim=spec_lim)
 
-                done_spec_psd = timeit.default_timer()
-                timing['spec_plot'] += done_spec_psd - report_add
+                    done_spec_psd = timeit.default_timer()
+                    timing['spec_plot'] += done_spec_psd - report_add
 
-                spec_plots.append({
-                    'image': plot_files[1],
-                    'start': plot_start.strftime('%Y-%m-%d'),
-                    'end': (plot_end - 1).strftime('%Y-%m-%d')
-                })
-                report_add = timeit.default_timer()
-                timing['report_info'] += report_add - done_spec_psd
+                    spec_plots.append({
+                        'image': plot_files[1],
+                        'start': plot_start.strftime('%Y-%m-%d'),
+                        'end': (plot_end - 1).strftime('%Y-%m-%d')
+                    })
+                    report_add = timeit.default_timer()
+                    timing['report_info'] += report_add - done_spec_psd
 
             except Exception as e:
                 msg = 'nfsi_obs.plotting.buffer_seismic_data: Error creating plots, latest file: {0}'.format(files[i - 1])
@@ -1059,7 +1060,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 for key in psd_temp_results:
                     psd_temp_results[key] = None
 
-                # Reset temp arrays for spectrogram
+                # Reset temp arrays for spectrogram (if calculated separately, not implemented)
                 reset_arr = timeit.default_timer()
                 timing['array_reset'] += reset_arr - final_start
 
