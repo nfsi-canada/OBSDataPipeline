@@ -36,7 +36,7 @@ if not os.path.isdir(resource_dir):
 
 def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, project_meta=None,
             full=True, detrend=False, cmap=None, use_existing_plots=False, parallel=False, max_proc=None,
-            flags_from_config=False, **kwargs):
+            ignore_seismic=False, limited_seismic=False, flags_from_config=False, **kwargs):
     """
     Extra keyword arguments are included as report parameters (must match variables in template file).
     """
@@ -54,6 +54,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         detrend = config.getboolean('dataset', 'detrend_seismic', fallback=False)
         use_existing_plots = config.getboolean('dataset', 'use_existing_plots', fallback=False)
         parallel = config.getboolean('dataset', 'parallel', fallback=False)
+        ignore_seismic = config.getboolean('dataset', 'ignore_seismic', fallback=False)
+        limited_seismic = config.getboolean('dataset', 'limited_seismic', fallback=False)
 
     # Initialize report parameters dictionary with input keywords
     report_params = {}
@@ -61,6 +63,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     # Add empty lists for channel-specific information
     for key in ['seismic_channels', 'ocean_channels', 'power_channels', 'health_channels']:
         report_params[key] = []
+
+    # Remove seismic info from report if ignored flag is True, set appropriate flags in report info
+    if ignore_seismic:
+        report_params.pop('seismic_channels')
+        report_params['seismic_ignored'] = True
+    if limited_seismic:
+        report_params['seismic_limited'] = True
 
     # Windowing parameters for seismic data
     win_len = 3600
@@ -152,10 +161,18 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     # Find data files
     raw_files = glob(os.path.join(data_dir, '**/*.mseed'), recursive=True)
+    # Ignore any files calculated by previous QC script runs
     try:
         raw_files.remove(os.path.join(data_dir, 'calculated_current.mseed'))
     except ValueError:
         pass
+
+    dspk = glob(os.path.join(data_dir, '**/*_despiked.mseed'), recursive=True)
+    for df in dspk:
+        try:
+            raw_files.remove(df)
+        except ValueError:
+            pass
 
     g_log.info("Found {0} miniSEED file(s) in data directory and sub-folders".format(len(raw_files)))
     debug_info['num_files'] = len(raw_files)
@@ -222,8 +239,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         g_log.info("{0} data file(s) in list".format(len(files.index)))
 
         try:
-            # Data file buffering for long time periods (should only be needed for seismic data)
             if len(files.index) > 3:
+                # Data file buffering for long time periods (should only be needed for seismic data)
+                # TODO: Allow this to work for other types of data channels also (possibility to analyze non-Aquarius data packages)
+                if ignore_seismic:
+                    g_log.info("Seismic data analysis ignored, skipping channel.")
+                    continue
+
                 filetimes = []
                 for rf in files['path'].values:
                     times = get_start_and_end_time(rf)
@@ -262,7 +284,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                                                               plot_length=plot_len, start=data_start,
                                                                               end=data_end, spec_cmap=cmap, detrend=detrend,
                                                                               use_existing_plots=use_existing_plots,
-                                                                              parallel=parallel, max_processes=max_proc)
+                                                                              parallel=parallel, max_processes=max_proc,
+                                                                              limit_analysis=limited_seismic)
                 for key in buff_time:
                     if key in debug_info['timing']:
                         debug_info['timing'][key] += buff_time[key]
@@ -295,6 +318,18 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     for tr in temp:
                         data.append(tr)
                 data.merge()
+
+                # Remove any seismic channels if explicitly ignored
+                if ignore_seismic:
+                    for tr in data:
+                        ch_type = nf.metadata.get_channel_type(tr.meta.channel)
+                        if ch_type == 'seismic':
+                            data.remove(tr)
+
+                    # Check if there is still data to analyze left
+                    if len(data.traces) < 1:
+                        g_log.info('No non-seismic traces present, skipping.')
+                        continue
 
                 proc_timing.append(timeit.default_timer())
                 g_log.debug("Time spent reading data file(s): {0} seconds".format((proc_timing[-1] - proc_timing[-2])))
@@ -337,6 +372,11 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                     # Channel type determines what analysis gets run on this trace
                     channel_type = nf.metadata.get_channel_type(tr.meta.channel)
+
+                    if ignore_seismic and channel_type == 'seismic':
+                        # Just in case, shouldn't actually get to this point from previous check
+                        g_log.info("Seismic data analysis ignored, skipping channel.")
+                        continue
 
                     tr_timing.append(timeit.default_timer())
                     g_log.debug("Time spent assigning to channel group: {0} seconds".format((tr_timing[-1] - tr_timing[-2])))
@@ -385,51 +425,72 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                     # Noise level QC steps (seismic channels and hydrophone) -> if channel code == "CHx" or "HDF"
                     if channel_type == 'seismic':
-                        # Time series plot (applies instrument sensitivity in-place if response present in tr.meta)
-                        trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, dmin, dmax, qc_config,
-                                                                        use_existing_plots)
+                        if ignore_seismic:
+                            g_log.debug('How did the code even get to this point? Had to miss 2 previous checks to ignore seismic data.')
+                            g_log.info('Ignoring seismic data.')
+                            continue
 
-                        tr_timing.append(timeit.default_timer())
-                        g_log.debug("Time spent plotting trace: {0} seconds".format((tr_timing[-1] - tr_timing[-2])))
-                        debug_info['timing']['trace_plot'] += tr_timing[-1] - tr_timing[-2]
+                        if limited_seismic:
+                            trace_info['start_string'] = tr.stats.starttime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                            trace_info['end_string'] = tr.stats.endtime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                            trace_info['sampling'] = str(int(tr.stats.sampling_rate))
 
-                        for metaKey, reportKey in zip(['azimuth', 'dip'], ['azimuth', 'dip']):
-                            if hasattr(tr.meta, metaKey):
-                                trace_info[reportKey] = tr.meta[metaKey]
+                            if len(gaps) > 0:
+                                trace_info['gaps'] = []
+                                for g in gaps:
+                                    trace_info['gaps'].append({
+                                        'id': '.'.join(g[0:4]),
+                                        'start': g[4].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                                        'end': g[5].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                                        'sec': '{:.3f}'.format(g[6]),
+                                        'samp': g[7]
+                                    })
+                        else:
+                            # Time series plot (applies instrument sensitivity in-place if response present in tr.meta)
+                            trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, dmin, dmax, qc_config,
+                                                                            use_existing_plots)
 
-                        # Detrend seismic data (RMS linear fit)
-                        if detrend:
-                            tr.detrend('linear')
-                            demean_data_plot = os.path.join(output_dir, 'demean_{0}.png'.format(tr.id))
-                            if not (use_existing_plots and os.path.isfile(demean_data_plot)):
-                                data.plot(outfile=demean_data_plot)
+                            tr_timing.append(timeit.default_timer())
+                            g_log.debug("Time spent plotting trace: {0} seconds".format((tr_timing[-1] - tr_timing[-2])))
+                            debug_info['timing']['trace_plot'] += tr_timing[-1] - tr_timing[-2]
 
-                        start_plots = timeit.default_timer()    # TODO
-                        # TODO: Combine spectrogram and PSD creation to save runtime and memory (like when buffering)
-                        # Spectrogram
-                        trace_info['specLoc'] = [{
-                            'image': nf.plotting.spectrogram(tr, output_dir, spec_win, overlap, use_existing_plots),
-                            'start': tr.stats.starttime.strftime('%Y-%m-%d'),
-                            'end': tr.stats.endtime.strftime('%Y-%m-%d')
-                        }]
-                        done_spec = timeit.default_timer()  # TODO
-                        debug_info['timing']['spec_plot'] += done_spec - start_plots
+                            for metaKey, reportKey in zip(['azimuth', 'dip'], ['azimuth', 'dip']):
+                                if hasattr(tr.meta, metaKey):
+                                    trace_info[reportKey] = tr.meta[metaKey]
 
-                        # Plot PSDs of data
-                        trace_info['psdLoc'] = [{
-                            'image': nf.plotting.psd_plot(tr, output_dir, win_len, overlap, use_existing_plots),
-                            'start': tr.stats.starttime.strftime('%Y-%m-%d'),
-                            'end': tr.stats.endtime.strftime('%Y-%m-%d')
-                        }]
-                        done_psd = timeit.default_timer()   # TODO
-                        debug_info['timing']['psd_plot'] += done_psd - done_spec
+                            # Detrend seismic data (RMS linear fit)
+                            if detrend:
+                                tr.detrend('linear')
+                                demean_data_plot = os.path.join(output_dir, 'demean_{0}.png'.format(tr.id))
+                                if not (use_existing_plots and os.path.isfile(demean_data_plot)):
+                                    data.plot(outfile=demean_data_plot)
 
-                        if full:
-                            # TODO: Decide if the same operations are appropriate for the hydrophone data or not
-                            # TODO: Save hourly PSDs
-                            # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
-                            # TODO: Linearity of PSD curves
-                            g_log.warning("Full QC of seismic noise not yet implemented")
+                            start_plots = timeit.default_timer()    # TODO
+                            # TODO: Combine spectrogram and PSD creation to save runtime and memory (like when buffering)
+                            # Spectrogram
+                            trace_info['specLoc'] = [{
+                                'image': nf.plotting.spectrogram(tr, output_dir, spec_win, overlap, use_existing_plots),
+                                'start': tr.stats.starttime.strftime('%Y-%m-%d'),
+                                'end': tr.stats.endtime.strftime('%Y-%m-%d')
+                            }]
+                            done_spec = timeit.default_timer()  # TODO
+                            debug_info['timing']['spec_plot'] += done_spec - start_plots
+
+                            # Plot PSDs of data
+                            trace_info['psdLoc'] = [{
+                                'image': nf.plotting.psd_plot(tr, output_dir, win_len, overlap, use_existing_plots),
+                                'start': tr.stats.starttime.strftime('%Y-%m-%d'),
+                                'end': tr.stats.endtime.strftime('%Y-%m-%d')
+                            }]
+                            done_psd = timeit.default_timer()   # TODO
+                            debug_info['timing']['psd_plot'] += done_psd - done_spec
+
+                            if full:
+                                # TODO: Decide if the same operations are appropriate for the hydrophone data or not
+                                # TODO: Save hourly PSDs
+                                # TODO: Average PSD value at 0.2 Hz (save out for comparison with other sensors in the same network)
+                                # TODO: Linearity of PSD curves
+                                g_log.warning("Full QC of seismic noise not yet implemented")
 
                     else:
                         if channel_type == 'ocean':
@@ -492,6 +553,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                             # Plot rolling mean and add to report
                             # TODO: Make x-lims start and end dates of data
+                            g_log.debug('Creating plot of rolling stats...')
                             roll_plot = os.path.join(output_dir, '{}_mean.png'.format(tr.id))
                             fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
                             ch_stats.plot(x='Center', y='Avg', kind='line', ax=ax, xlabel='Date/Time', ylabel=vert_label, legend=False)
@@ -598,6 +660,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                                 plot_trigger(tr, hum.data, 3, 1.5, show=False)
                                 fig = plt.gcf()
                                 fig.savefig(os.path.join(output_dir, 'triggered_{0}.png'.format(tr.id)))
+                                plt.close(fig)
 
                                 trig_secs = triggers * hum.stats.delta
                                 trig_times = [[hum.stats.starttime + float(y) for y in x] for x in trig_secs]
@@ -842,8 +905,9 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     # Sort channel information by specified order
     for ch_type in ['seismic', 'ocean', 'power', 'health']:
-        sorted_channels = sorted(report_params[ch_type + '_channels'], key=lambda d: d['order'])
-        report_params[ch_type + '_channels'] = sorted_channels
+        if (ch_type + '_channels') in report_params:
+            sorted_channels = sorted(report_params[ch_type + '_channels'], key=lambda d: d['order'])
+            report_params[ch_type + '_channels'] = sorted_channels
 
     if obs_log['Station'].values[0] != obs_log['OBS ID'].values[0]:
         id_str = '_'.join([obs_log['Station'].values[0], obs_log['OBS ID'].values[0]])
@@ -929,6 +993,12 @@ if __name__ == '__main__':
                              "buffered seismic data.")
     parser.add_argument('--max_processes', dest='max_proc', type=int, default=0,
                         help="Maximum number of processes/threads to be used in parallelized analysis.")
+    parser.add_argument('--ignore_seismic', dest='ignore_seismic', action='store_true',
+                        help="If set, do not perform analysis of seismic channels. A stock message will appear in the "
+                             "report to indicate these channels are ignored, regardless of whether they are present.")
+    parser.add_argument('--limited_seismic', dest='limited_seismic', action='store_true',
+                        help="Limit seismic analysis to assessment of data extent, readability and gaps. Generally "
+                             "only used for projects with data security concerns.")
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help="Activate debug mode (more verbose logging). Command-line only.")
 
@@ -1001,7 +1071,7 @@ if __name__ == '__main__':
         full_config['dataset']['obsid'] = obs_identifier
 
         # Runtime flags
-        for flag, key in zip([args.function_check, args.detrend_seis, args.use_existing_plots, args.debug, args.obslog_column_names, args.parallel], ['function_check', 'detrend_seismic', 'use_existing_plots', 'debug', 'logcolnames', 'parallel']):
+        for flag, key in zip([args.function_check, args.detrend_seis, args.use_existing_plots, args.debug, args.obslog_column_names, args.parallel, args.ignore_seismic, args.limited_seismic], ['function_check', 'detrend_seismic', 'use_existing_plots', 'debug', 'logcolnames', 'parallel', 'ignore_seismic', 'limited_seismic']):
             config_flag = config.getboolean('dataset', key, fallback=False)
             # only overwrite existing flags if CL arguments are present and different from config
             if flag and not config_flag:
@@ -1112,6 +1182,7 @@ if __name__ == '__main__':
         if deploy_start is not None:
             base_meta = base_meta.loc[(base_meta['Launch Date/Time (UTC)'] >= deploy_start) &
                                       (base_meta['Launch Date/Time (UTC)'] < deploy_start + timedelta(days=1))]
+            # TODO: Account for test case where launch/on-deck are not applicable
             dep_meta = dep_meta.loc[(dep_meta['Launch Date/Time (UTC)'] == base_meta['Launch Date/Time (UTC)'].values[0])]
             rec_meta = rec_meta.loc[(rec_meta['On-Deck Date/Time (UTC)'] == base_meta['Recovery Date/Time (UTC)'].values[0])]
         if base_meta.shape[0] > 1:
@@ -1243,9 +1314,11 @@ if __name__ == '__main__':
         report_kwargs['stationName'] = base_meta['Station'].values[0]
         report_kwargs['obsName'] = base_meta['OBS Name'].values[0]
         report_kwargs['obsId'] = base_meta['OBS ID'].values[0]
+        # TODO: Allow no location specified (test recording, not super important)
         report_kwargs['latitude'] = base_meta['Deployed Latitude'].values[0]
         report_kwargs['longitude'] = base_meta['Deployed Longitude'].values[0]
         report_kwargs['waterDepth'] = base_meta['Water Depth (m)'].values[0]
+        # TODO: Allow launch/recover times to be not specified (test recording sometimes)
         report_kwargs['deployed'] = pd.to_datetime(base_meta['Launch Date/Time (UTC)'].values[0])
         report_kwargs['deployComments'] = base_meta['Deployment Comments'].values[0]
         # TODO: Handle case of intermediate download (no "recovery" time yet)

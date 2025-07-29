@@ -52,17 +52,19 @@ Battery SOC: At deployment: {{ batteryLevel.start }}% | Remaining: {{ batteryLev
 Average seafloor conditions: Pressure {% if meanPressure %}{{ meanPressure }} Pa{% else %}n/a{% endif %}, Temperature {% if meanTemperature %}{{ meanTemperature }} &deg;C{% else %}n/a{% endif %} 
 
 {% endif %}
-{% if tiltAtDeploy %}
-Tilt from vertical at deployment: Angle {{ tiltAtDeploy.angle }}&deg;, Direction {{ tiltAtDeploy.azimuth }}&deg;
+{% if tiltAtDeploy or tiltAtRecovery %}
+Tilt estimates in OBS's internal reference frame (angle measured from Earth vertical): 
 
+{% if tiltAtDeploy %}
+- At deployment: Angle {{ tiltAtDeploy.angle }}&deg;, Direction {{ tiltAtDeploy.azimuth }}&deg;
 {% endif %}
 {% if tiltAtRecovery %}
-Tilt from vertical at recovery: Angle {{ tiltAtRecovery.angle }}&deg;, Direction {{ tiltAtRecovery.azimuth }}&deg;
-
+- At recovery: Angle {{ tiltAtRecovery.angle }}&deg;, Direction {{ tiltAtRecovery.azimuth }}&deg;
 {% endif %}
 {% if tiltRotation %}
-Apparent tilt rotation over deployment period: {{ tiltRotation }}&deg;
+- Apparent tilt rotation over deployment period: {{ tiltRotation }}&deg;
 
+{% endif %}
 {% endif %}
 
 \newpage{}
@@ -81,8 +83,16 @@ Apparent tilt rotation over deployment period: {{ tiltRotation }}&deg;
 
 This report analyzes data recorded while the instrument is physically at the seabed. Touchdown and release times are determined by manual inspection of the auxiliary data channels where possible. Throughout this report, power spectral density curves are calculated using {{ psdWindowLength }} Hann windows with {{ psdOverlapPercent }}% overlap, following an average periodogram method similar to that described by McNamara & Buland (2004).
 
+{% if seismic_ignored %}
+Seismoacoustic data (seismometer and/or hydrophone) may or may not exist in the data package analyzed. Such data channels have been ignored in preparing this report.
+
+{% elif seismic_limited %}
+Analysis of seismoacoustic data channels (seismometer and/or hydrophone), if present in this data package, is limited to assessment of data extent and readability. No other analysis or plots have been generated for such channels in preparing this report.
+
+{% endif %}
+
 {% if channelList %}
-Recorded data channels (time at seafloor):
+Recorded data channels analyzed (time at seafloor):
 
 | Channel | Start Time | End Time | Sampling Rate (Hz) |
 |:--:|:---:|:---:|:--:|
@@ -128,12 +138,37 @@ Abnormal change(s) in humidity were observed during this deployment.
 
 \newpage{}
 
+{% if seismic_channels %}
 # Seismic Data
 
 {% for ch in seismic_channels %}
 ## {{ ch.channelName }}
 SEED ID: {{ ch.seedID }}
 
+{% if seismic_limited %}
+Data details:
+
+----------------  ----------------------
+Start timestamp    {{ ch.start_string }}
+End timestamp        {{ ch.end_string }}
+Sampling rate       {{ ch.sampling }} Hz
+----------------  ----------------------
+
+{% if ch.gaps %}
+The following data gaps are present in the recorded data:
+
+| Start Time | End Time | Length (s) | Samples |
+|:---|:---|-:|-:|
+{% for gap in ch.gaps %}
+| {{ gap.start }} | {{ gap.end }} | {{ gap.sec }} | {{ gap.samp }} |
+{% endfor %}
+
+{% else %}
+No gaps are present in the recorded data.
+
+{% endif %}
+
+{% else %}
 {% if ch.traceLoc %}
 ### Full trace
 
@@ -171,8 +206,13 @@ PSD curves are binned by frequency and amplitude to generate density heatmaps (p
 {% endif %}
 
 \newpage{}
+{% endif %}
 
 {% endfor %}
+{% if seismic_limited %}
+\newpage{}
+{% endif %}
+{% endif %}
 
 # Oceanographic Data
 

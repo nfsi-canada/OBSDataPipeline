@@ -592,7 +592,7 @@ def plot_filenames(outdir, ch_id, plot_start, plot_end, asis=False):
 def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, channel_map=None, project_meta=None,
                         psd_win=3600, spec_win=3600, overlap=0.5, psd_over=0.75, plot_length=None, ch_id=None,
                         start=None, end=None, detrend=False, spec_cmap=None, use_existing_plots=False, parallel=False,
-                        max_processes=None):
+                        max_processes=None, limit_analysis=False):
     """
     Analyze seismic data stored in raw data files and create PSD and spectrogram plots. File paths in *files* should be
     listed in chronological order. Files must be readable by obspy.read()
@@ -618,6 +618,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
     :param use_existing_plots: check if plots exist and do not re-create if present, False by default
     :param parallel: run PSD calculation with multiprocessing parallelization
     :param max_processes: maximum number of processes to spawn for parallel processing
+    :param limit_analysis: limit analysis of data to only data extent and gaps (reads all data to check what is present)
 
     :return: dictionary of channel information for auto-report generation
     """
@@ -645,7 +646,11 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
         'report_info': 0.,
         'array_reset': 0.,
     }
-    report_info = {'order': 100}
+    report_info = {
+        'order': 100,
+        'start': None,
+        'end': None,
+    }
     channel_info = None
     hydrophone = False
     if ch_id is not None:
@@ -844,6 +849,11 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             for metaKey, reportKey in zip(['description', 'azimuth', 'dip'], ['channelName', 'azimuth', 'dip']):
                 if hasattr(this_channel.meta, metaKey):
                     report_info[reportKey] = this_channel.meta[metaKey]
+            # Update overall start/end times, if applicable
+            if report_info['start'] is None or this_channel.stats.starttime < report_info['start']:
+                report_info['start'] = this_channel.stats.starttime
+            if report_info['end'] is None or this_channel.stats.endtime > report_info['end']:
+                report_info['end'] = this_channel.stats.endtime
 
             # Check that this is a seismic channel
             channel_type = get_channel_type(this_channel.stats.channel)
@@ -892,31 +902,6 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             gap_time = timeit.default_timer()
             timing['gap_test'] += gap_time - more_meta
 
-            # Apply channel sensitivity and remove linear trend, if applicable
-            if hasattr(this_channel.meta, 'response'):
-                this_channel.remove_sensitivity()
-            if detrend:
-                this_channel.detrend('linear')
-            data_clean = timeit.default_timer()
-            timing['data_clean'] += data_clean - gap_time
-
-            if last_start is not None:
-                # Windows start from midnight UTC on the first day of data collection
-                start_of_day = round_obspy_date(this_channel.stats.starttime)
-                if first_psd_start is None:
-                    pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / (psd_win * (1 - overlap)))
-                    first_psd_start = start_of_day + pre_windows * psd_win * (1 - overlap)
-                if first_spec_start is None:
-                    pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / (spec_win * (1 - overlap)))
-                    first_spec_start = start_of_day + pre_windows * spec_win * (1 - overlap)
-
-                # If "last_end" timestamps are set from previous loop iteration, use those as "first_start" timestamps
-                if next_psd_start is not None:
-                    first_psd_start = next_psd_start
-
-                if next_spec_start is not None:
-                    first_spec_start = next_spec_start
-
             if this_channel.stats.starttime > plot_end:
                 # Update plot time window if all data is out of range
                 if plot_length is None:
@@ -932,36 +917,62 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 make_plot = True
 
             plot_admin = timeit.default_timer()
-            timing['plot_admin'] += plot_admin - data_clean
+            timing['plot_admin'] += plot_admin - gap_time
 
-            # Calculate PSDs and save to running lists
-            psd_start = first_psd_start
-            new_data = cut_trace(this_channel, psd_start, None, nearest_sample=True, pad=True)
-            if parallel:
-                apsds, vpsds, freqs, times, binned_vel, binned_acc, next_psd_start = calc_psds_thread_pool(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), binned=True, max_processes=max_processes, f_bins=f_bins)
-            else:
-                apsds, vpsds, freqs, times, binned_vel, binned_acc, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), binned=True, f_bins=f_bins)
-            psd_calc_time = timeit.default_timer()
-            timing['psd_calc'] += psd_calc_time - plot_admin
+            if not limit_analysis:
+                # Apply channel sensitivity and remove linear trend, if applicable
+                if hasattr(this_channel.meta, 'response'):
+                    this_channel.remove_sensitivity()
+                if detrend:
+                    this_channel.detrend('linear')
+                data_clean = timeit.default_timer()
+                timing['data_clean'] += data_clean - plot_admin
 
-            for running, current in zip(['psd_array', 'vpsd_array', 'psd_freqs', 'binned_asis', 'binned_acc'], [apsds, vpsds, freqs, binned_vel, binned_acc]):
-                if psd_temp_results[running] is None:
-                    psd_temp_results[running] = current
+                if last_start is not None:
+                    # Windows start from midnight UTC on the first day of data collection
+                    start_of_day = round_obspy_date(this_channel.stats.starttime)
+                    if first_psd_start is None:
+                        pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / (psd_win * (1 - overlap)))
+                        first_psd_start = start_of_day + pre_windows * psd_win * (1 - overlap)
+                    if first_spec_start is None:
+                        pre_windows = np.floor((this_channel.stats.starttime - start_of_day) / (spec_win * (1 - overlap)))
+                        first_spec_start = start_of_day + pre_windows * spec_win * (1 - overlap)
+
+                    # If "last_end" timestamps are set from previous loop iteration, use those as "first_start" timestamps
+                    if next_psd_start is not None:
+                        first_psd_start = next_psd_start
+
+                    if next_spec_start is not None:
+                        first_spec_start = next_spec_start
+
+                # Calculate PSDs and save to running lists
+                psd_start = first_psd_start
+                new_data = cut_trace(this_channel, psd_start, None, nearest_sample=True, pad=True)
+                if parallel:
+                    apsds, vpsds, freqs, times, binned_vel, binned_acc, next_psd_start = calc_psds_thread_pool(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), binned=True, max_processes=max_processes, f_bins=f_bins)
                 else:
-                    psd_temp_results[running] = np.concatenate((psd_temp_results[running], current), axis=0)
-            if psd_temp_results['psd_times'] is None:
-                psd_temp_results['psd_times'] = times
-            else:
-                psd_temp_results['psd_times'] = np.concatenate((psd_temp_results['psd_times'], times), axis=None)
-            psd_arr_build = timeit.default_timer()
-            timing['psd_buffer'] += psd_arr_build - psd_calc_time
+                    apsds, vpsds, freqs, times, binned_vel, binned_acc, next_psd_start = calc_psds(new_data, psd_win, overlap, psd_over, endtime=plot_end, buffered=True, calc_acc=(not hydrophone), binned=True, f_bins=f_bins)
+                psd_calc_time = timeit.default_timer()
+                timing['psd_calc'] += psd_calc_time - plot_admin
 
-            spec_calc_time = timeit.default_timer()
-            timing['spec_calc'] += spec_calc_time - psd_arr_build
+                for running, current in zip(['psd_array', 'vpsd_array', 'psd_freqs', 'binned_asis', 'binned_acc'], [apsds, vpsds, freqs, binned_vel, binned_acc]):
+                    if psd_temp_results[running] is None:
+                        psd_temp_results[running] = current
+                    else:
+                        psd_temp_results[running] = np.concatenate((psd_temp_results[running], current), axis=0)
+                if psd_temp_results['psd_times'] is None:
+                    psd_temp_results['psd_times'] = times
+                else:
+                    psd_temp_results['psd_times'] = np.concatenate((psd_temp_results['psd_times'], times), axis=None)
+                psd_arr_build = timeit.default_timer()
+                timing['psd_buffer'] += psd_arr_build - psd_calc_time
 
-            # Calculate frequency bin information if not done yet (reduce duplicated effort in future loop iterations)
-            if f_bins is None:
-                f_bins = setup_freq_bins(frequencies=freqs[0], smoothing_width_octaves=0.5)
+                spec_calc_time = timeit.default_timer()
+                timing['spec_calc'] += spec_calc_time - psd_arr_build
+
+                # Calculate frequency bin information if not done yet (reduce duplicated effort in future loop iterations)
+                if f_bins is None:
+                    f_bins = setup_freq_bins(frequencies=freqs[0], smoothing_width_octaves=0.5)
         except Exception as e:
             # TODO: Separate error handling for data read and data analysis
             msg = 'nfsi_obs.plotting.buffer_seismic_data: Error processing raw data files, latest file: {0}'.format(files[i-1])
@@ -970,72 +981,73 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
             print(traceback.print_exc())
 
         if make_plot:
-            g_log.debug('Generating plots...')
             try:
-                start_plotting = timeit.default_timer()
-                # TODO: Decide about trace plot, maybe downsample to 5Hz before plotting?
-                trace_time = timeit.default_timer()
-                timing['trace_plot'] += trace_time - start_plotting
+                if not limit_analysis:
+                    g_log.debug('Generating plots...')
+                    start_plotting = timeit.default_timer()
+                    # TODO: Decide about trace plot, maybe downsample to 5Hz before plotting?
+                    trace_time = timeit.default_timer()
+                    timing['trace_plot'] += trace_time - start_plotting
 
-                plot_files = plot_filenames(outdir, this_channel.id, plot_start, plot_end, asis=hydrophone)
-                get_filenames = timeit.default_timer()
-                timing['plot_admin'] += get_filenames - trace_time
+                    plot_files = plot_filenames(outdir, this_channel.id, plot_start, plot_end, asis=hydrophone)
+                    get_filenames = timeit.default_timer()
+                    timing['plot_admin'] += get_filenames - trace_time
 
-                # PSD plots
-                if hydrophone:
-                    psd_asis = plot_files[0]
-                else:
-                    psd_asis = plot_files[3]
-                if not (use_existing_plots and os.path.isfile(psd_asis)):
-                    g_log.debug('Plotting PSDs in sensor units...')
+                    # PSD plots
                     if hydrophone:
-                        db_lims = spec_lim
+                        psd_asis = plot_files[0]
                     else:
-                        db_lims = [-220,-40]
-                    psd_asis = plot_psds(psd_temp_results['binned_asis'], psd_temp_results['psd_freqs'],
-                                         outfile=psd_asis, density=True, noise_models=False, db_lims=db_lims, f_bins=f_bins)
+                        psd_asis = plot_files[3]
+                    if not (use_existing_plots and os.path.isfile(psd_asis)):
+                        g_log.debug('Plotting PSDs in sensor units...')
+                        if hydrophone:
+                            db_lims = spec_lim
+                        else:
+                            db_lims = [-220,-40]
+                        psd_asis = plot_psds(psd_temp_results['binned_asis'], psd_temp_results['psd_freqs'],
+                                             outfile=psd_asis, density=True, noise_models=False, db_lims=db_lims, f_bins=f_bins)
 
-                if not hydrophone:
-                    psd_v_plots.append(psd_asis)
-                    if not (use_existing_plots and os.path.isfile(plot_files[0])):
-                        g_log.debug('Plotting PSDs in acceleration...')
-                        psd_a_plot = plot_psds(psd_temp_results['binned_acc'], psd_temp_results['psd_freqs'],
-                                             outfile=plot_files[0], density=True, noise_models=True, db_lims=[-180,-50], f_bins=f_bins)
+                    if not hydrophone:
+                        psd_v_plots.append(psd_asis)
+                        if not (use_existing_plots and os.path.isfile(plot_files[0])):
+                            g_log.debug('Plotting PSDs in acceleration...')
+                            psd_a_plot = plot_psds(psd_temp_results['binned_acc'], psd_temp_results['psd_freqs'],
+                                                 outfile=plot_files[0], density=True, noise_models=True, db_lims=[-180,-50], f_bins=f_bins)
 
-                done_psds = timeit.default_timer()
-                timing['psd_plot'] += done_psds - get_filenames
-                psd_a_plots.append({
-                    'image': plot_files[0],
-                    'start': plot_start.strftime('%Y-%m-%d'),
-                    'end': (plot_end - 1).strftime('%Y-%m-%d')
-                })
-                report_add = timeit.default_timer()
-                timing['report_info'] += report_add - done_psds
+                    done_psds = timeit.default_timer()
+                    timing['psd_plot'] += done_psds - get_filenames
+                    psd_a_plots.append({
+                        'image': plot_files[0],
+                        'start': plot_start.strftime('%Y-%m-%d'),
+                        'end': (plot_end - 1).strftime('%Y-%m-%d')
+                    })
+                    report_add = timeit.default_timer()
+                    timing['report_info'] += report_add - done_psds
 
-                # Spectrogram plot from PSDs
-                if not (use_existing_plots and os.path.isfile(plot_files[1])):
-                    g_log.debug('Plotting spectrogram...')
-                    if hydrophone:
-                        spec_plot = plot_spectrogram(psd_temp_results['vpsd_array'], psd_temp_results['psd_freqs'][0],
-                                                     psd_temp_results['psd_times'], this_channel.id, this_channel.stats.sampling_rate,
-                                                     spec_win, overlap, plot_start, plot_end, plot_file=plot_files[1],
-                                                     cmap=spec_cmap, slim=spec_lim)
-                    else:
-                        spec_plot = plot_spectrogram(psd_temp_results['psd_array'], psd_temp_results['psd_freqs'][0],
-                                                     psd_temp_results['psd_times'], this_channel.id, this_channel.stats.sampling_rate,
-                                                     spec_win, overlap, plot_start, plot_end, plot_file=plot_files[1],
-                                                     cmap=spec_cmap, slim=spec_lim)
+                    # Spectrogram plot from PSDs
+                    if not (use_existing_plots and os.path.isfile(plot_files[1])):
+                        g_log.debug('Plotting spectrogram...')
+                        if hydrophone:
+                            spec_plot = plot_spectrogram(psd_temp_results['vpsd_array'], psd_temp_results['psd_freqs'][0],
+                                                         psd_temp_results['psd_times'], this_channel.id, this_channel.stats.sampling_rate,
+                                                         spec_win, overlap, plot_start, plot_end, plot_file=plot_files[1],
+                                                         cmap=spec_cmap, slim=spec_lim)
+                        else:
+                            spec_plot = plot_spectrogram(psd_temp_results['psd_array'], psd_temp_results['psd_freqs'][0],
+                                                         psd_temp_results['psd_times'], this_channel.id, this_channel.stats.sampling_rate,
+                                                         spec_win, overlap, plot_start, plot_end, plot_file=plot_files[1],
+                                                         cmap=spec_cmap, slim=spec_lim)
 
-                done_spec_psd = timeit.default_timer()
-                timing['spec_plot'] += done_spec_psd - report_add
+                    done_spec_psd = timeit.default_timer()
+                    timing['spec_plot'] += done_spec_psd - report_add
 
-                spec_plots.append({
-                    'image': plot_files[1],
-                    'start': plot_start.strftime('%Y-%m-%d'),
-                    'end': (plot_end - 1).strftime('%Y-%m-%d')
-                })
-                report_add = timeit.default_timer()
-                timing['report_info'] += report_add - done_spec_psd
+                    spec_plots.append({
+                        'image': plot_files[1],
+                        'start': plot_start.strftime('%Y-%m-%d'),
+                        'end': (plot_end - 1).strftime('%Y-%m-%d')
+                    })
+                    report_add = timeit.default_timer()
+                    timing['report_info'] += report_add - done_spec_psd
 
             except Exception as e:
                 msg = 'nfsi_obs.plotting.buffer_seismic_data: Error creating plots, latest file: {0}'.format(files[i - 1])
@@ -1048,7 +1060,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 for key in psd_temp_results:
                     psd_temp_results[key] = None
 
-                # Reset temp arrays for spectrogram
+                # Reset temp arrays for spectrogram (if calculated separately, not implemented)
                 reset_arr = timeit.default_timer()
                 timing['array_reset'] += reset_arr - final_start
 
@@ -1063,9 +1075,32 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                 gc.collect()
 
     add_to_report = timeit.default_timer()
-    report_info['psdLoc'] = psd_a_plots
-    report_info['specLoc'] = spec_plots
+    if not limit_analysis:
+        report_info['psdLoc'] = psd_a_plots
+        report_info['specLoc'] = spec_plots
     report_info['hydrophone'] = hydrophone
+    report_info['start_string'] = report_info['start'].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+    report_info['end_string'] = report_info['end'].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+    report_info['sampling'] = str(int(report_info['samplingRate']))
+    # Check for duplicate gap info
+    unique_gaps = {}
+    for gap in all_gaps:
+        gap_key = '_'.join(['.'.join(gap[0:4]), gap[4].strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+                            gap[5].strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]])
+        unique_gaps.update({gap_key: gap})
+    gap_list = [unique_gaps[gk] for gk in unique_gaps.keys()]
+    # Create string representation for gaps in case of limited analysis (otherwise incorporated in other lists externally)
+    if limit_analysis:
+        report_info['gaps'] = []
+        for gap in unique_gaps.values():
+            report_info['gaps'].append({
+                'id': '.'.join(gap[0:4]),
+                'start': gap[4].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                'end': gap[5].strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                'sec': '{:.3f}'.format(gap[6]),
+                'samp': gap[7]
+            })
+
     timing['report_info'] += timeit.default_timer() - add_to_report
     timing['trace_analysis'] = timeit.default_timer() - func_start
-    return report_info, all_gaps, timing
+    return report_info, gap_list, timing
