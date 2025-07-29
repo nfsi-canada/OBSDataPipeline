@@ -150,7 +150,7 @@ def update_station_xml(inv, obs_log=None, extra_info=None, nfsi_fields=False, su
     if nfsi_fields:
         # General information, NFSI-specific
         inv.source = 'NFSI'
-        inv.module = 'OBSDataPipeline 0.4.0'
+        inv.module = 'OBSDataPipeline 0.5.0'
         inv.module_uri = 'https://github.com/nfsi-canada/OBSDataPipeline'
 
     # Station/channel coordinates
