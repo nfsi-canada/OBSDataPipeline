@@ -295,12 +295,10 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 channel_type = trace_info['channelType']
 
                 # TODO: Move string formatting into ReportGenerator class
-                ch_start = max(files_start, data_start)
-                ch_end = min(files_end, data_end)
                 all_channels.append({
                     'id': trace_info['seedID'],
-                    'start': ch_start.datetime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
-                    'end': ch_end.datetime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+                    'start': trace_info['start_string'],
+                    'end': trace_info['end_string'],
                     'sampling': '{:.1f}'.format(trace_info['samplingRate'])
                 })
                 all_gaps.extend(gaps)
@@ -339,6 +337,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 if (data_start is not None) or (data_end is not None):
                     # This shouldn't change `data` if there is no data to cut out
                     data.trim(data_start, data_end, nearest_sample=False)
+                    # If missing data from start/end of time period of interest, will have extra bits of masked traces -> REMOVE
+                    data = data.split().merge()
 
                 proc_timing.append(timeit.default_timer())
                 g_log.debug("Time spent cutting to period of interest: {0} seconds".format((proc_timing[-1] - proc_timing[-2])))
