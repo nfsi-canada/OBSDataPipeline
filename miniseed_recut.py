@@ -281,7 +281,7 @@ if __name__ == '__main__':
                              "the column delimiter.")
     parser.add_argument('--legacylogcols', dest="obslog_column_names_legacy", action="store_true",
                         help="Use legacy column names for OBS deployment log file.")
-    parser.add_argument('--auxseparate', dest='aux_separate',
+    parser.add_argument('--auxseparate', dest='aux_separate', action='store_true',
                         help='Save miniSEED files for auxiliary channels in a separate SDS archive folder, with the '
                              'same name as the main folder and "_AUX" suffix.')
     parser.add_argument('--debug', dest='debug', action='store_true',
