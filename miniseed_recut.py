@@ -276,7 +276,7 @@ if __name__ == '__main__':
                         help="Log file from deployment/recovery. Must include station identifiers and clock drift "
                              "measurements. If not specified, assumed to be a file called 'log.xlsx' in the data "
                              "directory. Preferred format is XLSX (or similar spreadsheet) following NFSI template.")
-    parser.add_argument('--logdelimiter', dest="log_delim",
+    parser.add_argument('--logdelimiter', dest="log_delim", default=',',
                         help="If the OBS log file is delimited text (other than comma-delimited), use this to specify "
                              "the column delimiter.")
     parser.add_argument('--legacylogcols', dest="obslog_column_names_legacy", action="store_true",
@@ -390,7 +390,7 @@ if __name__ == '__main__':
                     data_log_file = os.path.normpath(
                         os.path.abspath(os.path.expanduser(os.path.expandvars(args.datalog))))
                 g_log.info('Reading project metadata from {0}...'.format(data_log_file))
-                obs_log_info = nf.io.parse_obs_log(data_log_file, names_in_file=not args.obslog_column_names_legacy)
+                obs_log_info = nf.io.parse_obs_log(data_log_file, delimiter=args.log_delim, names_in_file=not args.obslog_column_names_legacy)
                 obs_log_data = obs_log_info['basic']
 
             meta_args = {
