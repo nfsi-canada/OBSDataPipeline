@@ -180,6 +180,35 @@ Station-specific parameters typically used:
 
 ## Correct and Complete StationXML (`edit_stationxml.py`)
 
-The Aquarius OBS produce StationXML files which include all response information for channels available on the instrument. Values for location may be set during programming of the instrument, but these are generally not known accurately prior to deployment. This script updates all relevant values from the project/station metadata, and corrects SEED codes as necessary to align with the final pre-processed data files.
+The Aquarius OBS produce StationXML files which include all response information for channels available on the instrument. Values for location may be set during programming of the instrument, but these are generally not known accurately prior to deployment. This script updates all relevant values from the project/station metadata, and corrects SEED codes as necessary to align with the final pre-processed data files. Some NFSI-specific information is also added, including contact information.
 
 The StationXML files produced by this script should be compatible with SeisComP, but include only a single station at this time. Automatically combining into a full-network StationXML when run for several input files is a planned future development.
+
+### CLI Parameters
+
+|        Name        | Default Value | Description                                                                                                                                                                                                                                         |
+|:------------------:|:-------------:|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|    `input_dir`     |               | Absolute path to directory where input (partial) StationXML files are stored and/or base directory for relative paths                                                                                                                               |
+|    `output_dir`    |               | Path to directory where output StationXML files are to be saved                                                                                                                                                                                     |
+|     `log_dir`      |               | Path to directory where runtime logs are to be saved                                                                                                                                                                                                |
+|  `relative_paths`  |     False     | Specify all paths relative to `input_dir`                                                                                                                                                                                                           |
+|       `xml`        |               | Path to input StationXML file if only processing a single file. Will override `input_dir` for this purpose if specified (does not affect `relative_paths` behaviour).                                                                               |
+|     `datalog`      |               | Deployment summary spreadsheet, same as used for QC script                                                                                                                                                                                          |
+|  `legacylogcols`   |     False     | If true, use legacy column names for `datalog` file (opposite behaviour to `logcolnames` in QC script). Will be deprecated in future.                                                                                                               |
+|    `channelmap`    |               | Spreadsheet or delimited text file mapping correct SEED codes to existing identifiers in raw data (same as for QC script). Optional                                                                                                                 |
+|   `out_channels`   |               | List of channel IDs to include in output StationXML (after any correction), either comma-separated or text file. If not specified, channels included in `channelmap` will be output. If no channel map given, all channels in input will be output. |
+|    `other_meta`    |               | Optional JSON file providing extra information to be added to files. Normally used to specify network DOI and sub-sensor serial numbers (hydrophone and Keller).                                                                                    |
+|     `dataless`     |     False     | Set to true if the input files are dataless SEED rather than StationXML                                                                                                                                                                             |
+|      `survey`      | Triangulation | Survey method used to determine seafloor locations. Overridden by column "Survey Calculation Method" in `datalog` if present.                                                                                                                       |
+
+### Common usage
+
+This script is most often run for a full array of OBS, using the project directory as `input_dir`. If StationXML files exist within the input directory but do not contain any channels specified for output, updated copies of these files will not be saved in the output directory.
+
+Typical parameters used:
+- input_dir
+- relative_paths
+- output_dir ("StationXML")
+- datalog
+- channelmap
+- other_meta

@@ -283,7 +283,7 @@ if __name__ == '__main__':
 
         if args.relative_paths:
             if input_dir is None:
-                raise RuntimeError('Missing command-line argument: Cannot use relative paths if in_dir not specified.')
+                raise RuntimeError('Missing command-line argument: Cannot use relative paths if input_dir not specified.')
 
         if args.aqu_xml:
             if args.relative_paths:
