@@ -71,6 +71,10 @@ def parse_obs_log(log_file, delimiter=',', network='XX', names_in_file=False):
                                      parse_dates=[8, 9, 10, 11])
         for df in [locations, deployment, recovery]:
             df.dropna(subset=['Station', 'OBS Name'], inplace=True)     # Remove blank lines and stations not launched if present
+            # Remove rows with "0" for station name (extra rows of formulas left from incomplete modification of template)
+            idx_unused = df[(df['Station'] == 0) | (df['Station'] == "0")].index    # not sure if it's parsed as string or integer
+            df.drop(idx_unused, inplace=True)
+            
             df.set_index('Station', drop=False, inplace=True)
 
         # TODO: Return subset of columns that actually exist
