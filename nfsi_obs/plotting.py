@@ -318,11 +318,11 @@ def spectrogram(trace, outdir, spec_win, overlap, sub_overlap=0.75, cmap=None, s
     if not (use_existing_plots and os.path.isfile(spectrogram_plot)):
         if seismometer:
             spectrogram_plot = plot_spectrogram(apsds, freqs[0], times, trace.id, trace.stats.sampling_rate, spec_win,
-                                                overlap, trace.stats.start_time, trace.stats.end_time,
+                                                overlap, trace.stats.starttime, trace.stats.endtime,
                                                 plot_file=spectrogram_plot, cmap=cmap, slim=slim)
         else:
             spectrogram_plot = plot_spectrogram(vpsds, freqs[0], times, trace.id, trace.stats.sampling_rate, spec_win,
-                                                overlap, trace.stats.start_time, trace.stats.end_time,
+                                                overlap, trace.stats.starttime, trace.stats.endtime,
                                                 plot_file=spectrogram_plot, cmap=cmap, slim=slim)
 
     return spectrogram_plot
@@ -541,13 +541,20 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, density=False, u
     # TODO: Update for changes to PPSD density plot routines (WILL NOT WORK RIGHT NOW!)
     # Plot PSDs in sensor units (velocity or pressure)
     if not (use_existing_plots and os.path.isfile(psd_asis)):
-        psd_asis = plot_psds(vpsds, freqs, outfile=psd_asis, density=density, noise_models=False, db_lims=[-220, -40])
+        if density:
+            psd_asis = plot_psds(bin_v, freqs, outfile=psd_asis, density=density, noise_models=False, db_lims=[-220, -40])
+        else:
+            psd_asis = plot_psds(vpsds, freqs, outfile=psd_asis, density=density, noise_models=False, db_lims=[-220, -40])
 
     # Plot acceleration PSDs (if channel is a seismometer)
     if seismometer:
         if not (use_existing_plots and os.path.isfile(psd_a_plot)):
-            psd_a_plot = plot_psds(apsds, freqs, outfile=psd_a_plot, density=density, noise_models=True, min_f=1e-3,
-                                 db_lims=[-180, -50])
+            if density:
+                psd_a_plot = plot_psds(bin_a, freqs, outfile=psd_a_plot, density=density, noise_models=True, min_f=1e-3,
+                                     db_lims=[-180, -50])
+            else:
+                psd_a_plot = plot_psds(apsds, freqs, outfile=psd_a_plot, density=density, noise_models=True, min_f=1e-3,
+                                     db_lims=[-180, -50])
 
         return psd_a_plot
 

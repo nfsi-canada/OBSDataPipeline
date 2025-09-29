@@ -478,7 +478,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                             # Plot PSDs of data
                             trace_info['psdLoc'] = [{
-                                'image': nf.plotting.psd_plot(tr, output_dir, win_len, overlap, use_existing_plots),
+                                'image': nf.plotting.psd_plot(tr, output_dir, win_len, overlap, use_existing_plots, density=True),
                                 'start': tr.stats.starttime.strftime('%Y-%m-%d'),
                                 'end': tr.stats.endtime.strftime('%Y-%m-%d')
                             }]
