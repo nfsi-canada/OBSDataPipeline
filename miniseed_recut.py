@@ -355,7 +355,16 @@ if __name__ == '__main__':
                 g_log.warning('Invalid end date specified: {}'.format(args.end))
                 pass
 
-        g_log.info('Start: {}, End: {}'.format(startdate.strftime('%Y-%m-%d %H:%M:%S'), enddate.strftime('%Y-%m-%d %H:%M:%S')))
+        timespan_str = ''
+        if startdate is not None:
+            timespan_str += 'Start: {}'.format(startdate.strftime('%Y-%m-%d %H:%M:%S'))
+        else:
+            timespan_str += 'No start date specified'
+        if enddate is not None:
+            timespan_str += ', End: {}'.format(enddate.strftime('%Y-%m-%d %H:%M:%S'))
+        else:
+            timespan_str += ', No end date specified'
+        g_log.info(timespan_str)
 
         # Metadata files
         meta_args = None
