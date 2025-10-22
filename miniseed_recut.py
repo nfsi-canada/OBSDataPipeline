@@ -44,6 +44,7 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
 
     # Remove channels not from this station (weird corrupt behaviour one time...)
     this_station = obspy.Stream()
+    # TODO: Handle case where station_info (from dataless/SXML) is None
     station_ids = [x.code for n in station_info.networks for x in n.stations]
     for tr in full_data:
         try:
