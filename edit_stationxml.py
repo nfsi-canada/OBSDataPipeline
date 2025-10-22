@@ -52,7 +52,7 @@ def map_and_filter_xml(sxml_file, channel_list=None, channel_map=None, is_datale
         input_inv = nf.metadata.read_dataless(sxml_file)
     else:
         is_sxml = validate_stationxml(sxml_file)
-        if not is_sxml:
+        if not is_sxml[0]:
             raise TypeError('Input file {} is not a valid StationXML file.'.format(sxml_file))
 
         input_inv = obspy.read_inventory(sxml_file)
@@ -283,7 +283,7 @@ if __name__ == '__main__':
 
         if args.relative_paths:
             if input_dir is None:
-                raise RuntimeError('Missing command-line argument: Cannot use relative paths if in_dir not specified.')
+                raise RuntimeError('Missing command-line argument: Cannot use relative paths if input_dir not specified.')
 
         if args.aqu_xml:
             if args.relative_paths:
@@ -381,7 +381,12 @@ if __name__ == '__main__':
         for xf in xml_files:
             print(xf)
             # Fix channel identifiers and filter to channels of interest
-            good_channels = map_and_filter_xml(xf, channels, channel_map, args.is_dataless)
+            try:
+                good_channels = map_and_filter_xml(xf, channels, channel_map, args.is_dataless)
+            except TypeError as e:
+                print(traceback.print_exc())
+                continue
+
             num_chan = int(np.sum([len(s.channels) for n in good_channels.networks for s in n.stations]))
             print('Filtered channels: {}'.format(num_chan))
             if num_chan < 1:

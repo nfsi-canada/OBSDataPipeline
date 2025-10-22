@@ -5,11 +5,13 @@
 	{
 		"name": "DAL01",
 		"OBS": "AQU-995F",
+		"start_date": "2021-10-15",
 		"qc_intro": "Intro text specific to this station."
 	},
 	{
 		"name": "DAL02",
 		"OBS": "AQU-0960",
+		"start_date": "2021-10-21",
 		"qc_intro": "Another station."
 	}
 	],
@@ -29,16 +31,22 @@
 	{
 		"channel_id": "CH3",
 		"description": "Seismometer Z Channel",
+		"spec_min": -160,
+		"spec_max": -65,
 		"order": 1
 	},
 	{
 		"channel_id": "CH1",
 		"description": "Seismometer N Channel",
+		"spec_min": -160,
+		"spec_max": -65,
 		"order": 2
 	},
 	{
 		"channel_id": "CH2",
 		"description": "Seismometer E Channel",
+		"spec_min": -160,
+		"spec_max": -65,
 		"order": 3
 	},
 	{
@@ -64,17 +72,22 @@
 	{
 		"channel_id": "MDI",
 		"description": "Internal Pressure",
-		"order": 9
+		"order": 9,
+		"min": 50000,
+		"max": 150000
 	},
 	{
 		"channel_id": "MII",
 		"description": "Internal Humidity",
-		"order": 11
+		"order": 11,
+		"min": 0,
+		"max": 100
 	},
 	{
 		"channel_id": "MDO",
 		"description": "External Pressure",
-		"order": 5
+		"order": 5,
+		"min": 0
 	},
 	{
 		"channel_id": "MDU",
@@ -108,17 +121,39 @@
 	{
 		"channel_id": "LKO",
 		"description": "External Temperature",
-		"order": 6
+		"min": 0,
+		"max": 20,
+		"order": 6,
+		"qc_config": {
+			"qartod": {
+				"gross_range_test": {
+					"fail_span": [0, 30],
+					"suspect_span": [0, 10]
+				}
+			}
+		}
 	},
 	{
 		"channel_id": "MKI",
 		"description": "Internal Temperature",
-		"order": 10
+		"order": 10,
+		"min": 0,
+		"max": 30
 	},
 	{
 		"channel_id": "ME4",
 		"description": "Battery Voltage",
-		"order": 8
+		"order": 8,
+		"min": 5.9,
+		"max": 8.5,
+		"qc_config": {
+			"qartod": {
+				"gross_range_test": {
+					"fail_span": [6, 8.4],
+					"suspect_span": [6.5, 8.2]
+				}
+			}
+		}
 	}
 	]
 }

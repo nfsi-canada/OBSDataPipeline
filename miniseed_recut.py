@@ -24,7 +24,7 @@ BUFFER_MAX = 10
 
 
 def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None, correct_meta=False, net_id='XX',
-                   station_info=None, ch_map=None, proj_meta=None, clock_drift=None):
+                   station_info=None, ch_map=None, proj_meta=None, clock_drift=None, aux=False):
     full_data = obspy.Stream()
     for df in file_list:
         g_log.info('Reading {}...'.format(df))
@@ -105,8 +105,12 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
                     output_dir = os.path.join(archive_dir, str(cut.year), tr.stats.network, tr.stats.station,
                                               '{}.D'.format(tr.stats.channel))
                 else:
-                    output_dir = os.path.join(archive_dir, str(cut.year), tr.stats.network, tr.stats.station,
-                                              tr.stats.channel)
+                    if aux:
+                        output_dir = os.path.join(archive_dir + '_AUX', str(cut.year), tr.stats.network, tr.stats.station,
+                                                  tr.stats.channel)
+                    else:
+                        output_dir = os.path.join(archive_dir, str(cut.year), tr.stats.network, tr.stats.station,
+                                                  tr.stats.channel)
                 if not os.path.exists(output_dir):
                     os.makedirs(output_dir)
 
@@ -139,7 +143,7 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
 
 
 def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=None, start=None, end=None,
-                              correct_meta=False, metadata_args=None):
+                              correct_meta=False, metadata_args=None, aux=False):
     if channels is None:
         channels = DEFAULT_CHANNELS
 
@@ -231,12 +235,12 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
                     buffer_files = all_files[idf:idf+BUFFER_MAX]
                     idf += BUFFER_MAX
 
-                read_and_recut(buffer_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta, clock_info)
+                read_and_recut(buffer_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta, clock_info, aux=aux)
 
                 if idf > len(all_files):
                     done_read = True
         else:
-            read_and_recut(all_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta, clock_info)
+            read_and_recut(all_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta, clock_info, aux=aux)
 
 
 if __name__ == '__main__':
@@ -272,11 +276,14 @@ if __name__ == '__main__':
                         help="Log file from deployment/recovery. Must include station identifiers and clock drift "
                              "measurements. If not specified, assumed to be a file called 'log.xlsx' in the data "
                              "directory. Preferred format is XLSX (or similar spreadsheet) following NFSI template.")
-    parser.add_argument('--logdelimiter', dest="log_delim",
+    parser.add_argument('--logdelimiter', dest="log_delim", default=',',
                         help="If the OBS log file is delimited text (other than comma-delimited), use this to specify "
                              "the column delimiter.")
     parser.add_argument('--legacylogcols', dest="obslog_column_names_legacy", action="store_true",
                         help="Use legacy column names for OBS deployment log file.")
+    parser.add_argument('--auxseparate', dest='aux_separate', action='store_true',
+                        help='Save miniSEED files for auxiliary channels in a separate SDS archive folder, with the '
+                             'same name as the main folder and "_AUX" suffix.')
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help="Activate debug mode (more verbose logging).")
 
@@ -348,7 +355,16 @@ if __name__ == '__main__':
                 g_log.warning('Invalid end date specified: {}'.format(args.end))
                 pass
 
-        g_log.info('Start: {}, End: {}'.format(startdate.strftime('%Y-%m-%d %H:%M:%S'), enddate.strftime('%Y-%m-%d %H:%M:%S')))
+        timespan_str = ''
+        if startdate is not None:
+            timespan_str += 'Start: {}'.format(startdate.strftime('%Y-%m-%d %H:%M:%S'))
+        else:
+            timespan_str += 'No start date specified'
+        if enddate is not None:
+            timespan_str += ', End: {}'.format(enddate.strftime('%Y-%m-%d %H:%M:%S'))
+        else:
+            timespan_str += ', No end date specified'
+        g_log.info(timespan_str)
 
         # Metadata files
         meta_args = None
@@ -383,7 +399,7 @@ if __name__ == '__main__':
                     data_log_file = os.path.normpath(
                         os.path.abspath(os.path.expanduser(os.path.expandvars(args.datalog))))
                 g_log.info('Reading project metadata from {0}...'.format(data_log_file))
-                obs_log_info = nf.io.parse_obs_log(data_log_file, names_in_file=not args.obslog_column_names_legacy)
+                obs_log_info = nf.io.parse_obs_log(data_log_file, delimiter=args.log_delim, names_in_file=not args.obslog_column_names_legacy)
                 obs_log_data = obs_log_info['basic']
 
             meta_args = {
@@ -396,7 +412,8 @@ if __name__ == '__main__':
 
         # Split data into day-long miniSEED files saved in archive_dir (SDS folder structure)
         make_daily_miniseed_files(data_dir, arc_dir, subfolders=subfolders, channels=channels, start=startdate,
-                                  end=enddate, correct_meta=args.correct_metadata, metadata_args=meta_args)
+                                  end=enddate, correct_meta=args.correct_metadata, metadata_args=meta_args,
+                                  aux=args.aux_separate)
 
         g_log.info("Processing complete!")
         logger.close_logs()

@@ -39,6 +39,7 @@ For generating PDF reports, an installation of pandoc and texlive is required. A
   * Copy `configs/config.ini.stock` to either `resource/OBSDataPipeline/configs/` or the existing `configs` directory in the repository and name the copy `config.ini`. Alternatively, the script will do this automatically the first time it runs if `config.ini` does not exist.
   * Edit `config.ini` as necessary for your particular setup.
   * Some basic settings fall back to this default configuration file if not specified in an individual project's `config.ini` file
+* Configuration is not required for other functionality, including editing of StationXML information and data pre-processing for distribution.
 
 ## Field Data QC (`OBS_QC.py`)
 
@@ -114,7 +115,7 @@ Additionally, a directory named `QC reports` is often created under the base dir
 
 Raw data as downloaded directly from the Aquarius OBS is in miniSEED file format, with one channel per file and maximum file size of 128 MB, using the STEIM2 data compression algorithm. This means that the time span covered by any particular file varies with sampling rate and compression efficiency.
 
-The standard used by SeisComP (SDS archive) and more familiar to seismology researchers has data in miniSEED format, with each file including data for a single channel over a 24-hour period (UTC day). These files are organized in a standard folder structure, and have standardized filenames.
+The standard used by SeisComP (SDS archive) and more familiar to seismology researchers has data in miniSEED format, with each file including data for a single channel over a 24-hour period (UTC day). These files are organized in a standard folder structure, and have standardized filenames. See the [SeisComP documentation](https://docs.gempa.de/seiscomp3/current/apps/slarchive.html) for more information.
 
 The `miniseed_recut.py` script can be used to convert raw Aquarius data to the SDS structure. The `SDS_many.py` script allows this operation to be run for several stations in sequence with a JSON file providing command line inputs.
 
@@ -131,8 +132,83 @@ Filename ("data" channel): [Net].[Sta].[Loc].[Chan].D.[Year].[JulianDay].mseed
 
 Some channel identifiers used by default on the Aquarius OBS do not follow the SEED convention, and require correction using the same channel map file used by the data QC script. This pre-processing script also applies a linear clock drift correction based on the final clock offset measurement collected at instrument recovery, if available.
 
+### CLI Parameters
+
+|        Name        | Default Value | Description                                                                                                                                                                      |
+|:------------------:|:-------------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|     `data_dir`     |               | Absolute path to directory where Aquarius data package is stored                                                                                                                 |
+|   `archive_dir`    |               | Absolute path to directory where SDS archive format files are to be saved                                                                                                        |
+|    `subfolders`    |               | Comma-separated list of direct child directories in data_dir to be processed                                                                                                     |
+|     `channels`     |               | Comma-separated list of channels to process (optional). Defaults to only seismometer and hydrophone. Will recognize "all" to process all channels present in the data directory. |
+|      `start`       |               | Start date/time for data processing, as YYYYMMDD[HH[MM[SS]]]                                                                                                                     |
+|       `end`        |               | End date/time for data processing, as YYYYMMDD[HH[MM[SS]]]                                                                                                                       |
+| `correct_metadata` |     False     | Flag to correct channel IDs in output files                                                                                                                                      |
+|     `network`      |     `XX`      | FDSN network code assigned to the data. Default `XX` for test data.                                                                                                              |
+|  `relative_paths`  |     False     | Specify all paths relative to `data_dir`, with the exception of `archive_dir` and `log_dir`                                                                                      |
+|     `metadata`     |               | Path to metadata file (dataless SEED or StationXML). Channel IDs should match the raw data.                                                                                      |
+|    `channelmap`    |               | Spreadsheet or delimited text file mapping correct SEED codes to existing identifiers in raw data (same as for QC script). Optional                                              |
+|    `extra_meta`    |               | Optional JSON file, as used for QC script. Channel descriptions are taken from here if present.                                                                                  |
+|     `log_dir`      |               | Absolute path to directory where runtime logs are to be saved                                                                                                                    |
+|     `datalog`      |               | Deployment summary spreadsheet, same as used for QC script                                                                                                                       |
+|   `logdelimiter`   |       ,       | Optional delimiter if `datalog` file is delimited text (default comma-separated)                                                                                                 |
+|  `legacylogcols`   |     False     | If true, use legacy column names for `datalog` file (opposite behaviour to `logcolnames` in QC script). Will be deprecated in future.                                            |
+|   `auxseparate`    |     False     | If true, save output data files for auxiliary channels in a separate SDS folder structure, named the same as `archive_dir` with '_AUX' suffix                                    |
+|      `debug`       |     False     | Set logging level to debug for extra information                                                                                                                                 |
+
+### Common Usage
+
+This script is most often used as part of a batch process for data collected from an entire array of OBS (`SDS_many.py`). A JSON file is used as input for the batch script, with an item named `instruments` to specify station-specific parameters. Common CLI parameters are specified at the top level, with boolean flags given as a list labeled `flags`.
+
+Common parameters normally included:
+- data_dir (project directory on disk)
+- archive_dir ("SDS" optionally in project directory)
+- channels ("all")
+- channelmap
+- extra_meta
+- datalog
+- network
+- flags
+  - correct_metadata
+  - relative_paths
+  - auxseparate
+
+Station-specific parameters typically used:
+- subfolders
+- metadata
+- start (touchdown at seafloor)
+- end (release from seafloor)
+
 ## Correct and Complete StationXML (`edit_stationxml.py`)
 
-The Aquarius OBS produce StationXML files which include all response information for channels available on the instrument. Values for location may be set during programming of the instrument, but these are generally not known accurately prior to deployment. This script updates all relevant values from the project/station metadata, and corrects SEED codes as necessary to align with the final pre-processed data files.
+The Aquarius OBS produce StationXML files which include all response information for channels available on the instrument. Values for location may be set during programming of the instrument, but these are generally not known accurately prior to deployment. This script updates all relevant values from the project/station metadata, and corrects SEED codes as necessary to align with the final pre-processed data files. Some NFSI-specific information is also added, including contact information.
 
 The StationXML files produced by this script should be compatible with SeisComP, but include only a single station at this time. Automatically combining into a full-network StationXML when run for several input files is a planned future development.
+
+### CLI Parameters
+
+|        Name        | Default Value | Description                                                                                                                                                                                                                                         |
+|:------------------:|:-------------:|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|    `input_dir`     |               | Absolute path to directory where input (partial) StationXML files are stored and/or base directory for relative paths                                                                                                                               |
+|    `output_dir`    |               | Path to directory where output StationXML files are to be saved                                                                                                                                                                                     |
+|     `log_dir`      |               | Path to directory where runtime logs are to be saved                                                                                                                                                                                                |
+|  `relative_paths`  |     False     | Specify all paths relative to `input_dir`                                                                                                                                                                                                           |
+|       `xml`        |               | Path to input StationXML file if only processing a single file. Will override `input_dir` for this purpose if specified (does not affect `relative_paths` behaviour).                                                                               |
+|     `datalog`      |               | Deployment summary spreadsheet, same as used for QC script                                                                                                                                                                                          |
+|  `legacylogcols`   |     False     | If true, use legacy column names for `datalog` file (opposite behaviour to `logcolnames` in QC script). Will be deprecated in future.                                                                                                               |
+|    `channelmap`    |               | Spreadsheet or delimited text file mapping correct SEED codes to existing identifiers in raw data (same as for QC script). Optional                                                                                                                 |
+|   `out_channels`   |               | List of channel IDs to include in output StationXML (after any correction), either comma-separated or text file. If not specified, channels included in `channelmap` will be output. If no channel map given, all channels in input will be output. |
+|    `other_meta`    |               | Optional JSON file providing extra information to be added to files. Normally used to specify network DOI and sub-sensor serial numbers (hydrophone and Keller).                                                                                    |
+|     `dataless`     |     False     | Set to true if the input files are dataless SEED rather than StationXML                                                                                                                                                                             |
+|      `survey`      | Triangulation | Survey method used to determine seafloor locations. Overridden by column "Survey Calculation Method" in `datalog` if present.                                                                                                                       |
+
+### Common usage
+
+This script is most often run for a full array of OBS, using the project directory as `input_dir`. If StationXML files exist within the input directory but do not contain any channels specified for output, updated copies of these files will not be saved in the output directory.
+
+Typical parameters used:
+- input_dir
+- relative_paths
+- output_dir ("StationXML")
+- datalog
+- channelmap
+- other_meta
