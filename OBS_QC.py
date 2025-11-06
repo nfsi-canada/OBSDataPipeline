@@ -36,7 +36,7 @@ if not os.path.isdir(resource_dir):
 
 def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, project_meta=None,
             full=True, detrend=False, cmap=None, use_existing_plots=False, parallel=False, max_proc=None,
-            ignore_seismic=False, limited_seismic=False, flags_from_config=False, **kwargs):
+            ignore_seismic=False, limited_seismic=False, subzero=False, flags_from_config=False, **kwargs):
     """
     Extra keyword arguments are included as report parameters (must match variables in template file).
     """
@@ -56,6 +56,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         parallel = config.getboolean('dataset', 'parallel', fallback=False)
         ignore_seismic = config.getboolean('dataset', 'ignore_seismic', fallback=False)
         limited_seismic = config.getboolean('dataset', 'limited_seismic', fallback=False)
+        subzero = config.getboolean('dataset', 'subzero', fallback=False)
 
     # Initialize report parameters dictionary with input keywords
     report_params = {}
@@ -494,6 +495,13 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                     else:
                         if channel_type == 'ocean':
+                            # TODO: For external temperature data, unwrap sub-zero readings
+                            if re.match(r'[A-Z]KO', tr.meta.channel) and subzero:
+                                max_counts = pow(2, 16)
+                                thres = 0.9 * max_counts
+                                wrap_idx = tr.data > thres
+                                tr.data[wrap_idx] -= max_counts
+
                             # Thresholds determined based on raw counts, so needs to happen before sensitivity is removed by plotting function
                             # TODO: Check if this will work with APG data if we ever collect any
                             if re.match(r'[A-Z]DO', tr.meta.channel):
@@ -999,6 +1007,8 @@ if __name__ == '__main__':
     parser.add_argument('--limited_seismic', dest='limited_seismic', action='store_true',
                         help="Limit seismic analysis to assessment of data extent, readability and gaps. Generally "
                              "only used for projects with data security concerns.")
+    parser.add_argument('--subzero', dest='subzero', action='store_true',
+                        help="Check external temperature data for sub-zero readings and attempt to unwrap.")
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help="Activate debug mode (more verbose logging). Command-line only.")
 
@@ -1071,7 +1081,7 @@ if __name__ == '__main__':
         full_config['dataset']['obsid'] = obs_identifier
 
         # Runtime flags
-        for flag, key in zip([args.function_check, args.detrend_seis, args.use_existing_plots, args.debug, args.obslog_column_names, args.parallel, args.ignore_seismic, args.limited_seismic], ['function_check', 'detrend_seismic', 'use_existing_plots', 'debug', 'logcolnames', 'parallel', 'ignore_seismic', 'limited_seismic']):
+        for flag, key in zip([args.function_check, args.detrend_seis, args.use_existing_plots, args.debug, args.obslog_column_names, args.parallel, args.ignore_seismic, args.limited_seismic, args.subzero], ['function_check', 'detrend_seismic', 'use_existing_plots', 'debug', 'logcolnames', 'parallel', 'ignore_seismic', 'limited_seismic', 'subzero']):
             config_flag = config.getboolean('dataset', key, fallback=False)
             # only overwrite existing flags if CL arguments are present and different from config
             if flag and not config_flag:
