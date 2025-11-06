@@ -92,7 +92,7 @@ Analysis of seismoacoustic data channels (seismometer and/or hydrophone), if pre
 {% endif %}
 
 {% if subzero %}
-The external temperature sensor does not read accurately for temperatures below 0C. Processing has been done for this report to attempt to recover sub-zero temperature readings. Such readings should be treated as approximate only.
+The external temperature sensor does not read accurately for temperatures below 0&deg;C. Processing has been done for this report to attempt to recover sub-zero temperature readings. Such readings should be treated as approximate only.
 
 {% endif %}
 
