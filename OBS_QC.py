@@ -72,6 +72,10 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
     if limited_seismic:
         report_params['seismic_limited'] = True
 
+    # Add flag for subzero temperature correction to report info, if set
+    if subzero:
+        report_params['subzero'] = True
+
     # Windowing parameters for seismic data
     win_len = 3600
     overlap = 0.5
@@ -498,7 +502,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                             # TODO: For external temperature data, unwrap sub-zero readings
                             if re.match(r'[A-Z]KO', tr.meta.channel) and subzero:
                                 max_counts = pow(2, 16)
-                                thres = 0.9 * max_counts
+                                thres = 0.5 * max_counts
                                 wrap_idx = tr.data > thres
                                 tr.data[wrap_idx] -= max_counts
 
