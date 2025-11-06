@@ -24,14 +24,12 @@ if __name__ == '__main__':
     raw_files = glob(os.path.join(base_dir, '**/*.mseed'), recursive=True)
 
     # Ignore any files calculated by previous QC script runs
-    try:
-        raw_files.remove(os.path.join(base_dir, 'calculated_current.mseed'))
-    except ValueError:
-        pass
+    calcur = glob(os.path.join(base_dir, '**/calculated_current.mseed'), recursive=True)
     dspk = glob(os.path.join(base_dir, '**/*_despiked.mseed'), recursive=True)
-    for df in dspk:
+    ignore_files = calcur + dspk
+    for fl in ignore_files:
         try:
-            raw_files.remove(df)
+            raw_files.remove(fl)
         except ValueError:
             pass
 
@@ -45,6 +43,7 @@ if __name__ == '__main__':
         if np.any(times < datetime(2021, 9, 1)):
             warnings.warn('Some data timestamps prior to 2021-09-01 (invalid).')
         info = get_record_information(rf)
+        # TODO: Adjust filename field to show full path under base_dir
         file_info.append({
             'file_name': os.path.basename(rf),
             'channel_id': '{}.{}.{}.{}'.format(info['network'], info['station'], info['location'], info['channel']),
