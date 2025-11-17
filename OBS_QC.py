@@ -495,16 +495,20 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                     else:
                         if channel_type == 'ocean':
-                            # TODO: For external temperature data, unwrap sub-zero readings
-                            if re.match(r'[A-Z]KO', tr.meta.channel) and subzero:
+                            # For external temperature data, check for and (optionally) unwrap sub-zero readings
+                            if re.match(r'[A-Z]KO', tr.meta.channel):
                                 max_counts = pow(2, 16)
                                 thres_corr = 0.9 * max_counts
                                 if np.sum(tr.data > thres_corr) > 0:
-                                    # Set flag for report creation if correction is actually done
-                                    report_params['subzero'] = True
-                                    thres = 0.5 * max_counts
-                                    wrap_idx = tr.data > thres
-                                    tr.data[wrap_idx] -= max_counts
+                                    if subzero:
+                                        # Set flag for report creation if correction is actually done
+                                        report_params['subzero'] = True
+                                        thres = 0.5 * max_counts
+                                        wrap_idx = tr.data > thres
+                                        tr.data[wrap_idx] -= max_counts
+                                    else:
+                                        # Alternate flag to just display some text in the report introduction
+                                        report_params['temp_wrap'] = True
 
                             # Thresholds determined based on raw counts, so needs to happen before sensitivity is removed by plotting function
                             # TODO: Check if this will work with APG data if we ever collect any
@@ -1012,7 +1016,8 @@ if __name__ == '__main__':
                         help="Limit seismic analysis to assessment of data extent, readability and gaps. Generally "
                              "only used for projects with data security concerns.")
     parser.add_argument('--subzero', dest='subzero', action='store_true',
-                        help="Check external temperature data for sub-zero readings and attempt to unwrap.")
+                        help="Attempt to unwrap sub-zero readings in external temperature data. Script will check for "
+                             "such values regardless.")
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help="Activate debug mode (more verbose logging). Command-line only.")
 

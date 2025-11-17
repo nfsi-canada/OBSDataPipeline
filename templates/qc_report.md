@@ -94,6 +94,9 @@ Analysis of seismoacoustic data channels (seismometer and/or hydrophone), if pre
 {% if subzero %}
 The external temperature sensor does not read accurately for temperatures below 0&deg;C. Processing has been done for this report to attempt to recover sub-zero temperature readings. Such readings should be treated as approximate only.
 
+{% elif temp_wrap %}
+Recorded values on the external temperature sensor indicate readings likely dropped below 0&deg;C during this deployment. The sensor does not read accurately for this range, causing values to wrap to the top of the available data range and display suspected non-physical effects. This data should not be used for detailed analysis without careful weeding.
+
 {% endif %}
 
 {% if channelList %}
