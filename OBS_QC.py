@@ -1015,8 +1015,8 @@ if __name__ == '__main__':
                         help="Limit seismic analysis to assessment of data extent, readability and gaps. Generally "
                              "only used for projects with data security concerns.")
     parser.add_argument('--subzero', dest='subzero', action='store_true',
-                        help="Attempt to unwrap sub-zero readings in external temperature data. Script will check for "
-                             "such values regardless.")
+                        help="Experimental feature. Attempt to unwrap sub-zero readings in external temperature data. "
+                             "Script will check for such values regardless.")
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help="Activate debug mode (more verbose logging). Command-line only.")
 
