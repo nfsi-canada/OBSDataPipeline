@@ -316,19 +316,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     temp = obspy.read(rf)
                     for tr in temp:
                         data.append(tr)
-                data.merge()
-
-                # Remove any seismic channels if explicitly ignored
-                if ignore_seismic:
-                    for tr in data:
-                        ch_type = nf.metadata.get_channel_type(tr.meta.channel)
-                        if ch_type == 'seismic':
-                            data.remove(tr)
-
-                    # Check if there is still data to analyze left
-                    if len(data.traces) < 1:
-                        g_log.info('No non-seismic traces present, skipping.')
-                        continue
 
                 proc_timing.append(timeit.default_timer())
                 g_log.debug("Time spent reading data file(s): {0} seconds".format((proc_timing[-1] - proc_timing[-2])))
@@ -344,6 +331,18 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 proc_timing.append(timeit.default_timer())
                 g_log.debug("Time spent cutting to period of interest: {0} seconds".format((proc_timing[-1] - proc_timing[-2])))
                 debug_info['timing']['time_cut'] += proc_timing[-1] - proc_timing[-2]
+
+                # Remove any seismic channels if explicitly ignored
+                if ignore_seismic:
+                    for tr in data:
+                        ch_type = nf.metadata.get_channel_type(tr.meta.channel)
+                        if ch_type == 'seismic':
+                            data.remove(tr)
+
+                    # Check if there is still data to analyze left
+                    if len(data.traces) < 1:
+                        g_log.info('No non-seismic traces present, skipping.')
+                        continue
 
                 # Populate metadata from other files as necessary
                 data = nf.metadata.update_metadata(data, network_id, g_log, station_info, channel_map, project_meta)
