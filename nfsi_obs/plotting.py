@@ -551,10 +551,10 @@ def psd_plot(trace, outdir, win_len, overlap, sub_overlap=0.75, density=False, u
         if not (use_existing_plots and os.path.isfile(psd_a_plot)):
             if density:
                 psd_a_plot = plot_psds(bin_a, freqs, outfile=psd_a_plot, density=density, noise_models=True, min_f=1e-3,
-                                     db_lims=[-180, -50])
+                                     db_lims=[-200, -50])
             else:
                 psd_a_plot = plot_psds(apsds, freqs, outfile=psd_a_plot, density=density, noise_models=True, min_f=1e-3,
-                                     db_lims=[-180, -50])
+                                     db_lims=[-200, -50])
 
         return psd_a_plot
 
@@ -1019,7 +1019,7 @@ def buffer_seismic_data(files, outdir, g_log, net_id='XX', station_info=None, ch
                         if not (use_existing_plots and os.path.isfile(plot_files[0])):
                             g_log.debug('Plotting PSDs in acceleration...')
                             psd_a_plot = plot_psds(psd_temp_results['binned_acc'], psd_temp_results['psd_freqs'],
-                                                 outfile=plot_files[0], density=True, noise_models=True, db_lims=[-180,-50], f_bins=f_bins)
+                                                 outfile=plot_files[0], density=True, noise_models=True, db_lims=[-200,-50], f_bins=f_bins)
 
                     done_psds = timeit.default_timer()
                     timing['psd_plot'] += done_psds - get_filenames
