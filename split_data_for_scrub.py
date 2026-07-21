@@ -2,6 +2,8 @@
 Split an Aquarius data package into two separate folders, based on a specific time period to be cut out of the main data
 package. The primary use case for this script is when a portion of the data needs to be reviewed for classified signals.
 
+The StationXML corresponding to the useful data channels (Sensor1.xml) is copied to both locations.
+
 Author: K. Bosman
 July 20, 2026
 """
@@ -29,7 +31,7 @@ def split_data_package(raw_dir, rem_path, split_path, channels, start, end):
     """
     for root, dirs, files in os.walk(raw_dir):
         for f in files:
-            g_log.debug('Checking file: {}'.format(f))
+            g_log.info('Checking file: {}'.format(f))
             dest_dir = None
             source_path = os.path.join(root, f)
             relative_path = os.path.relpath(root, raw_dir)
@@ -83,6 +85,11 @@ def split_data_package(raw_dir, rem_path, split_path, channels, start, end):
                 g_log.debug('Non-data file')
                 dest_dir = os.path.join(rem_path, relative_path)
                 # TODO: Copy metadata file(s) to scrub directory also to have a functionally-complete data package
+                if f == 'Sensor1.xml':
+                    g_log.debug('StationXML file. Copying to split directory also.')
+                    dest2 = os.path.join(split_path, relative_path)
+                    os.makedirs(dest2, exist_ok=True)
+                    copy2(source_path, dest2)
 
             if dest_dir is not None:
                 os.makedirs(dest_dir, exist_ok=True)
