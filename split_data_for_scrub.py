@@ -29,49 +29,53 @@ def split_data_package(raw_dir, rem_path, split_path, channels, start, end):
     """
     # TODO: Preserve folder structure inside data package
 
-    raw_files = glob(os.path.join(raw_dir, '*'))
-    for rf in raw_files:
-        ext = os.path.splitext(rf)[1]
-        if ext == '.mseed':
-            filename = os.path.basename(rf)
-            ch_name = filename.split('_')[1]
-            if ch_name in channels:
-                # Check time span
-                times = get_start_and_end_time(rf)
-                if times[0] < start and times[1] < start:
-                    # Entirely before time span of interest
-                    copy2(rf, rem_path)
-                elif times[0] > end and times[1] > end:
-                    # Entirely after time span of interest
-                    copy2(rf, rem_path)
-                elif times[0] > start and times[1] < end:
-                    # Entirely within time span of interest
-                    copy2(rf, split_path)
+    for root, dirs, files in os.walk(raw_dir):
+        for f in files:
+            dest_dir = None
+            source_path = os.path.join(root, f)
+            relative_path = os.path.relpath(root, raw_dir)
+            # Check file extension
+            if f.endswith('.mseed'):
+                ch_name = f.split('_')[1]
+                if ch_name in channels:
+                    # Check time span
+                    times = get_start_and_end_time(source_path)
+                    if times[0] < start and times[1] < start:
+                        # Entirely before time span of interest
+                        dest_dir = os.path.join(rem_path, relative_path)
+                    elif times[0] > end and times[1] > end:
+                        # Entirely after time span of interest
+                        dest_dir = os.path.join(rem_path, relative_path)
+                    elif times[0] > start and times[1] < end:
+                        # Entirely within time span of interest
+                        dest_dir = os.path.join(split_path, relative_path)
+                    else:
+                        # Some overlap, need to split file
+                        data = obspy.read(source_path)
+                        before = data.slice(endtime=start)
+                        during = data.slice(starttime=start, endtime=end)
+                        after = data.slice(starttime=end)
+                        # Check each to see if it has data in it
+                        if len(before) > 0 or len(after) > 0:
+                            outer = obspy.Stream()
+                            for b in before:
+                                outer.append(b)
+                            for a in after:
+                                outer.append(a)
+                            outer.merge().split()
+                            outer.write(os.path.join(rem_path, relative_path, f), format="MSEED")
+
+                        if len(during) > 0:
+                            during.write(os.path.join(split_path, relative_path, f), format="MSEED")
                 else:
-                    # Some overlap, need to split file
-                    data = obspy.read(rf)
-                    before = data.slice(endtime=start)
-                    during = data.slice(starttime=start, endtime=end)
-                    after = data.slice(starttime=end)
-                    # Check each to see if it has data in it
-                    filename = os.path.basename(rf)
-                    if len(before) > 0 or len(after) > 0:
-                        outer = obspy.Stream()
-                        for b in before:
-                            outer.append(b)
-                        for a in after:
-                            outer.append(a)
-
-                        outer.write(os.path.join(rem_path, filename), format="MSEED")
-
-                    if len(during) > 0:
-                        during.write(os.path.join(split_path, filename), format="MSEED")
+                    # Not a channel of interest
+                    dest_dir = os.path.join(rem_path, relative_path)
             else:
-                # Not a channel of interest
-                copy2(rf, rem_path)
-        else:
-            # Non-data file
-            copy2(rf, rem_path)
+                # Non-data file
+                dest_dir = os.path.join(rem_path, relative_path)
+
+            if dest_dir is not None:
+                copy2(source_path, dest_dir)
 
 
 if __name__ == '__main__':
