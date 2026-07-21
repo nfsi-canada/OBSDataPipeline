@@ -27,10 +27,9 @@ def split_data_package(raw_dir, rem_path, split_path, channels, start, end):
 
     Data files are assumed to be miniSEED format (extension .mseed)
     """
-    # TODO: Preserve folder structure inside data package
-
     for root, dirs, files in os.walk(raw_dir):
         for f in files:
+            g_log.debug('Checking file: {}'.format(f))
             dest_dir = None
             source_path = os.path.join(root, f)
             relative_path = os.path.relpath(root, raw_dir)
@@ -42,15 +41,23 @@ def split_data_package(raw_dir, rem_path, split_path, channels, start, end):
                     times = get_start_and_end_time(source_path)
                     if times[0] < start and times[1] < start:
                         # Entirely before time span of interest
+                        g_log.debug('File of interest, entirely before scrub period')
                         dest_dir = os.path.join(rem_path, relative_path)
                     elif times[0] > end and times[1] > end:
                         # Entirely after time span of interest
+                        g_log.debug('File of interest, entirely after scrub period')
                         dest_dir = os.path.join(rem_path, relative_path)
                     elif times[0] > start and times[1] < end:
                         # Entirely within time span of interest
+                        g_log.debug('File of interest, entirely within scrub period')
                         dest_dir = os.path.join(split_path, relative_path)
                     else:
                         # Some overlap, need to split file
+                        g_log.debug('File of interest, crosses boundary of scrub period. Splitting...')
+                        # Ensure directories exist
+                        os.makedirs(os.path.join(rem_path, relative_path), exist_ok=True)
+                        os.makedirs(os.path.join(split_path, relative_path), exist_ok=True)
+                        # Read data file
                         data = obspy.read(source_path)
                         before = data.slice(endtime=start)
                         during = data.slice(starttime=start, endtime=end)
@@ -62,19 +69,23 @@ def split_data_package(raw_dir, rem_path, split_path, channels, start, end):
                                 outer.append(b)
                             for a in after:
                                 outer.append(a)
-                            outer.merge().split()
+                            outer = outer.merge().split()
                             outer.write(os.path.join(rem_path, relative_path, f), format="MSEED")
 
                         if len(during) > 0:
                             during.write(os.path.join(split_path, relative_path, f), format="MSEED")
                 else:
                     # Not a channel of interest
+                    g_log.debug('Not a channel of interest')
                     dest_dir = os.path.join(rem_path, relative_path)
             else:
                 # Non-data file
+                g_log.debug('Non-data file')
                 dest_dir = os.path.join(rem_path, relative_path)
+                # TODO: Copy metadata file(s) to scrub directory also to have a functionally-complete data package
 
             if dest_dir is not None:
+                os.makedirs(dest_dir, exist_ok=True)
                 copy2(source_path, dest_dir)
 
 
