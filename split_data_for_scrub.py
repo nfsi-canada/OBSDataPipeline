@@ -204,7 +204,10 @@ if __name__ == '__main__':
         # Split data into two folders (nominally unclassified and to-scrub)
         split_data_package(data_dir, save_dir, scrub_dir, channels=channels, start=startdate, end=enddate)
 
-        g_log.info("Processing complete!")
+        g_log.info("Data package split complete!")
+        run_end = datetime.now()
+        running = run_end - run_start
+        g_log.info('Total runtime: {} seconds'.format(running.total_seconds()))
         logger.close_logs()
     except Exception as e:
         print(traceback.print_exc())
