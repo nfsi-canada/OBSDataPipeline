@@ -43,7 +43,7 @@ def split_data_package(raw_dir, rem_path, split_path, channels, start, end):
                     times = get_start_and_end_time(source_path)
                     if times[0] < start and times[1] < start:
                         # Entirely before time span of interest
-                        g_log.debug('File of interest, entirely before scrub period')
+                        g_log.debug('File of interest, entirely before scrub period => OK')
                         dest_dir = os.path.join(rem_path, relative_path)
                     elif times[0] > end and times[1] > end:
                         # Entirely after time span of interest
