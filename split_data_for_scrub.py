@@ -38,7 +38,7 @@ def split_data_package(raw_dir, rem_path, split_path, channels, start, end):
             # Check file extension
             if f.endswith('.mseed'):
                 ch_name = f.split('_')[1]
-                if ch_name in channels:
+                if (ch_name in channels) or (channels == 'all'):
                     # Check time span
                     times = get_start_and_end_time(source_path)
                     if times[0] < start and times[1] < start:
