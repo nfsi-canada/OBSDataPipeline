@@ -42,6 +42,10 @@ if __name__ == '__main__':
     for inst in instruments:
         istart = timeit.default_timer()
 
+        iflags = None
+        if 'flags' in inst:
+            iflags = inst.pop('flags')
+
         args_list = [
             'python',
             'miniseed_recut.py',
@@ -52,6 +56,9 @@ if __name__ == '__main__':
             args_list.append('--{0}={1}'.format(ikey, inst[ikey]))
         if flags is not None:
             for f in flags:
+                args_list.append('--{0}'.format(f))
+        if iflags is not None:
+            for f in iflags:
                 args_list.append('--{0}'.format(f))
 
         subprocess.run(args_list)
