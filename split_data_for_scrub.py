@@ -55,7 +55,7 @@ def split_data_package(raw_dir, rem_path, split_path, channels, start, end):
                         dest_dir = os.path.join(split_path, relative_path)
                     else:
                         # Some overlap, need to split file
-                        g_log.debug('File of interest, crosses boundary of scrub period. Splitting...')
+                        g_log.debug('File of interest, crosses boundary of scrub period => Splitting...')
                         # Ensure directories exist
                         os.makedirs(os.path.join(rem_path, relative_path), exist_ok=True)
                         os.makedirs(os.path.join(split_path, relative_path), exist_ok=True)
