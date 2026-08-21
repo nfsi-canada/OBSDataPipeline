@@ -27,7 +27,7 @@ def split_data_package(raw_dir, rem_path, split_path, channels, start, end):
     Split Aquarius data package into 2 sub-folders. Save all data from `channels` during time period specified by
     `start` and `end` into `split_path`. All remaining data is saved into `rem_path`.
 
-    Data files are assumed to be miniSEED format (extension .mseed)
+    Data files must be in miniSEED format (extension .mseed)
     """
     for root, dirs, files in os.walk(raw_dir):
         for f in files:
