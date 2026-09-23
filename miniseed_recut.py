@@ -24,7 +24,7 @@ BUFFER_MAX = 10
 
 
 def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None, correct_meta=False, net_id='XX',
-                   station_info=None, ch_map=None, proj_meta=None, clock_drift=None, aux=False):
+                   station_info=None, ch_map=None, proj_meta=None, clock_drift=None, skip_clock=False, aux=False):
     full_data = obspy.Stream()
     for df in file_list:
         g_log.info('Reading {}...'.format(df))
@@ -44,6 +44,7 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
 
     # Remove channels not from this station (weird corrupt behaviour one time...)
     this_station = obspy.Stream()
+    # TODO: Handle case where station_info (from dataless/SXML) is None
     station_ids = [x.code for n in station_info.networks for x in n.stations]
     for tr in full_data:
         try:
@@ -70,7 +71,10 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
         ch_type = nf.metadata.get_channel_type(tr.stats.channel)
 
         total_clock_drift, recording_start, recording_end = np.nan, obspy.UTCDateTime(start_time), obspy.UTCDateTime(end_time)
-        if clock_drift is not None:
+        if skip_clock:
+            g_log.info('Clock drift correction skipped by user for station {}.'.format(tr.stats.station))
+            total_clock_drift = 0
+        elif clock_drift is not None:
             try:
                 clock_correction = clock_drift.loc[tr.stats.station]
                 # TODO: Handle multiple entries with same station ID in a single deployment summary (should only occur in land test data)
@@ -143,7 +147,7 @@ def read_and_recut(file_list, archive_dir=DEFAULT_ARCHIVE, start=None, end=None,
 
 
 def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=None, start=None, end=None,
-                              correct_meta=False, metadata_args=None, aux=False):
+                              correct_meta=False, metadata_args=None, skip_clock=False, aux=False):
     if channels is None:
         channels = DEFAULT_CHANNELS
 
@@ -235,12 +239,12 @@ def make_daily_miniseed_files(data_dir, archive_dir, subfolders=None, channels=N
                     buffer_files = all_files[idf:idf+BUFFER_MAX]
                     idf += BUFFER_MAX
 
-                read_and_recut(buffer_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta, clock_info, aux=aux)
+                read_and_recut(buffer_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta, clock_info, skip_clock=skip_clock, aux=aux)
 
                 if idf > len(all_files):
                     done_read = True
         else:
-            read_and_recut(all_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta, clock_info, aux=aux)
+            read_and_recut(all_files, archive_dir, start, end, correct_meta, net_id, station_info, ch_map, proj_meta, clock_info, skip_clock=skip_clock, aux=aux)
 
 
 if __name__ == '__main__':
@@ -259,6 +263,9 @@ if __name__ == '__main__':
                         help="End date/time for output data (inclusive), as YYYYMMDD[hh[mm[ss]]].")
     parser.add_argument('--correct_metadata', dest="correct_metadata", action='store_true',
                         help="Flag to correct channel ID(s) in output data.")
+    parser.add_argument('--skip_clock', dest="skip_clock", action='store_true',
+                        help="Flag to skip clock drift correction, even if a measured final offset exists in the "
+                             "station metadata.")
     parser.add_argument('--network', dest="network_id", default='XX',
                         help="Network identifier assigned by FDSN for this project. Default 'XX' for test data.")
     parser.add_argument('--relative_paths', dest="relative_paths", action="store_true",
@@ -413,7 +420,7 @@ if __name__ == '__main__':
         # Split data into day-long miniSEED files saved in archive_dir (SDS folder structure)
         make_daily_miniseed_files(data_dir, arc_dir, subfolders=subfolders, channels=channels, start=startdate,
                                   end=enddate, correct_meta=args.correct_metadata, metadata_args=meta_args,
-                                  aux=args.aux_separate)
+                                  skip_clock=args.skip_clock, aux=args.aux_separate)
 
         g_log.info("Processing complete!")
         logger.close_logs()

@@ -157,7 +157,7 @@ Some channel identifiers used by default on the Aquarius OBS do not follow the S
 
 ### Common Usage
 
-This script is most often used as part of a batch process for data collected from an entire array of OBS (`SDS_many.py`). A JSON file is used as input for the batch script, with an item named `instruments` to specify station-specific parameters. Common CLI parameters are specified at the top level, with boolean flags given as a list labeled `flags`.
+This script is most often used as part of a batch process for data collected from an entire array of OBS (`SDS_many.py`). A JSON file is used as input for the batch script, with an item named `instruments` to specify station-specific parameters. CLI parameters to be used for all instruments are specified at the top level, with boolean flags given as a list labeled `flags`.
 
 Common parameters normally included:
 - data_dir (project directory on disk)

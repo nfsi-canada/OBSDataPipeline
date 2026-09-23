@@ -36,7 +36,7 @@ if not os.path.isdir(resource_dir):
 
 def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=None, channel_map=None, project_meta=None,
             full=True, detrend=False, cmap=None, use_existing_plots=False, parallel=False, max_proc=None,
-            ignore_seismic=False, limited_seismic=False, flags_from_config=False, **kwargs):
+            ignore_seismic=False, limited_seismic=False, subzero=False, flags_from_config=False, **kwargs):
     """
     Extra keyword arguments are included as report parameters (must match variables in template file).
     """
@@ -56,6 +56,7 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         parallel = config.getboolean('dataset', 'parallel', fallback=False)
         ignore_seismic = config.getboolean('dataset', 'ignore_seismic', fallback=False)
         limited_seismic = config.getboolean('dataset', 'limited_seismic', fallback=False)
+        subzero = config.getboolean('dataset', 'subzero', fallback=False)
 
     # Initialize report parameters dictionary with input keywords
     report_params = {}
@@ -315,19 +316,6 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                     temp = obspy.read(rf)
                     for tr in temp:
                         data.append(tr)
-                data.merge()
-
-                # Remove any seismic channels if explicitly ignored
-                if ignore_seismic:
-                    for tr in data:
-                        ch_type = nf.metadata.get_channel_type(tr.meta.channel)
-                        if ch_type == 'seismic':
-                            data.remove(tr)
-
-                    # Check if there is still data to analyze left
-                    if len(data.traces) < 1:
-                        g_log.info('No non-seismic traces present, skipping.')
-                        continue
 
                 proc_timing.append(timeit.default_timer())
                 g_log.debug("Time spent reading data file(s): {0} seconds".format((proc_timing[-1] - proc_timing[-2])))
@@ -343,6 +331,18 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                 proc_timing.append(timeit.default_timer())
                 g_log.debug("Time spent cutting to period of interest: {0} seconds".format((proc_timing[-1] - proc_timing[-2])))
                 debug_info['timing']['time_cut'] += proc_timing[-1] - proc_timing[-2]
+
+                # Remove any seismic channels if explicitly ignored
+                if ignore_seismic:
+                    for tr in data:
+                        ch_type = nf.metadata.get_channel_type(tr.meta.channel)
+                        if ch_type == 'seismic':
+                            data.remove(tr)
+
+                    # Check if there is still data to analyze left
+                    if len(data.traces) < 1:
+                        g_log.info('No non-seismic traces present, skipping.')
+                        continue
 
                 # Populate metadata from other files as necessary
                 data = nf.metadata.update_metadata(data, network_id, g_log, station_info, channel_map, project_meta)
@@ -494,6 +494,22 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
                     else:
                         if channel_type == 'ocean':
+                            skip_despike = False
+                            # For external temperature data, check for and (optionally) unwrap sub-zero readings
+                            if re.match(r'[A-Z]KO', tr.meta.channel):
+                                max_counts = pow(2, 16)
+                                thres_corr = 0.9 * max_counts
+                                if np.sum(tr.data > thres_corr) > 0:
+                                    if subzero:
+                                        # Set flag for report creation if correction is actually done
+                                        report_params['subzero'] = True
+                                        thres = 0.5 * max_counts
+                                        wrap_idx = tr.data > thres
+                                        tr.data[wrap_idx] -= max_counts
+                                    else:
+                                        # Alternate flag to just display some text in the report introduction
+                                        report_params['temp_wrap'] = True
+
                             # Thresholds determined based on raw counts, so needs to happen before sensitivity is removed by plotting function
                             # TODO: Check if this will work with APG data if we ever collect any
                             if re.match(r'[A-Z]DO', tr.meta.channel):
@@ -502,75 +518,83 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
                             elif re.match(r'[A-Z]KO', tr.meta.channel):
                                 averaging_window = [7 * 60 * tr.stats.sampling_rate, 30 * 60 * tr.stats.sampling_rate]
                                 outlier_cutoff = 2.05
+                            elif tr.meta.channel == 'MDU':
+                                g_log.info('APG data channel. Despiking not yet implemented.')
+                                skip_despike = True
                             else:
                                 g_log.info('Unrecognized channel type {}. Using default despiking thresholds.'.format(
                                     tr.meta.channel))
                                 averaging_window = 10 * 60 * tr.stats.sampling_rate
                                 outlier_cutoff = 1
 
-                            despiked = nf.remove_write_spikes(tr, delta=outlier_cutoff, span=averaging_window,
-                                                              savedf=False, dfpath=os.path.join(output_dir,
-                                                                                  '{}_despiking_info.csv'.format(tr.id)))
-                            g_log.debug('Despiked data type: {}'.format(despiked.data.dtype.type))
-                            try:
-                                despiked.write(os.path.join(output_dir, '{}_despiked.mseed'.format(tr.id)), format='MSEED', encoding='STEIM2')
-                            except Exception as e:
-                                g_log.error('Error writing despiked data to file!')
-                                g_log.error(traceback.format_exc())
+                            if not skip_despike:
+                                despiked = nf.remove_write_spikes(tr, delta=outlier_cutoff, span=averaging_window,
+                                                                  savedf=False, dfpath=os.path.join(output_dir,
+                                                                                      '{}_despiking_info.csv'.format(tr.id)))
+                                g_log.debug('Despiked data type: {}'.format(despiked.data.dtype.type))
+                                try:
+                                    despiked.write(os.path.join(output_dir, '{}_despiked.mseed'.format(tr.id)), format='MSEED', encoding='STEIM2')
+                                except Exception as e:
+                                    g_log.error('Error writing despiked data to file!')
+                                    g_log.error(traceback.format_exc())
 
-                            trace_info['despikedPlot'] = nf.plotting.trace_plot(despiked, output_dir, dmin, dmax, qc_config, use_existing_plots)
+                                trace_info['despikedPlot'] = nf.plotting.trace_plot(despiked, output_dir, dmin, dmax, qc_config, use_existing_plots)
 
-                            # Calculate rolling average of despiked data
-                            trace_length = tr.meta.endtime - tr.meta.starttime
-                            units = nf.metadata.get_units(tr)
-                            stat_window = 1
-                            vert_label = 'Average Value'
-                            if re.match(r'[A-Z]DO', tr.meta.channel):
-                                # External pressure
-                                g_log.info('Seafloor pressure ({}): mean {:.3f}, min {:.3f}, max {:.3f}, stdev {:.3f}'.format(units, np.mean(despiked.data), np.min(despiked.data), np.max(despiked.data), np.std(despiked.data)))
-                                vert_label = 'Average Seafloor Pressure ({})'.format(units)
-                                # 3-day rolling window of average seafloor pressure (uses 3 lunar days: 24 hours, 50 minutes)
-                                if trace_length > 5 * 24 * 60 * 60:
-                                    stat_window = 3 * (24 * 60 + 50) * 60
+                                # Calculate rolling average of despiked data
+                                trace_length = tr.meta.endtime - tr.meta.starttime
+                                units = nf.metadata.get_units(tr)
+                                stat_window = 1
+                                vert_label = 'Average Value'
+                                if re.match(r'[A-Z]DO', tr.meta.channel):
+                                    # External pressure
+                                    g_log.info('Seafloor pressure ({}): mean {:.3f}, min {:.3f}, max {:.3f}, stdev {:.3f}'.format(units, np.mean(despiked.data), np.min(despiked.data), np.max(despiked.data), np.std(despiked.data)))
+                                    vert_label = 'Average Seafloor Pressure ({})'.format(units)
+                                    # 3-day rolling window of average seafloor pressure (uses 3 lunar days: 24 hours, 50 minutes)
+                                    if trace_length > 5 * 24 * 60 * 60:
+                                        stat_window = 3 * (24 * 60 + 50) * 60
+                                    else:
+                                        stat_window = trace_length * 0.6
+                                if re.match(r'[A-Z]KO', tr.meta.channel):
+                                    # External temperature
+                                    g_log.info('Seafloor temperature ({}): mean {:.3f}, min {:.3f}, max {:.3f}, stdev {:.3f}'.format(units, np.mean(despiked.data), np.min(despiked.data), np.max(despiked.data), np.std(despiked.data)))
+                                    vert_label = 'Average Seafloor Temperature ({})'.format(units)
+                                    # 3-day rolling window of average seafloor pressure (uses 3 lunar days: 24 hours, 50 minutes)
+                                    if trace_length > 5 * 24 * 60 * 60:
+                                        stat_window = 3 * 24 * 60 * 60
+                                    else:
+                                        stat_window = trace_length * 0.6
+
+                                trace_info['window_str'] = time_period_string(stat_window)
+                                roll_stats = nf.rolling_window_stats(despiked, window_length=stat_window, window_offset=stat_window/3, full=True)
+
+                                # Save rolling window statistics to CSV file
+                                ch_stats = pd.DataFrame(roll_stats, columns=['Start', 'End', 'Center', 'Min', 'Max', 'Avg', 'Gradient', 'R2_coef', 'Days_Deployed'])
+                                ch_stats.to_csv(os.path.join(output_dir, '{}_rolling_stats_{}_{}.csv'.format(tr.id, pd.to_datetime(ch_stats['Start'].min()).strftime('%Y-%m-%d'), pd.to_datetime(ch_stats['End'].max()).strftime('%Y-%m-%d'))))
+
+                                # Plot rolling mean and add to report
+                                # TODO: Make x-lims start and end dates of data
+                                g_log.debug('Creating plot of rolling stats...')
+                                roll_plot = os.path.join(output_dir, '{}_mean.png'.format(tr.id))
+                                fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
+                                if ch_stats.shape[0] > 30:
+                                    ch_stats.plot(x='Center', y='Avg', kind='line', ax=ax, xlabel='Date/Time', ylabel=vert_label, legend=False)
                                 else:
-                                    stat_window = trace_length * 0.6
-                            if re.match(r'[A-Z]KO', tr.meta.channel):
-                                # External temperature
-                                g_log.info('Seafloor temperature ({}): mean {:.3f}, min {:.3f}, max {:.3f}, stdev {:.3f}'.format(units, np.mean(despiked.data), np.min(despiked.data), np.max(despiked.data), np.std(despiked.data)))
-                                vert_label = 'Average Seafloor Temperature ({})'.format(units)
-                                # 3-day rolling window of average seafloor pressure (uses 3 lunar days: 24 hours, 50 minutes)
-                                if trace_length > 5 * 24 * 60 * 60:
-                                    stat_window = 3 * 24 * 60 * 60
-                                else:
-                                    stat_window = trace_length * 0.6
+                                    ch_stats.plot(x='Center', y='Avg', kind='scatter', ax=ax, xlabel='Date/Time',
+                                                  ylabel=vert_label, legend=False)
+                                ax.grid(True, ls=':')
+                                fig.tight_layout()
+                                fig.savefig(roll_plot)
+                                plt.close(fig)
+                                trace_info['rollPlot'] = roll_plot
 
-                            trace_info['window_str'] = time_period_string(stat_window)
-                            roll_stats = nf.rolling_window_stats(despiked, window_length=stat_window, window_offset=stat_window/3, full=True)
+                                # Add average seafloor readings to report
+                                if re.match(r'[A-Z]DO', tr.meta.channel):
+                                    report_params['meanPressure'] = '{:.0f}'.format(np.mean(despiked.data))
+                                elif re.match(r'[A-Z]KO', tr.meta.channel):
+                                    report_params['meanTemperature'] = '{:.3f}'.format(np.mean(despiked.data))
 
-                            # Save rolling window statistics to CSV file
-                            ch_stats = pd.DataFrame(roll_stats, columns=['Start', 'End', 'Center', 'Min', 'Max', 'Avg', 'Gradient', 'R2_coef', 'Days_Deployed'])
-                            ch_stats.to_csv(os.path.join(output_dir, '{}_rolling_stats_{}_{}.csv'.format(tr.id, pd.to_datetime(ch_stats['Start'].min()).strftime('%Y-%m-%d'), pd.to_datetime(ch_stats['End'].max()).strftime('%Y-%m-%d'))))
-
-                            # Plot rolling mean and add to report
-                            # TODO: Make x-lims start and end dates of data
-                            g_log.debug('Creating plot of rolling stats...')
-                            roll_plot = os.path.join(output_dir, '{}_mean.png'.format(tr.id))
-                            fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-                            ch_stats.plot(x='Center', y='Avg', kind='line', ax=ax, xlabel='Date/Time', ylabel=vert_label, legend=False)
-                            ax.grid(True, ls=':')
-                            fig.tight_layout()
-                            fig.savefig(roll_plot)
-                            plt.close(fig)
-                            trace_info['rollPlot'] = roll_plot
-
-                            # Add average seafloor readings to report
-                            if re.match(r'[A-Z]DO', tr.meta.channel):
-                                report_params['meanPressure'] = '{:.0f}'.format(np.mean(despiked.data))
-                            elif re.match(r'[A-Z]KO', tr.meta.channel):
-                                report_params['meanTemperature'] = '{:.3f}'.format(np.mean(despiked.data))
-
-                            tr_timing.append(timeit.default_timer())
-                            g_log.debug("Time spent despiking trace: {} seconds".format((tr_timing[-1] - tr_timing[-2])))
+                                tr_timing.append(timeit.default_timer())
+                                g_log.debug("Time spent despiking trace: {} seconds".format((tr_timing[-1] - tr_timing[-2])))
 
                         # Time series plot (applies instrument sensitivity in-place if response present in tr.meta)
                         trace_info['traceLoc'] = nf.plotting.trace_plot(tr, output_dir, dmin, dmax, qc_config, use_existing_plots)
@@ -745,6 +769,8 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
 
     # TODO: Add expected hibernation date (once calculated properly) to report summary
     # TODO: Column formatting for report summary page (easier to read?)
+    # TODO: If accelerometer channels (LNx) are present, calculate and plot running tilt vector (angle and direction in single PNG)
+    # TODO: If centring status channels present (LE[567]), add info about when each channel was centred
 
     # Add list of all channels for report
     if len(all_channels) > 0:
@@ -807,7 +833,11 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         avgpow_plot = os.path.join(output_dir, 'power_mean_{0}.png'.format(obs_log['OBS ID'].values[0]))
         if not (use_existing_plots and os.path.isfile(avgpow_plot)):
             fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-            power_stats.plot(x='Plot_Time', y='Power_Mean', kind='line', ax=ax, xlabel='Date/Time', ylabel='Average Power Consumption (W)', legend=False)
+            if power_stats.shape[0] > 30:
+                power_stats.plot(x='Plot_Time', y='Power_Mean', kind='line', ax=ax, xlabel='Date/Time', ylabel='Average Power Consumption (W)', legend=False)
+            else:
+                power_stats.plot(x='Plot_Time', y='Power_Mean', kind='scatter', ax=ax, xlabel='Date/Time',
+                                 ylabel='Average Power Consumption (W)', legend=False)
             ax.grid(True, ls=':')
             fig.tight_layout()
             fig.savefig(avgpow_plot)
@@ -817,7 +847,11 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         avgvlt_plot = os.path.join(output_dir, 'voltage_mean_{0}.png'.format(obs_log['OBS ID'].values[0]))
         if not (use_existing_plots and os.path.isfile(avgvlt_plot)):
             fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-            power_stats.plot(x='Plot_Time', y='Voltage_Mean', kind='line', ax=ax, xlabel='Date/Time', ylabel='Average Voltage (V)', legend=False)
+            if power_stats.shape[0] > 30:
+                power_stats.plot(x='Plot_Time', y='Voltage_Mean', kind='line', ax=ax, xlabel='Date/Time', ylabel='Average Voltage (V)', legend=False)
+            else:
+                power_stats.plot(x='Plot_Time', y='Voltage_Mean', kind='scatter', ax=ax, xlabel='Date/Time',
+                                 ylabel='Average Voltage (V)', legend=False)
             ax.grid(True, ls=':')
             fig.tight_layout()
             fig.savefig(avgvlt_plot)
@@ -827,7 +861,11 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         vltgrd_plot = os.path.join(output_dir, 'voltage_gradient_{0}.png'.format(obs_log['OBS ID'].values[0]))
         if not (use_existing_plots and os.path.isfile(vltgrd_plot)):
             fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-            power_stats.plot(x='Plot_Time', y='Voltage_gradient', kind='line', ax=ax, xlabel='Date/Time', ylabel='Voltage Gradient (mV/day)', legend=False)
+            if power_stats.shape[0] > 30:
+                power_stats.plot(x='Plot_Time', y='Voltage_gradient', kind='line', ax=ax, xlabel='Date/Time', ylabel='Voltage Gradient (mV/day)', legend=False)
+            else:
+                power_stats.plot(x='Plot_Time', y='Voltage_gradient', kind='scatter', ax=ax, xlabel='Date/Time',
+                                 ylabel='Voltage Gradient (mV/day)', legend=False)
             ax.set_ylim(ymax=0)
             ax.grid(True, ls=':')
             fig.tight_layout()
@@ -891,8 +929,12 @@ def process(data_dir, obs_log, network_id, config, output_dir=None, metadata=Non
         current_plot = os.path.join(output_dir, 'current_{0}.png'.format(obs_log['OBS ID'].values[0]))
         if not (use_existing_plots and os.path.isfile(current_plot)):
             fig, ax = plt.subplots(1, 1, figsize=[8, 2.5])
-            crnt.plot(x='Center', y='Avg_Amps', kind='line', ax=ax, xlabel='Date/Time', ylabel='Current Draw (A)',
-                      legend=False)
+            if crnt.shape[0] > 30:
+                crnt.plot(x='Center', y='Avg_Amps', kind='line', ax=ax, xlabel='Date/Time', ylabel='Current Draw (A)',
+                          legend=False)
+            else:
+                crnt.plot(x='Center', y='Avg_Amps', kind='scatter', ax=ax, xlabel='Date/Time', ylabel='Current Draw (A)',
+                          legend=False)
             ax.grid(True, ls=':')
             fig.tight_layout()
             fig.savefig(current_plot)
@@ -999,6 +1041,9 @@ if __name__ == '__main__':
     parser.add_argument('--limited_seismic', dest='limited_seismic', action='store_true',
                         help="Limit seismic analysis to assessment of data extent, readability and gaps. Generally "
                              "only used for projects with data security concerns.")
+    parser.add_argument('--subzero', dest='subzero', action='store_true',
+                        help="Experimental feature. Attempt to unwrap sub-zero readings in external temperature data. "
+                             "Script will check for such values regardless.")
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help="Activate debug mode (more verbose logging). Command-line only.")
 
@@ -1071,7 +1116,7 @@ if __name__ == '__main__':
         full_config['dataset']['obsid'] = obs_identifier
 
         # Runtime flags
-        for flag, key in zip([args.function_check, args.detrend_seis, args.use_existing_plots, args.debug, args.obslog_column_names, args.parallel, args.ignore_seismic, args.limited_seismic], ['function_check', 'detrend_seismic', 'use_existing_plots', 'debug', 'logcolnames', 'parallel', 'ignore_seismic', 'limited_seismic']):
+        for flag, key in zip([args.function_check, args.detrend_seis, args.use_existing_plots, args.debug, args.obslog_column_names, args.parallel, args.ignore_seismic, args.limited_seismic, args.subzero], ['function_check', 'detrend_seismic', 'use_existing_plots', 'debug', 'logcolnames', 'parallel', 'ignore_seismic', 'limited_seismic', 'subzero']):
             config_flag = config.getboolean('dataset', key, fallback=False)
             # only overwrite existing flags if CL arguments are present and different from config
             if flag and not config_flag:
