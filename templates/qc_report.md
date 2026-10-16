@@ -222,6 +222,7 @@ PSD curves are binned by frequency and amplitude to generate density heatmaps (p
 {% endif %}
 {% endif %}
 
+{% if ocean_channels is defined and ocean_channels|length > 0 %}
 # Oceanographic Data
 
 {% for ch in ocean_channels %}
@@ -247,7 +248,9 @@ This channel may show periodic spikes due to the data write cycle of the Aquariu
 {% endfor %}
 
 \newpage{}
+{% endif %}
 
+{% if batteryStats or (power_channels is defined and power_channels|length > 0) %} 
 # Battery Condition
 
 {% if batteryStats %}
@@ -280,7 +283,9 @@ SEED ID: {{ ch.seedID }}
 {% endfor %}
 
 \newpage{}
+{% endif %}
 
+{% if health_channels is defined and health_channels|length > 0 %}
 # Instrument State-of-Health
 
 {% for ch in health_channels %}
@@ -294,3 +299,4 @@ SEED ID: {{ ch.seedID }}
 {% endif %}
 
 {% endfor %}
+{% endif %}
