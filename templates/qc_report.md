@@ -44,8 +44,10 @@ Length of deployment (days): {{ deploymentDays }} | At seafloor: {{ seafloorDays
 
 Total clock drift (ms): {{ clockDrift }} ({{ clockDriftPerDay }} ms/day)
 
+{% if meanPower %}
 Average power consumption (W): {{ meanPower }}
 
+{% endif %}
 Battery SOC: At deployment: {{ batteryLevel.start }}% | Remaining: {{ batteryLevel.end }}%
 
 {% if meanPressure or meanTemperature %}
