@@ -93,10 +93,11 @@ class ReportGenerator:
             if 'psdWindowSecs' in input_variables:
                 input_variables['psdWindowLength'] = time_period_string(input_variables['psdWindowSecs'], factor=3)
 
-        if 'battery_stats_window' in input_variables:
-            input_variables['batteryStats']['window_str'] = time_period_string(input_variables['battery_stats_window'])
-        else:
-            input_variables['batteryStats']['window_str'] = '3-day'
+        if 'batteryStats' in input_variables:
+            if 'battery_stats_window' in input_variables:
+                input_variables['batteryStats']['window_str'] = time_period_string(input_variables['battery_stats_window'])
+            else:
+                input_variables['batteryStats']['window_str'] = '3-day'
 
         report_str = (self.env.render(
             **input_variables
